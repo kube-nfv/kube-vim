@@ -2,28 +2,46 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
+	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 type CmdLineOpts struct {
-    ip string
-    port uint16
-    kubeConfigFile string
-    imageRegistryPath string
+    confgPath string
 }
+
+var (
+    opts CmdLineOpts
+)
 
 
 func init() {
     // Parse CmdLine flags
+    flag.StringVar(&opts.confgPath, "config", "/etc/kube-vim/config.yaml", "kube-vim configuration file path")
+
+    // Set Default configuration options
+    viper.SetDefault("logLevel", "Info")
 }
 
 func main() {
+    flag.Parse()
+    viper.SetConfigFile(opts.confgPath)
+    if err := viper.ReadInConfig(); err != nil {
+        log.Fatalf("Can't read kube-vim configuration from path %s. Error: %v", opts.confgPath, err)
+    }
+    var config config.Config
+    if err := viper.Unmarshal(&config); err != nil {
+        log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
+    }
+
     // Initialize the logger
     logger, err := zap.NewProduction()
     if err != nil {
