@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -48,30 +49,37 @@ func main() {
         log.Fatalf("Can't initialize zap logger: %v", err)
     }
     defer logger.Sync() // Ensure all logs are flushed before the application exits
-    baseLogger := logger.Sugar()
+
+    mgr, err := kubevim.NewKubeVimManager(&config, logger.Named("Kubevim"))
+    if err != nil {
+        log.Fatalf("Can't create kubevim manager: %v", err)
+    }
 
     // Create main context
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
 
-    baseLogger.Info("Installing signal handlers")
+    logger.Info("Installing signal handlers")
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	wg := sync.WaitGroup{}
 
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
-		shutdownHandler(*baseLogger.Desugar(), ctx, sigs, cancel)
+		shutdownHandler(logger, ctx, sigs, cancel)
 		wg.Done()
 	}()
-
+    go func() {
+        mgr.Start(ctx)
+        wg.Done()
+    } ()
 
     wg.Wait()
-    baseLogger.Info("Exiting cleanly...")
+    logger.Info("Exiting cleanly...")
     os.Exit(0)
 }
 
-func shutdownHandler(log zap.Logger, ctx context.Context, sigs chan os.Signal, cancel context.CancelFunc) {
+func shutdownHandler(log *zap.Logger, ctx context.Context, sigs chan os.Signal, cancel context.CancelFunc) {
 	// Wait for the context do be Done or for the signal to come in to shutdown.
 	select {
 	case <-ctx.Done():

@@ -1,0 +1,13 @@
+  service:
+    ip: "127.0.0.1"
+    port: "10762"
+    logLevel: "debug"
+  k8s:
+    config: "/etc/kubernetes/config.yaml"
+  image:
+    glance:
+      identity:
+        endpoint: "https://openstack.example.com:5000/v2.0"
+        username: "admin"
+        password: "admin"
+      region: "admin"

@@ -7,7 +7,7 @@ import (
 )
 
 type Manager interface {
-    GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error)
     GetImage(*nfv.Identifier) (*nfv.SoftwareImageInformation, error)
+    GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error)
     UploadImage(context.Context, *nfv.Identifier, string /*location*/) error
 }

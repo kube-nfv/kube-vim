@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
 	"github.com/DiMalovanyy/kube-vim/internal/config"
@@ -16,8 +17,11 @@ import (
 )
 
 // Image manager for glance image storage
+// Glance image manager uses global lock to protect shared resources (TODO: Rewrite with lock-free API)
 type manager struct {
     glanceServiceClient *gophercloud.ServiceClient
+
+    lock sync.Mutex
 }
 
 func NewGlanceImageManager(cfg *config.GlanceConfig) (*manager, error) {
@@ -38,14 +42,17 @@ func NewGlanceImageManager(cfg *config.GlanceConfig) (*manager, error) {
     }
     return &manager{
         glanceServiceClient: glanceClient,
+        lock: sync.Mutex{},
     }, nil
 }
 
 func (m *manager) GetImage(id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
+    m.lock.Lock()
+    defer m.lock.Unlock()
     getRes := images.Get(m.glanceServiceClient, id.Value)
     img, err := getRes.Extract()
     if err != nil {
-        return nil, fmt.Errorf("Failed to get image with id \"%s\" from glance image service: %w", id.Value, err) 
+        return nil, fmt.Errorf("Failed to get image with id \"%s\" from glance image service: %w", id.Value, err)
     }
     imgNfv, err := convertImage(img)
     if err != nil {
@@ -55,6 +62,8 @@ func (m *manager) GetImage(id *nfv.Identifier) (*nfv.SoftwareImageInformation, e
 }
 
 func (m *manager) GetImages(filter *nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
+    m.lock.Lock()
+    defer m.lock.Unlock()
     pager := images.List(m.glanceServiceClient, images.ListOpts{})
     if pager.Err != nil {
         return nil, fmt.Errorf("Failed to get images from the glance server: %w", pager.Err)
@@ -81,6 +90,8 @@ func (m *manager) GetImages(filter *nfv.Filter) ([]*nfv.SoftwareImageInformation
 }
 
 func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location string) error {
+    m.lock.Lock()
+    defer m.lock.Unlock()
     img, err := imagedata.Download(m.glanceServiceClient, id.Value).Extract()
     if err != nil {
         return fmt.Errorf("Failed to to download image with id \"%s\" from the glance service: %w", id, err)

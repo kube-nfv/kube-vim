@@ -1,8 +1,9 @@
 package config
 
 type Config struct {
-    Service ServiceConfig
-    K8s K8sConfig
+    Service *ServiceConfig
+    K8s *K8sConfig
+    Image *ImageConfig
 }
 
 type ServiceConfig struct {
@@ -17,11 +18,11 @@ type K8sConfig struct {
 
 
 type ImageConfig struct {
-    Glance GlanceConfig
+    Glance *GlanceConfig
 }
 
 type GlanceConfig struct {
-    Identity OpenstackIdentityConfig
+    Identity *OpenstackIdentityConfig
     Region string
 }
 
