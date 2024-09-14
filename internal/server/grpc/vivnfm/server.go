@@ -10,9 +10,9 @@ import (
 )
 
 type ViVnfmServer struct {
-    nfv.UnimplementedViVnfmServer
+	nfv.UnimplementedViVnfmServer
 
-    ImageMgr image.Manager
+	ImageMgr image.Manager
 }
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequest) (*nfv.QueryImagesResponse, error) {

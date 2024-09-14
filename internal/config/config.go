@@ -1,33 +1,32 @@
 package config
 
 type Config struct {
-    Service *ServiceConfig
-    K8s *K8sConfig
-    Image *ImageConfig
+	Service *ServiceConfig
+	K8s     *K8sConfig
+	Image   *ImageConfig
 }
 
 type ServiceConfig struct {
-    Ip string
-    Port string
-    LogLevel string
+	Ip       string
+	Port     string
+	LogLevel string
 }
 
 type K8sConfig struct {
-    Config string
+	Config string
 }
 
-
 type ImageConfig struct {
-    Glance *GlanceConfig
+	Glance *GlanceConfig
 }
 
 type GlanceConfig struct {
-    Identity *OpenstackIdentityConfig
-    Region string
+	Identity *OpenstackIdentityConfig
+	Region   string
 }
 
 type OpenstackIdentityConfig struct {
-    Endpoint string
-    Username string
-    Password string
+	Endpoint string
+	Username string
+	Password string
 }

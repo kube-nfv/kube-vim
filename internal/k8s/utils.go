@@ -6,11 +6,11 @@ import (
 )
 
 func UIDToIdentifier(uid types.UID) *nfv.Identifier {
-    return &nfv.Identifier{
-        Value: string(uid),
-    }
+	return &nfv.Identifier{
+		Value: string(uid),
+	}
 }
 
 func IdentifierToUID(identifier *nfv.Identifier) types.UID {
-    return types.UID(identifier.Value)
+	return types.UID(identifier.Value)
 }
