@@ -18,11 +18,16 @@ type K8sConfig struct {
 
 type ImageConfig struct {
 	Glance *GlanceConfig
+    Local *LocalImageConfig
 }
 
 type GlanceConfig struct {
 	Identity *OpenstackIdentityConfig
 	Region   string
+}
+
+type LocalImageConfig struct {
+    Location string
 }
 
 type OpenstackIdentityConfig struct {

@@ -7,6 +7,7 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/glance"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/local"
 	"github.com/DiMalovanyy/kube-vim/internal/server"
 	"go.uber.org/zap"
 )
@@ -64,6 +65,14 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("ImageConfig can't be empty")
 	}
+    if cfg.Local != nil {
+        var err error
+        m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
+        if err != nil {
+            return fmt.Errorf("Failed to initialize Local image manager: %w", err)
+        }
+        return nil
+    }
 	if cfg.Glance != nil {
 		var err error
 		m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
@@ -71,9 +80,8 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
 			return fmt.Errorf("Failed to initialize Glance image manager: %w", err)
 		}
 		return nil
-	} else {
-		return fmt.Errorf("Can't find propper image manager configuration")
 	}
+	return fmt.Errorf("Can't find propper image manager configuration")
 }
 
 func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {

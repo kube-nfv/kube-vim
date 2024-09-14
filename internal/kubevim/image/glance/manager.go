@@ -49,6 +49,9 @@ func NewGlanceImageManager(cfg *config.GlanceConfig) (*manager, error) {
 func (m *manager) GetImage(id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+    if id == nil || id.Value == "" {
+        return nil, fmt.Errorf("Id should not be empty")
+    }
 	getRes := images.Get(m.glanceServiceClient, id.Value)
 	img, err := getRes.Extract()
 	if err != nil {
@@ -91,6 +94,9 @@ func (m *manager) GetImages(filter *nfv.Filter) ([]*nfv.SoftwareImageInformation
 func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+    if id == nil || id.Value == "" {
+        return fmt.Errorf("Id should not be empty")
+    }
 	img, err := imagedata.Download(m.glanceServiceClient, id.Value).Extract()
 	if err != nil {
 		return fmt.Errorf("Failed to to download image with id \"%s\" from the glance service: %w", id, err)
