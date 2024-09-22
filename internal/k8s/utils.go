@@ -1,7 +1,7 @@
 package k8s
 
 import (
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"k8s.io/apimachinery/pkg/types"
 )
 

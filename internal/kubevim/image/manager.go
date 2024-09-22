@@ -3,7 +3,7 @@ package image
 import (
 	"context"
 
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 )
 
 type Manager interface {

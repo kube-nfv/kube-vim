@@ -3,8 +3,8 @@ package vivnfm
 import (
 	"context"
 
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

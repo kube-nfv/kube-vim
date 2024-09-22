@@ -65,14 +65,14 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("ImageConfig can't be empty")
 	}
-    if cfg.Local != nil {
-        var err error
-        m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
-        if err != nil {
-            return fmt.Errorf("Failed to initialize Local image manager: %w", err)
-        }
-        return nil
-    }
+	if cfg.Local != nil {
+		var err error
+		m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
+		if err != nil {
+			return fmt.Errorf("Failed to initialize Local image manager: %w", err)
+		}
+		return nil
+	}
 	if cfg.Glance != nil {
 		var err error
 		m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)

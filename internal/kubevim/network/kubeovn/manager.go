@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	ovn_client "github.com/DiMalovanyy/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
+	ovn_client "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )

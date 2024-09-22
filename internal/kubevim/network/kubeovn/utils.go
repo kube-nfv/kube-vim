@@ -3,9 +3,9 @@ package kubeovn
 import (
 	"fmt"
 
-	kubeovnv1 "github.com/DiMalovanyy/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
 	"github.com/DiMalovanyy/kube-vim/internal/k8s"
+	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

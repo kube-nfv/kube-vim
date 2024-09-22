@@ -3,13 +3,14 @@ module github.com/DiMalovanyy/kube-vim
 go 1.23.0
 
 require (
-	github.com/DiMalovanyy/kube-vim-api v0.0.0-20240911190045-4ff6b48022a8
-	github.com/DiMalovanyy/kube-vim-api/kube-ovn-api v0.0.0-20240911185549-5fb625b56be5
 	github.com/gophercloud/gophercloud v1.14.0
-	github.com/gorilla/mux v1.8.1
+	github.com/kube-nfv/kube-vim-api v0.0.2
+	github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
+	google.golang.org/grpc v1.65.0
 	k8s.io/api v0.31.0
+	k8s.io/apimachinery v0.31.0
 	k8s.io/client-go v0.31.0
 )
 
@@ -55,13 +56,11 @@ require (
 	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240528184218-531527333157 // indirect
-	google.golang.org/grpc v1.65.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apimachinery v0.31.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect

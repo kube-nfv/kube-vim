@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DiMalovanyy/kube-vim-api/pb/nfv"
 	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/server/grpc/vivnfm"
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"

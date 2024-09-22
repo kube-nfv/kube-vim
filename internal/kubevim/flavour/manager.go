@@ -1,6 +1,6 @@
 package flavour
 
-import "github.com/DiMalovanyy/kube-vim-api/pb/nfv"
+import "github.com/kube-nfv/kube-vim-api/pb/nfv"
 
 // Manager should be synced with the cluster state.
 // When new flavour is add it should be updated in k8s VirtualMachineInstancetype VirtualMachinePreference objects
