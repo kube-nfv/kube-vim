@@ -24,6 +24,8 @@ help: ## Display this help.
 
 ##@ Development
 
+.PHONY: manifests
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -55,7 +57,11 @@ build: fmt vet
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build -t ${IMG} -f dist/Dockerfile .
+
+.PHONY: build-dist-manifests
+build-dist-manifests:
+	mkdir -p dist
 
 ##@ Dependencies
 

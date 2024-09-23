@@ -23,7 +23,7 @@ const (
 type NorthboundServer struct {
 	server *grpc.Server
 
-	cfg    *config.Config
+	cfg    *config.ServiceConfig
 	logger *zap.Logger
 }
 
@@ -64,11 +64,15 @@ func NewNorthboundServer(cfg *config.ServiceConfig, log *zap.Logger, imageMgr im
 	nfv.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
 		ImageMgr: imageMgr,
 	})
-	return nil, nil
+	return &NorthboundServer{
+        server: server,
+        cfg: cfg,
+        logger: log,
+    }, nil
 }
 
 func (s *NorthboundServer) Start(ctx context.Context) error {
-	listenAddr := fmt.Sprintf("%s:%s", s.cfg.Service.Ip, s.cfg.Service.Port)
+	listenAddr := fmt.Sprintf("%s:%s", s.cfg.Ip, s.cfg.Port)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("Failed to listend address %s: %w", listenAddr, err)

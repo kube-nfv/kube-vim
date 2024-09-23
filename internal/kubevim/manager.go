@@ -35,7 +35,7 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if err := mgr.initNorthboundServer(cfg.Service); err != nil {
 		return nil, fmt.Errorf("Failed to configure northbound server: %w", err)
 	}
-	return nil, nil
+	return mgr, nil
 }
 
 func (m *kubevimManager) Start(ctx context.Context) {

@@ -1,0 +1,89 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-nfv
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-vim
+  namespace: kube-nfv
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-vim-network-manager-role
+  namespace: kube-nfv
+rules:
+- apiGroups:
+  - "kubeovn.io"
+  resources:
+  - vpcs
+  - vpcs/status
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-vim-network-manager-rolebinding
+  namespace: kube-nfv
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-vim-network-manager-role
+subjects:
+- kind: ServiceAccount
+  name: kube-vim
+  namespace: kube-nfv
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-vim-config
+  namespace: kube-nfv
+data:
+  config.yaml: |
+    service:
+      ip: "127.0.0.1"
+      port: "10762"
+      logLevel: "debug"
+    image:
+      local:
+        location: "/mnt/images"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-vim
+  namespace: kube-nfv
+  labels:
+    app: kube-vim
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-vim
+  template:
+    metadata:
+      labels:
+        app: kube-vim
+    spec:
+      serviceAccountName: kube-vim
+      containers:
+      - image: ghcr.io/kube-nfv/kube-vim:latest
+        name: vim
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kube-vim
+          readOnly: true
+        - name: images
+          mountPath: /mnt/images
+      volumes:
+      - name: config
+        configMap:
+          name: kube-vim-config
+      - name: images
+        emptyDir:
