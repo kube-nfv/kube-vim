@@ -1,5 +1,12 @@
 package config
 
+var (
+    KubeNfvManagedbyLabel = map[string]string{
+        "app.kubernetes.io/managed-by": "kube-nfv",
+    }
+    KubeNfvDefaultNamespace = "kube-nfv"
+)
+
 type Config struct {
 	Service *ServiceConfig
 	K8s     *K8sConfig

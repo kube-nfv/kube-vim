@@ -15,7 +15,7 @@ type manager struct {
 	kubeOvnClient *ovn_client.Clientset
 }
 
-func NewKubeovnNetworkManager(ctx context.Context, k8sConfig *rest.Config) (*manager, error) {
+func NewKubeovnNetworkManager(k8sConfig *rest.Config) (*manager, error) {
 	c, err := ovn_client.NewForConfig(k8sConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create kube-ovn k8s client: %w", err)
