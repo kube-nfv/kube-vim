@@ -46,8 +46,6 @@ metadata:
 data:
   config.yaml: |
     service:
-      ip: "127.0.0.1"
-      port: "10762"
       logLevel: "debug"
     image:
       local:
@@ -81,6 +79,12 @@ spec:
           readOnly: true
         - name: images
           mountPath: /mnt/images
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
       volumes:
       - name: config
         configMap:

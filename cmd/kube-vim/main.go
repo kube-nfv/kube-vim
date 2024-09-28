@@ -26,9 +26,6 @@ var (
 func init() {
 	// Parse CmdLine flags
 	flag.StringVar(&opts.confgPath, "config", "/etc/kube-vim/config.yaml", "kube-vim configuration file path")
-
-	// Set Default configuration options
-	viper.SetDefault("logLevel", "Info")
 }
 
 func main() {
@@ -41,7 +38,6 @@ func main() {
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
 	}
-
 	// Initialize the logger
 	logger, err := zap.NewProduction()
 	if err != nil {

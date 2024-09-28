@@ -5,11 +5,17 @@ import (
 	"fmt"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/glance"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/local"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network/kubeovn"
 	"github.com/DiMalovanyy/kube-vim/internal/server"
 	"go.uber.org/zap"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // Main kubevim object. It is stand as a mediator between different kubevim components like
@@ -18,19 +24,43 @@ import (
 type kubevimManager struct {
 	logger *zap.Logger
 
-	imageMgr image.Manager
+	imageMgr   image.Manager
+	networkMgr network.Manager
+	flavourMgr flavour.Manager
+
 	nbServer *server.NorthboundServer
 }
 
 func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager, error) {
+	var err error
 	if cfg == nil {
 		return nil, fmt.Errorf("Config can't be empty")
 	}
+
+	var k8sConfig *rest.Config
+	if cfg.K8s.Config != "" {
+		k8sConfig, err = clientcmd.BuildConfigFromFlags("", cfg.K8s.Config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get k8s config from %s: %w", cfg.K8s.Config, err)
+		}
+	} else {
+		k8sConfig, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("faile to get k8s inClusterConfig: %w", err)
+		}
+	}
+
 	mgr := &kubevimManager{
 		logger: logger,
 	}
 	if err := mgr.initImageManager(cfg.Image); err != nil {
 		return nil, fmt.Errorf("Failed to configure image manager: %w", err)
+	}
+	if err := mgr.initNetworkManager(k8sConfig); err != nil {
+		return nil, fmt.Errorf("failed to initialize network manager: %w", err)
+	}
+	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
+		return nil, fmt.Errorf("failed to initialize flavour manager: %w", err)
 	}
 	if err := mgr.initNorthboundServer(cfg.Service); err != nil {
 		return nil, fmt.Errorf("Failed to configure northbound server: %w", err)
@@ -84,12 +114,36 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
 	return fmt.Errorf("Can't find propper image manager configuration")
 }
 
+func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config) error {
+	if k8sConfig == nil {
+		return fmt.Errorf("k8sConfig can't be empty")
+	}
+	var err error
+	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create kubeovn network manager: %w", err)
+	}
+	return nil
+}
+
+func (m *kubevimManager) initFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
+	if k8sConfig == nil {
+		return fmt.Errorf("k8sConfig can't be empty")
+	}
+	var err error
+	m.flavourMgr, err = kubevirt.NewFlavourManager(k8sConfig, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create kubevirt flavour manager: %w", err)
+	}
+	return nil
+}
+
 func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("ServiceConfig can't be empty")
 	}
 	var err error
-	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr)
+	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr, m.networkMgr, m.flavourMgr)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize NorthboundServer: %w", err)
 	}

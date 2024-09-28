@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/DiMalovanyy/kube-vim/internal/server/grpc/vivnfm"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"go.uber.org/zap"
@@ -27,7 +29,12 @@ type NorthboundServer struct {
 	logger *zap.Logger
 }
 
-func NewNorthboundServer(cfg *config.ServiceConfig, log *zap.Logger, imageMgr image.Manager) (*NorthboundServer, error) {
+func NewNorthboundServer(
+    cfg *config.ServiceConfig,
+    log *zap.Logger,
+    imageMgr image.Manager,
+    networkManager network.Manager,
+    flavourManager flavour.Manager) (*NorthboundServer, error) {
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
@@ -62,16 +69,19 @@ func NewNorthboundServer(cfg *config.ServiceConfig, log *zap.Logger, imageMgr im
 	}
 	server := grpc.NewServer(opts...)
 	nfv.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
-		ImageMgr: imageMgr,
+		ImageMgr:   imageMgr,
+		NetworkMgr: networkManager,
+		FlavourMgr: flavourManager,
 	})
 	return &NorthboundServer{
-        server: server,
-        cfg: cfg,
-        logger: log,
-    }, nil
+		server: server,
+		cfg:    cfg,
+		logger: log,
+	}, nil
 }
 
 func (s *NorthboundServer) Start(ctx context.Context) error {
+	// c.cfg.Ip might be "", which is also fine
 	listenAddr := fmt.Sprintf("%s:%s", s.cfg.Ip, s.cfg.Port)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {

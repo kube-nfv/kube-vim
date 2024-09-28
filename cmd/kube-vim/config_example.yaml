@@ -1,9 +1,5 @@
   service:
-    ip: "127.0.0.1"
-    port: "10762"
     logLevel: "debug"
-  k8s:
-    config: "/etc/kubernetes/config.yaml"
   image:
     glance:
       identity:
