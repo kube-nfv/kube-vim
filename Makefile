@@ -2,6 +2,8 @@ NAME ?= kube-vim
 
 IMG ?= ghcr.io/kube-nfv/kube-vim:latest
 
+K8S_VERSION ?= v1.30.0
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -15,12 +17,12 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
-.PHONY: all
-all: build
-
 .PHONY: help
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+.PHONY: all
+all: build
 
 ##@ Development
 
@@ -77,10 +79,75 @@ $(HELM_PLUGINS):
 
 ## Tool Binaries
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+KIND ?= $(LOCALBIN)/kind
+YQ = $(LOCALBIN)/yq
+KUBE_OVN_INSTALL ?= $(LOCALBIN)/kube-ovn/install.sh
 
+KIND_VERSION ?= v0.23.0
+YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
+
+KUBE_OVN_VERSION ?= v1.12.26
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+.PHONY: kind
+kind: $(LOCALBIN)
+	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
+
+.PHONY: yq
+yq: $(LOCALBIN)
+	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
+.PHONY: kube-ovn
+kube-ovn: $(LOCALBIN) 
+	@test -x $(KUBE_OVN_INSTALL) || \
+	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kube-ovn/release-1.12/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
+
+##@ Deployment
+
+KIND_CLUSTER_NAME ?= kube-vim-kind
+
+CONTROL_PLANE_TAINTS = node-role.kubernetes.io/master node-role.kubernetes.io/control-plane
+
+.PHONY: kind-load
+kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
+
+.PHONY: kind-create
+kind-create: kind yq ## Create kubernetes cluster using Kind.
+	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config dist/kind.yaml; \
+	elif ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes --name $(KIND_CLUSTER_NAME)) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
+  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config dist/kind.yaml; \
+	fi
+
+.PHONY: kind-delete
+kind-delete: kind ## Create kubernetes cluster using Kind.
+	@if $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+	fi
+
+.PHONY: kind-prepare
+kind-prepare: kind-load kind-create kube-ovn ## Prepare kind cluster for kube-vim installation
+	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
+	@$(MAKE) kind-untaint-control-plane
+	@echo "Installing kube-ovn to the kind"
+	sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
+
+.PHONY: kind-untaint-control-plane
+kind-untaint-control-plane:
+	@for node in $(shell kubectl get no -o jsonpath='{.items[*].metadata.name}'); do \
+		for key in $(CONTROL_PLANE_TAINTS); do \
+			taint=$$(kubectl get no $$node -o jsonpath="{.spec.taints[?(@.key==\"$$key\")]}"); \
+			if [ -n "$$taint" ]; then \
+				kubectl taint node $$node $$key:NoSchedule-; \
+			fi; \
+		done; \
+	done

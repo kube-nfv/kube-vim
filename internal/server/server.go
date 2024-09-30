@@ -30,11 +30,11 @@ type NorthboundServer struct {
 }
 
 func NewNorthboundServer(
-    cfg *config.ServiceConfig,
-    log *zap.Logger,
-    imageMgr image.Manager,
-    networkManager network.Manager,
-    flavourManager flavour.Manager) (*NorthboundServer, error) {
+	cfg *config.ServiceConfig,
+	log *zap.Logger,
+	imageMgr image.Manager,
+	networkManager network.Manager,
+	flavourManager flavour.Manager) (*NorthboundServer, error) {
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
