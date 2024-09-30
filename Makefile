@@ -2,7 +2,7 @@ NAME ?= kube-vim
 
 IMG ?= ghcr.io/kube-nfv/kube-vim:latest
 
-K8S_VERSION ?= v1.30.0
+K8S_VERSION ?= v1.31.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -87,7 +87,7 @@ KIND_VERSION ?= v0.23.0
 YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
 
-KUBE_OVN_VERSION ?= v1.12.26
+KUBE_OVN_VERSION ?= v1.13.0
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
@@ -107,7 +107,7 @@ yq: $(LOCALBIN)
 .PHONY: kube-ovn
 kube-ovn: $(LOCALBIN) 
 	@test -x $(KUBE_OVN_INSTALL) || \
-	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kube-ovn/release-1.12/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
+	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kubmaster/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
 
 ##@ Deployment
 
@@ -136,10 +136,12 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 
 .PHONY: kind-prepare
 kind-prepare: kind-load kind-create kube-ovn ## Prepare kind cluster for kube-vim installation
+	kubectl delete --ignore-not-found sc standard
+	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 	@$(MAKE) kind-untaint-control-plane
 	@echo "Installing kube-ovn to the kind"
-	sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
+	cd bin/kube-ovn; sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
 
 .PHONY: kind-untaint-control-plane
 kind-untaint-control-plane:
