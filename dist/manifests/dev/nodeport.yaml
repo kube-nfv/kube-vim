@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kube-vim
+  name: kube-vim
+  namespace: kube-nfv
+spec:
+  ports:
+  - port: 50051
+    protocol: TCP
+    targetPort: 50051
+    nodePort: 30080
+  selector:
+    app: kube-vim
+  type: NodePort

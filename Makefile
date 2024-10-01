@@ -2,6 +2,8 @@ NAME ?= kube-vim
 
 IMG ?= ghcr.io/kube-nfv/kube-vim:latest
 
+DEV ?= 0
+
 K8S_VERSION ?= v1.31.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -105,27 +107,34 @@ yq: $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
 
 .PHONY: kube-ovn
-kube-ovn: $(LOCALBIN) 
+kube-ovn: $(LOCALBIN)
 	@test -x $(KUBE_OVN_INSTALL) || \
 	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kubmaster/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
 
 ##@ Deployment
 
 KIND_CLUSTER_NAME ?= kube-vim-kind
+KIND_CONFIG ?=
+ifeq ($(DEV), 1)
+	KIND_CONFIG = dist/kind-dev.yaml
+else
+	KIND_CONFIG = dist/kind.yaml
+endif
+
 
 CONTROL_PLANE_TAINTS = node-role.kubernetes.io/master node-role.kubernetes.io/control-plane
 
 .PHONY: kind-load
-kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
+kind-load: docker-build kind kind-create ## Build and upload docker image to the local Kind cluster.
 	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config dist/kind.yaml; \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config $(KIND_CONFIG); \
 	elif ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes --name $(KIND_CLUSTER_NAME)) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
   		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config dist/kind.yaml; \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config $(KIND_CONFIG); \
 	fi
 
 .PHONY: kind-delete
@@ -135,13 +144,21 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-load kind-create kube-ovn ## Prepare kind cluster for kube-vim installation
+kind-prepare: kind-create kind-load kube-ovn ## Prepare kind cluster for kube-vim installation
 	kubectl delete --ignore-not-found sc standard
 	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 	@$(MAKE) kind-untaint-control-plane
 	@echo "Installing kube-ovn to the kind"
 	cd bin/kube-ovn; sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
+
+.PHONY: kind-install
+kind-install: kind-prepare ## Install kube-vim into prepared kind cluster
+	kubectl create -f dist/manifests/kubevim.yaml
+	@if [ "$(DEV)" = "1" ]; then \
+		kubectl create -f dist/manifests/dev/nodeport.yaml; \
+	fi
+
 
 .PHONY: kind-untaint-control-plane
 kind-untaint-control-plane:
