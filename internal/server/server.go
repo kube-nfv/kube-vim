@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/reflection"
 )
 
 const (
@@ -73,6 +74,7 @@ func NewNorthboundServer(
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,
 	})
+    reflection.Register(server)
 	return &NorthboundServer{
 		server: server,
 		cfg:    cfg,
@@ -104,10 +106,11 @@ func (s *NorthboundServer) Start(ctx context.Context) error {
 		}
 		wg.Done()
 	}()
-	s.logger.Info("Northbound server successfully started", zap.String("ListeningIP", listenAddr))
+	s.logger.Info("northbound server successfully started", zap.String("ListeningIP", listenAddr))
 	wg.Wait()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+    if ctx.Err() != nil {
+        err = ctx.Err()
+    }
+    s.logger.Warn("NorthboundServer stopped", zap.Error(err))
 	return err
 }
