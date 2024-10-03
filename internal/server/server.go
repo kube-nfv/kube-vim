@@ -57,7 +57,7 @@ func NewNorthboundServer(
 					zap.String("Request", info.FullMethod),
 					zap.String("IP", clientIP),
 					zap.Duration("Duration", duration),
-					zap.Error(err))
+                    zap.Error(err))
 			} else {
 				log.Info(
 					"Request completed successfully",

@@ -39,7 +39,9 @@ func main() {
 		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
 	}
 	// Initialize the logger
-	logger, err := zap.NewProduction()
+    baseLoggerCfg := zap.NewProductionConfig()
+    baseLoggerCfg.DisableStacktrace = true
+	logger, err := baseLoggerCfg.Build()
 	if err != nil {
 		log.Fatalf("Can't initialize zap logger: %v", err)
 	}
