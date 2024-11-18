@@ -57,7 +57,7 @@ func NewNorthboundServer(
 					zap.String("Request", info.FullMethod),
 					zap.String("IP", clientIP),
 					zap.Duration("Duration", duration),
-                    zap.Error(err))
+					zap.Error(err))
 			} else {
 				log.Info(
 					"Request completed successfully",
@@ -74,7 +74,7 @@ func NewNorthboundServer(
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,
 	})
-    reflection.Register(server)
+	reflection.Register(server)
 	return &NorthboundServer{
 		server: server,
 		cfg:    cfg,
@@ -108,9 +108,9 @@ func (s *NorthboundServer) Start(ctx context.Context) error {
 	}()
 	s.logger.Info("northbound server successfully started", zap.String("ListeningIP", listenAddr))
 	wg.Wait()
-    if ctx.Err() != nil {
-        err = ctx.Err()
-    }
-    s.logger.Warn("NorthboundServer stopped", zap.Error(err))
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	s.logger.Warn("NorthboundServer stopped", zap.Error(err))
 	return err
 }
