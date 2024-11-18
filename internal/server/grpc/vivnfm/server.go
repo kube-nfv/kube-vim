@@ -51,7 +51,24 @@ func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.Delete
 }
 
 func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, req *nfv.AllocateNetworkRequest) (*nfv.AllocateNetworkResponse, error) {
-	// TODO:
-	_, err := s.NetworkMgr.CreateNetwork(*req.NetworkResourceName, req.TypeNetworkData)
-	return &nfv.AllocateNetworkResponse{}, err
+    if req == nil {
+        return nil, status.Error(codes.InvalidArgument, "allocateNetworkRequest can't be empty")
+    }
+    if req.NetworkResourceType == nil {
+        return nil, status.Error(codes.InvalidArgument, "networkResourceType can't be empty")
+    }
+    if req.NetworkResourceName == nil || *req.NetworkResourceName == "" {
+        return nil, status.Error(codes.InvalidArgument, "networkResourceName can't be empty")
+    }
+    switch *req.NetworkResourceType {
+    case nfv.AllocateNetworkRequest_NETWORK:
+        if req.TypeNetworkData == nil {
+            return nil, status.Error(codes.InvalidArgument, "field typeNetworkData can't be empty with Network resource type")
+        }
+        // TODO:
+        virtualNet, err := s.NetworkMgr.CreateNetwork(ctx, *req.NetworkResourceName, req.TypeNetworkData)
+        return &nfv.AllocateNetworkResponse{}, err
+    default:
+        return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())
+    }
 }

@@ -1,7 +1,12 @@
 package network
 
-import "github.com/kube-nfv/kube-vim-api/pb/nfv"
+import (
+	"context"
+
+	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+)
+
 
 type Manager interface {
-	CreateNetwork(string /*name*/, *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error)
+	CreateNetwork(context.Context, string /*name*/, *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error)
 }
