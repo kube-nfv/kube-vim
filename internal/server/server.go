@@ -47,7 +47,7 @@ func NewNorthboundServer(
 					clientIP = addr.IP.String()
 				}
 			}
-			log.Debug("Started request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
+			log.Info("Started request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
 			start := time.Now()
 			resp, err = handler(ctx, req)
 			duration := time.Since(start)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/k8s"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
@@ -20,6 +21,9 @@ func kubeovnVpcFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (
 	res := &kubeovnv1.Vpc{
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
+			Labels: map[string]string{
+				config.K8sManagedByLabel: config.KubeNfvName,
+			},
 		},
 		Spec: kubeovnv1.VpcSpec{},
 	}
@@ -87,6 +91,9 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 	sub := &kubeovnv1.Subnet{
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
+			Labels: map[string]string{
+				config.K8sManagedByLabel: config.KubeNfvName,
+			},
 		},
 		Spec: kubeovnv1.SubnetSpec{
 			Protocol:   ipProto,

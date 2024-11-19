@@ -8,6 +8,7 @@ import (
 
 type Manager interface {
 	CreateFlavour(context.Context, *nfv.VirtualComputeFlavour) (*nfv.Identifier, error)
+	GetFlavour(*nfv.Identifier) (*nfv.VirtualComputeFlavour, error)
 	// TODO: Add Filter
 	GetFlavours() ([]*nfv.VirtualComputeFlavour, error)
 	DeleteFlavour(*nfv.Identifier) error

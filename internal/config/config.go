@@ -7,9 +7,8 @@ import (
 )
 
 var (
-	KubeNfvManagedbyLabel = map[string]string{
-		"app.kubernetes.io/managed-by": "kube-nfv",
-	}
+	K8sManagedByLabel       = "app.kubernetes.io/managed-by"
+	KubeNfvName             = "kube-nfv"
 	KubeNfvDefaultNamespace = "kube-nfv"
 )
 
