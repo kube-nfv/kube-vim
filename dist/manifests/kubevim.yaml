@@ -20,6 +20,8 @@ rules:
   resources:
   - vpcs
   - vpcs/status
+  - subnets
+  - subnets/status
   verbs:
   - "*"
 ---
@@ -32,6 +34,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: kube-vim-network-manager-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: kube-vim
+  namespace: kube-nfv
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-vim-compute-manager-role
+  namespace: kube-nfv
+rules:
+- apiGroups:
+  - "instancetype.kubevirt.io"
+  resources:
+  - virtualmachineinstancetypes
+  - virtualmachinepreferences
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-vim-compute-manager-rolebinding
+  namespace: kube-nfv
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-vim-compute-manager-role
 subjects:
 - kind: ServiceAccount
   name: kube-vim

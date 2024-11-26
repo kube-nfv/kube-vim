@@ -35,7 +35,7 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
 	for idx, l3Attr := range networkData.Layer3Attributes {
 		subnet, err := kubeovnSubnetFromNfvSubnetData(fmt.Sprintf("%s-subnet-%d", name, idx), l3Attr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create kubeovn network resource from the spicified VirtualNetworkData l3 attribute with index \"%d\"", idx)
+			return nil, fmt.Errorf("failed to create kubeovn network resource from the spicified VirtualNetworkData l3 attribute with index \"%d\": %w", idx, err)
 		}
 		// Add VPC to the subnet
 		subnet.Spec.Vpc = vpc.GetName()

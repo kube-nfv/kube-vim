@@ -54,13 +54,14 @@ func kubeovnIpVersionFromNfv(ipVersion *nfv.IPVersion) (string, error) {
 	if ipVersion == nil {
 		return "", fmt.Errorf("ip version not specified")
 	}
-	if ipVersion == nfv.IPVersion_IPV4.Enum() {
+    switch *ipVersion {
+	case nfv.IPVersion_IPV4:
 		return "IPv4", nil
-	}
-	if ipVersion == nfv.IPVersion_IPV6.Enum() {
+	case nfv.IPVersion_IPV6:
 		return "IPv6", nil
+	default:
+		return "", fmt.Errorf("unknown ip version: %v", *ipVersion)
 	}
-	return "", fmt.Errorf("unknown ip version: %s", ipVersion)
 }
 
 // Returns the kubeovn Subnet k8s object or error if convertation from the

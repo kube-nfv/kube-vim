@@ -167,7 +167,7 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt ## Prepare kind cluster f
 	@echo "Installing kube-virt to the kind"
 	kubectl create -f $(KUBE_VIRT_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CR)
-	kubectl -n kubevirt wait kv kubevirt --for condition=Available
+	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
 
 .PHONY: kind-install
 kind-install: kind-prepare ## Install kube-vim into prepared kind cluster
