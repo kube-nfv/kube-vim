@@ -54,7 +54,7 @@ func kubeovnIpVersionFromNfv(ipVersion *nfv.IPVersion) (string, error) {
 	if ipVersion == nil {
 		return "", fmt.Errorf("ip version not specified")
 	}
-    switch *ipVersion {
+	switch *ipVersion {
 	case nfv.IPVersion_IPV4:
 		return "IPv4", nil
 	case nfv.IPVersion_IPV6:

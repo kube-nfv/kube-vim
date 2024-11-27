@@ -28,7 +28,7 @@ type manager struct {
 func NewFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) (*manager, error) {
 	c, err := kubevirt.NewForConfig(k8sConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create kube-virt k8s client: %w", err)
+		return nil, fmt.Errorf("failed to create kube-virt k8s client: %w", err)
 	}
 	return &manager{
 		kubevirtClient: c,
@@ -43,7 +43,7 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 	} else {
 		newId, err := uuid.NewRandom()
 		if err != nil {
-			return nil, fmt.Errorf("Failed to generate UUID for flavour: %w", err)
+			return nil, fmt.Errorf("failed to generate UUID for flavour: %w", err)
 		}
 		flavourId = newId.String()
 	}
@@ -72,15 +72,15 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 
 func (m *manager) GetFlavour(*nfv.Identifier) (*nfv.VirtualComputeFlavour, error) {
 
-	return nil, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (m *manager) GetFlavours() ([]*nfv.VirtualComputeFlavour, error) {
 
-	return nil, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (m *manager) DeleteFlavour(*nfv.Identifier) error {
 
-	return nil
+	return fmt.Errorf("not implemented")
 }
