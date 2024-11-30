@@ -1,10 +1,12 @@
 package kubevirt
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
+    kubevirt_flavour "github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
@@ -42,7 +44,7 @@ func NewComputeManager(
     }, nil
 }
 
-func (m *manager) AllocateComputeResource(req *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error){
+func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error){
     if req == nil {
         return nil, fmt.Errorf("request can't be empty")
     }
@@ -50,11 +52,26 @@ func (m *manager) AllocateComputeResource(req *nfv.AllocateComputeRequest) (*nfv
     if req.ComputeFlavourId == nil {
         return nil, fmt.Errorf("computeFlavourId can't be empty")
     }
-    _, err := m.flavourManager.GetFlavour(req.ComputeFlavourId)
+    _, flavourMeta, err := m.flavourManager.GetFlavour(ctx, req.ComputeFlavourId)
     if err != nil {
         return nil, fmt.Errorf("failed to retrive flavour with id \"%s\": %w", req.ComputeFlavourId.GetValue(), err)
     }
+    if flavourMeta == nil {
+        return nil, fmt.Errorf("flavour metadata can't be nil: %w", config.UnsupportedErr)
+    }
+    kubeVirtMetaIf, ok := flavourMeta[kubevirt_flavour.KubeVirtFlavourMetadataKeyName]
+    if !ok {
+        return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", config.UnsupportedErr)
+    }
+    // TODO(dmalovan): Add the ability to works with different flavours providers/managers (eg. get flavours directly from the nova)
+    kubeVirtMeta, ok := kubeVirtMetaIf.(*kubevirt_flavour.KubeVirtFlavourMetadata)
+    if !ok {
+        return nil, fmt.Errorf("failed to convert kubevirt flavour metadata. Invaid object type")
+    }
+
 
 
     return nil, nil
 }
+
+

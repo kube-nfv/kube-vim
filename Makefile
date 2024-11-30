@@ -93,6 +93,7 @@ YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
 
 KUBE_OVN_VERSION ?= v1.13.0
+KUBE_OVN_RELEASE ?= 1.13
 KUBE_VIRT_VERSION ?= v1.4.0
 
 .PHONY: golangci-lint
@@ -113,7 +114,7 @@ yq: $(LOCALBIN)
 .PHONY: kube-ovn
 kube-ovn: $(LOCALBIN)
 	@test -x $(KUBE_OVN_INSTALL) || \
-	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kubmaster/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
+	wget -P $(LOCALBIN)/kube-ovn https://raw.githubusercontent.com/kubeovn/kube-ovn/release-$(KUBE_OVN_RELEASE)/dist/images/install.sh; chmod +x $(KUBE_OVN_INSTALL)
 
 .PHONY: kube-virt
 kube-virt: $(LOCALBIN)

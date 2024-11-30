@@ -60,6 +60,12 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 		}, nil
 }
 
+// TODO: Implement
+func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v1beta1.VirtualMachineInstancetype, pref *v1beta1.VirtualMachinePreference) (*nfv.VirtualComputeFlavour, error) {
+
+    return nil, nil
+}
+
 func flavourNameFromId(id string) string {
 	return fmt.Sprintf("flavour-%s", id)
 }
