@@ -22,6 +22,9 @@ func init() {
 		podNamespace = KubeNfvDefaultNamespace
 	}
 	viper.SetDefault("k8s.namespace", podNamespace)
+    if viper.IsSet("image.http") {
+        viper.SetDefault("image.http.userAgent", KubeNfvName)
+    }
 }
 
 type Config struct {
@@ -44,6 +47,7 @@ type K8sConfig struct {
 type ImageConfig struct {
 	Glance *GlanceConfig
 	Local  *LocalImageConfig
+	Http   *HttpImageConfig
 }
 
 type GlanceConfig struct {
@@ -53,6 +57,11 @@ type GlanceConfig struct {
 
 type LocalImageConfig struct {
 	Location string
+}
+
+// TODO(dmalovan): add support for the https
+type HttpImageConfig struct {
+    UserAgent string
 }
 
 type OpenstackIdentityConfig struct {

@@ -86,7 +86,8 @@ YQ = $(LOCALBIN)/yq
 KUBE_OVN_INSTALL ?= $(LOCALBIN)/kube-ovn/install.sh
 KUBE_VIRT_OPERATOR ?= $(LOCALBIN)/kube-virt/kubevirt-operator.yaml
 KUBE_VIRT_CR       ?= $(LOCALBIN)/kube-virt/kubevirt-cr.yaml
-
+KUBE_VIRT_CDI_OPERATOR ?= $(LOCALBIN)/kube-virt-cdi/cdi-operator.yaml
+KUBE_VIRT_CDI_CR       ?= $(LOCALBIN)/kube-virt-cdi/cdi-cr.yaml
 
 KIND_VERSION ?= v0.23.0
 YQ_VERSION ?= v4.44.1
@@ -95,6 +96,7 @@ GOLANGCI_LINT_VERSION ?= v1.59.1
 KUBE_OVN_VERSION ?= v1.13.0
 KUBE_OVN_RELEASE ?= 1.13
 KUBE_VIRT_VERSION ?= v1.4.0
+KUBE_VIRT_CDI_VERSION ?=v1.61.0
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
@@ -122,7 +124,13 @@ kube-virt: $(LOCALBIN)
 	wget -P $(LOCALBIN)/kube-virt https://github.com/kubevirt/kubevirt/releases/download/$(KUBE_VIRT_VERSION)/kubevirt-operator.yaml
 	@test -e $(KUBE_VIRT_CR) || \
 	wget -P $(LOCALBIN)/kube-virt https://github.com/kubevirt/kubevirt/releases/download/$(KUBE_VIRT_VERSION)/kubevirt-cr.yaml
-	
+
+.PHONY: kube-virt-cdi
+kube-virt-cdi: $(LOCALBIN)
+	@test -e $(KUBE_VIRT_CDI_OPERATOR) || \
+	wget -P $(LOCALBIN)/kube-virt-cdi https://github.com/kubevirt/containerized-data-importer/releases/download/$(KUBE_VIRT_CDI_VERSION)/cdi-operator.yaml
+	@test -e $(KUBE_VIRT_CDI_CR) || \
+	wget -P $(LOCALBIN)/kube-virt-cdi https://github.com/kubevirt/containerized-data-importer/releases/download/$(KUBE_VIRT_CDI_VERSION)/cdi-cr.yaml
 
 
 ##@ Deployment
@@ -158,7 +166,7 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-create kind-load kube-ovn kube-virt ## Prepare kind cluster for kube-vim installation
+kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi ## Prepare kind cluster for kube-vim installation
 	kubectl delete --ignore-not-found sc standard
 	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
@@ -169,6 +177,8 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt ## Prepare kind cluster f
 	kubectl create -f $(KUBE_VIRT_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CR)
 	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
+	kubectl create -f $(KUBE_VIRT_CDI_OPERATOR)
+	kubectl create -f $(KUBE_VIRT_CDI_CR)
 
 .PHONY: kind-install
 kind-install: kind-prepare ## Install kube-vim into prepared kind cluster

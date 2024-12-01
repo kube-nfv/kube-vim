@@ -46,7 +46,7 @@ func NewGlanceImageManager(cfg *config.GlanceConfig) (*manager, error) {
 	}, nil
 }
 
-func (m *manager) GetImage(id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {

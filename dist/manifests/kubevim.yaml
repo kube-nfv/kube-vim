@@ -54,6 +54,19 @@ rules:
   - "*"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-vim-flavour-manager-role
+  namespace: kube-nfv
+rules:
+- apiGroups:
+  - "cdi.kubevirt.io"
+  resources:
+  - datavolumes
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kube-vim-compute-manager-rolebinding
@@ -62,6 +75,20 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: kube-vim-compute-manager-role
+subjects:
+- kind: ServiceAccount
+  name: kube-vim
+  namespace: kube-nfv
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-vim-flavour-manager-rolebinding
+  namespace: kube-nfv
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-vim-flavour-manager-role
 subjects:
 - kind: ServiceAccount
   name: kube-vim
@@ -77,8 +104,7 @@ data:
     service:
       logLevel: "debug"
     image:
-      local:
-        location: "/mnt/images"
+      http: {}
 ---
 apiVersion: apps/v1
 kind: Deployment

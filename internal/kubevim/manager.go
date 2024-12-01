@@ -9,6 +9,7 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/glance"
+	http_im "github.com/DiMalovanyy/kube-vim/internal/kubevim/image/http"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/local"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network/kubeovn"
@@ -53,7 +54,7 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	mgr := &kubevimManager{
 		logger: logger,
 	}
-	if err := mgr.initImageManager(cfg.Image); err != nil {
+	if err := mgr.initImageManager(k8sConfig, cfg.Image); err != nil {
 		return nil, fmt.Errorf("Failed to configure image manager: %w", err)
 	}
 	if err := mgr.initNetworkManager(k8sConfig); err != nil {
@@ -91,15 +92,23 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	m.logger.Info("Kubevim manager shutdown completed")
 }
 
-func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
+func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig) error {
 	if cfg == nil {
-		return fmt.Errorf("ImageConfig can't be empty")
+		return fmt.Errorf("imageConfig can't be empty")
+	}
+	if cfg.Http != nil {
+		var err error
+		m.imageMgr, err = http_im.NewHttpImageManager(k8sConfig, cfg.Http)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Htpp image manager: %w", err)
+		}
+		return nil
 	}
 	if cfg.Local != nil {
 		var err error
 		m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
 		if err != nil {
-			return fmt.Errorf("Failed to initialize Local image manager: %w", err)
+			return fmt.Errorf("failed to initialize Local image manager: %w", err)
 		}
 		return nil
 	}
@@ -107,11 +116,11 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig) error {
 		var err error
 		m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
 		if err != nil {
-			return fmt.Errorf("Failed to initialize Glance image manager: %w", err)
+			return fmt.Errorf("failed to initialize Glance image manager: %w", err)
 		}
 		return nil
 	}
-	return fmt.Errorf("Can't find propper image manager configuration")
+	return fmt.Errorf("can't find propper image manager configuration")
 }
 
 func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config) error {
