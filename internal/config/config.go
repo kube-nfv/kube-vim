@@ -22,8 +22,11 @@ func init() {
 		podNamespace = KubeNfvDefaultNamespace
 	}
 	viper.SetDefault("k8s.namespace", podNamespace)
+}
+
+func InitDefaultAfterReading() {
     if viper.IsSet("image.http") {
-        viper.SetDefault("image.http.userAgent", KubeNfvName)
+        viper.SetDefault("image.http.initEmpty", true)
     }
 }
 
@@ -61,7 +64,8 @@ type LocalImageConfig struct {
 
 // TODO(dmalovan): add support for the https
 type HttpImageConfig struct {
-    UserAgent string
+    //Hack: Not accessible field to initialize http even if empty container specified in yaml
+    initEmpty bool
 }
 
 type OpenstackIdentityConfig struct {

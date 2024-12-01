@@ -35,6 +35,7 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Can't read kube-vim configuration from path %s. Error: %v", opts.confgPath, err)
 	}
+    config.InitDefaultAfterReading()
 	var config config.Config
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
