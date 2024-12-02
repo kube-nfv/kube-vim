@@ -35,14 +35,14 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Can't read kube-vim configuration from path %s. Error: %v", opts.confgPath, err)
 	}
-    config.InitDefaultAfterReading()
+	config.InitDefaultAfterReading()
 	var config config.Config
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
 	}
 
 	// Initialize the logger
-    // TODO(dmalovan): Add log level configuration based on the config value
+	// TODO(dmalovan): Add log level configuration based on the config value
 	baseLoggerCfg := zap.NewProductionConfig()
 	baseLoggerCfg.DisableStacktrace = true
 	logger, err := baseLoggerCfg.Build()
@@ -51,10 +51,10 @@ func main() {
 	}
 	defer logger.Sync() // Ensure all logs are flushed before the application exits
 
-    cfgStr, err := json.Marshal(config)
-    if err == nil {
-        logger.Info("", zap.String("config", string(cfgStr)))
-    }
+	cfgStr, err := json.Marshal(config)
+	if err == nil {
+		logger.Info("", zap.String("config", string(cfgStr)))
+	}
 
 	mgr, err := kubevim.NewKubeVimManager(&config, logger.Named("Kubevim"))
 	if err != nil {

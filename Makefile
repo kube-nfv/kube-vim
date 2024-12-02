@@ -167,8 +167,8 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 
 .PHONY: kind-prepare
 kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi ## Prepare kind cluster for kube-vim installation
-	kubectl delete --ignore-not-found sc standard
-	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
+	#kubectl delete --ignore-not-found sc standard
+	#kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 	@$(MAKE) kind-untaint-control-plane
 	@echo "Installing kube-ovn to the kind"

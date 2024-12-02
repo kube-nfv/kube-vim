@@ -30,7 +30,10 @@ func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequ
 }
 
 func (s *ViVnfmServer) QueryImage(ctx context.Context, req *nfv.QueryImageRequest) (*nfv.QueryImageResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QueryImage not implemented")
+	res, err := s.ImageMgr.GetImage(ctx, req.GetSoftwareImageId())
+	return &nfv.QueryImageResponse{
+		SoftwareImageInformation: res,
+	}, err
 }
 func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, req *nfv.AllocateComputeRequest) (*nfv.AllocateComputeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AllocateVirtualisedComputeResource not implemented")

@@ -25,9 +25,9 @@ func init() {
 }
 
 func InitDefaultAfterReading() {
-    if viper.IsSet("image.http") {
-        viper.SetDefault("image.http.initEmpty", true)
-    }
+	if viper.IsSet("image.http") {
+		viper.SetDefault("image.http.initEmpty", true)
+	}
 }
 
 type Config struct {
@@ -64,8 +64,9 @@ type LocalImageConfig struct {
 
 // TODO(dmalovan): add support for the https
 type HttpImageConfig struct {
-    //Hack: Not accessible field to initialize http even if empty container specified in yaml
-    initEmpty bool
+	//Hack: Not accessible field to initialize http even if empty container specified in yaml
+	initEmpty bool
+    StorageClass string
 }
 
 type OpenstackIdentityConfig struct {

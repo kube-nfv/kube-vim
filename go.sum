@@ -147,8 +147,6 @@ github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
-github.com/kube-nfv/kube-vim-api v0.0.2 h1:wV0iSLTYeWuSlEL26oHIYmPqawBJjEApkPSSFCUD6TI=
-github.com/kube-nfv/kube-vim-api v0.0.2/go.mod h1:nWWmA+P9BRyf/5fnN9QxvOhK22r4doMyeYK50O8q5KU=
 github.com/kube-nfv/kube-vim-api v0.0.3 h1:fAgdKO9QM5+fW0AWG7QXdyfgrDgXljDpYciq3ooGtEo=
 github.com/kube-nfv/kube-vim-api v0.0.3/go.mod h1:nWWmA+P9BRyf/5fnN9QxvOhK22r4doMyeYK50O8q5KU=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2 h1:03fNpa4ZRm4aRZAaLugSUN92RWdQSeG9UtgjGhuAmNA=
@@ -224,8 +222,6 @@ github.com/onsi/gomega v1.30.0/go.mod h1:9sxs+SwGrKI0+PWe4Fxa9tFQQBG5xSsSbMXOI8P
 github.com/onsi/gomega v1.33.0/go.mod h1:+925n5YtiFsLzzafLUHzVMBpvvRAzrydIBiSIxjX3wY=
 github.com/onsi/gomega v1.33.1 h1:dsYjIxxSR755MDmKVsaFQTE22ChNBcuuTWgkUDSubOk=
 github.com/onsi/gomega v1.33.1/go.mod h1:U4R44UsT+9eLIaYRB2a5qajjtQYn0hauxvRm16AVYg0=
-github.com/openshift/api v0.0.0-20230503133300-8bbcb7ca7183 h1:t/CahSnpqY46sQR01SoS+Jt0jtjgmhgE6lFmRnO4q70=
-github.com/openshift/api v0.0.0-20230503133300-8bbcb7ca7183/go.mod h1:4VWG+W22wrB4HfBL88P40DxLEpSOaiBVxUnfalfJo9k=
 github.com/openshift/custom-resource-status v1.1.2 h1:C3DL44LEbvlbItfd8mT5jWrqPfHnSOQoQf/sypqA6A4=
 github.com/openshift/custom-resource-status v1.1.2/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
@@ -578,8 +574,6 @@ kubevirt.io/api v0.0.0-20240717170135-c6f78788b52d h1:LxwFKSbLVIfVZfe7zNWA+exhjB
 kubevirt.io/api v0.0.0-20240717170135-c6f78788b52d/go.mod h1:e6LkElYZZm8NcP2gKlFVHZS9pgNhIARHIjSBSfeiP1s=
 kubevirt.io/client-go v1.3.0 h1:/HKn4exzwsctEVTwVtEFaeT9D2v4TgWr2SmxITVEZ/4=
 kubevirt.io/client-go v1.3.0/go.mod h1:qmcJZvUjbmggY1pp7irO3zesBJj7wwGIWAdnYEoh3yc=
-kubevirt.io/containerized-data-importer-api v1.57.0-alpha1 h1:IWo12+ei3jltSN5jQN1xjgakfvRSF3G3Rr4GXVOOy2I=
-kubevirt.io/containerized-data-importer-api v1.57.0-alpha1/go.mod h1:Y/8ETgHS1GjO89bl682DPtQOYEU/1ctPFBz6Sjxm4DM=
 kubevirt.io/containerized-data-importer-api v1.61.0 h1:zqgn4/ftAPRK4ljZDZcgRiW25MMS7hLwAkGqRgVsng0=
 kubevirt.io/containerized-data-importer-api v1.61.0/go.mod h1:SDJjLGhbPyayDqAqawcGmVNapBp0KodOQvhKPLVGCQU=
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 h1:QMrd0nKP0BGbnxTqakhDZAUhGKxPiPiN5gSDqKUmGGc=
