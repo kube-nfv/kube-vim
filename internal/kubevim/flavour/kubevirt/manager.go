@@ -17,7 +17,7 @@ import (
 
 const (
 	CreateFlavourRqTimeout         = time.Second * 5
-	KubeVimFlavourIdLabel          = "kubevim.kubenfv.io/flavour-id"
+	KubeVimFlavourIdLabel          = "app.kubevim.kubenfv.io/flavour-id"
 	KubeVirtFlavourMetadataKeyName = "kube-virt"
 )
 

@@ -1,0 +1,4 @@
+package image
+
+func foo() {
+}

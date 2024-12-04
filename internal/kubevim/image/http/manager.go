@@ -60,14 +60,15 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if err != nil {
 		return nil, fmt.Errorf("valid url should be specified as image id for http image manager. id \"%s\" is not valid: %w", imageId.GetValue(), err)
 	}
-	size, err := tryCalculeteContentLength(url)
+	_, err = tryCalculeteContentLength(url)
 	if err != nil {
 		// Failed to calculate content length. So the size will be approximate for downloaded image
 		return nil, fmt.Errorf("failed to calculate size from the HEAD Content-Length header: %w", err)
 	}
 	// Add 10% to the size to make it more flexible
-	adjSize := size + size/10
-	sizeQuantity := resource.NewQuantity(int64(adjSize), resource.BinarySI)
+	// adjSize := size + size/10
+	// sizeQuantity := resource.NewQuantity(int64(adjSize), resource.BinarySI)
+    sizeQuantity, _ := resource.ParseQuantity("64Mi")
 	dv, err := m.cdiClient.CdiV1beta1().DataVolumes(config.KubeNfvDefaultNamespace).Create(ctx, &v1beta1.DataVolume{
 		ObjectMeta: v1.ObjectMeta{
 			Name: getK8sObjectNameFromUrl(url),
@@ -89,7 +90,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 			Storage: &v1beta1.StorageSpec{
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: *sizeQuantity,
+						corev1.ResourceStorage: sizeQuantity,
 					},
 				},
                 AccessModes: []corev1.PersistentVolumeAccessMode{
