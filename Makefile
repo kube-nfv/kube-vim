@@ -56,6 +56,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 build: fmt vet
 	go build -o bin/kubevim cmd/kube-vim/main.go
 
+.PHONY: test
+test: fmt vet
+	go test -v -count=1 ./...
+
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
