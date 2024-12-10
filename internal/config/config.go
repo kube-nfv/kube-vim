@@ -65,8 +65,8 @@ type LocalImageConfig struct {
 // TODO(dmalovan): add support for the https
 type HttpImageConfig struct {
 	//Hack: Not accessible field to initialize http even if empty container specified in yaml
-	initEmpty bool
-    StorageClass string
+	initEmpty    bool
+	StorageClass string
 }
 
 type OpenstackIdentityConfig struct {

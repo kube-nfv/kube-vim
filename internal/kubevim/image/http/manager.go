@@ -2,23 +2,17 @@ package http
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"net/http"
-	"net/url"
-	"path"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
+	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
-
-	cdi "kubevirt.io/client-go/generated/containerized-data-importer/clientset/versioned"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -30,81 +24,65 @@ var (
 // http(s) endpoints. Uploaded image should be able to stored either in pvc or in the
 // kubevirt datavolume.
 type manager struct {
-	cdiClient *cdi.Clientset
+	cdiCtrl *image.CdiController
 }
 
 // initialize new http image manager from the specified configuration
-func NewHttpImageManager(k8sConfig *rest.Config, cfg *config.HttpImageConfig) (*manager, error) {
-	c, err := cdi.NewForConfig(k8sConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kubevirt cdi k8s client: %w", err)
-	}
+func NewHttpImageManager(cdiCtrl *image.CdiController, cfg *config.HttpImageConfig) (*manager, error) {
 	return &manager{
-		cdiClient: c,
+		cdiCtrl: cdiCtrl,
 	}, nil
 }
 
 // get http image and store it in the kubevirt DV (Data Volume) or in the PV claimed by PVC.
-// Note: For http image manager image Identifier should be full url path.
-// TODO(dmalovan): Add ability to getImage that already downloaded.
-//	Add ability to query image by UID like: http://<uid>
-//  Add ability to works with different storage clases (as well as WaitForFirstConsumer mode)
+// Note: For http image manager image Identifier should be full url path if image not exists yet.
+// If image already created it might be identified by either DV name, DV UID or source url.
+// TODO(dmaloval)
+//
+//	Add ability to works with different storage clases (as well as WaitForFirstConsumer mode)
 func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
-	if imageId == nil {
+	if imageId == nil || imageId.GetValue() == "" {
 		return nil, fmt.Errorf("specified image id can't be empty")
 	}
-	url, err := url.Parse(imageId.GetValue())
-	if err == nil && url.Scheme != "http" && url.Scheme != "https" {
-		err = fmt.Errorf("url should has http or https scheme")
+	isSource := false
+	getDvOpts := []image.GetDvOpt{}
+	if strings.HasPrefix(imageId.GetValue(), "http") || strings.HasPrefix(imageId.GetValue(), "https") {
+		getDvOpts = append(getDvOpts, image.FindBySourceUrl(imageId.GetValue()))
+		isSource = true
+	} else if _, err := uuid.Parse(imageId.GetValue()); err != nil {
+		getDvOpts = append(getDvOpts, image.FindByUID(imageId.GetValue()))
+	} else {
+		getDvOpts = append(getDvOpts, image.FindByName(imageId.GetValue()))
 	}
-	if err != nil {
-		return nil, fmt.Errorf("valid url should be specified as image id for http image manager. id \"%s\" is not valid: %w", imageId.GetValue(), err)
+	dv, err := m.cdiCtrl.GetDv(ctx, getDvOpts...)
+	if err == nil {
+		return softwareImageInfoFromDv(dv), nil
 	}
-	_, err = tryCalculeteContentLength(url)
-	if err != nil {
-		// Failed to calculate content length. So the size will be approximate for downloaded image
-		return nil, fmt.Errorf("failed to calculate size from the HEAD Content-Length header: %w", err)
+	if !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("can't get k8s Data Volume specified by the imageId \"%s\": %w", imageId.GetValue(), err)
 	}
-	// Add 10% to the size to make it more flexible
-	// adjSize := size + size/10
-	// sizeQuantity := resource.NewQuantity(int64(adjSize), resource.BinarySI)
-    sizeQuantity, _ := resource.ParseQuantity("64Mi")
-	dv, err := m.cdiClient.CdiV1beta1().DataVolumes(config.KubeNfvDefaultNamespace).Create(ctx, &v1beta1.DataVolume{
-		ObjectMeta: v1.ObjectMeta{
-			Name: getK8sObjectNameFromUrl(url),
-			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
-			},
-            Annotations: map[string]string{
-                // Temporary solution to imidiately bind PVC to the storage class with WaitForFirstConsumer option
-                "cdi.kubevirt.io/storage.bind.immediate.requested": "true",
-            },
+	// Data volume not found and need to be created.
+	if !isSource {
+		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", config.UnsupportedErr)
+	}
+
+	createDvOpts := []image.CreateDvOpt{}
+	contentLength, err := tryCalculeteContentLength(imageId.GetValue())
+	if err == nil {
+		contentLengthEpsilon := float64(contentLength) * 0.2
+		contentLength = contentLength + int64(contentLengthEpsilon)
+		createDvOpts = append(createDvOpts,
+			image.CreateWithSize(resource.NewQuantity(contentLength, resource.BinarySI)))
+	}
+	dv, err = m.cdiCtrl.CreateDv(ctx, &v1beta1.DataVolumeSource{
+		HTTP: &v1beta1.DataVolumeSourceHTTP{
+			URL: imageId.GetValue(),
 		},
-		Spec: v1beta1.DataVolumeSpec{
-			Source: &v1beta1.DataVolumeSource{
-				HTTP: &v1beta1.DataVolumeSourceHTTP{
-					URL: imageId.GetValue(),
-				},
-			},
-            ContentType: "kubevirt",
-			Storage: &v1beta1.StorageSpec{
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: sizeQuantity,
-					},
-				},
-                AccessModes: []corev1.PersistentVolumeAccessMode{
-                    corev1.ReadWriteOnce,
-                },
-			},
-		},
-	}, v1.CreateOptions{})
+	}, createDvOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s data volume for specified image with id \"%s\": %w", imageId.GetValue(), err)
+		return nil, fmt.Errorf("failed to create k8s Data Volume resource: %w", err)
 	}
-	return &nfv.SoftwareImageInformation{
-		SoftwareImageId: &nfv.Identifier{Value: string(dv.GetUID())},
-	}, nil
+	return softwareImageInfoFromDv(dv), nil
 }
 
 func (m *manager) GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
@@ -117,8 +95,8 @@ func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*locatio
 	return config.NotImplementedErr
 }
 
-func tryCalculeteContentLength(url *url.URL) (uint64, error) {
-	resp, err := http.Head(url.String())
+func tryCalculeteContentLength(url string) (int64, error) {
+	resp, err := http.Head(url)
 	if err != nil {
 		return 0, fmt.Errorf("failed to make HEAD request to the \"%s\"", url)
 	}
@@ -130,27 +108,17 @@ func tryCalculeteContentLength(url *url.URL) (uint64, error) {
 	if contentLength == "" {
 		return 0, contentLengthMissingErr
 	}
-	size, err := strconv.ParseUint(contentLength, 10, 64)
+	size, err := strconv.ParseInt(contentLength, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse Content-Length header: %w", err)
 	}
 	return size, nil
 }
 
-func getUniqieNameFromUrl(url string, size uint64) string {
-	hash := sha256.Sum256([]byte(url))
-	return fmt.Sprintf("%x", hash[:size])
-}
-
-func getK8sObjectNameFromUrl(parsedUrl *url.URL) string {
-	fileName := path.Base(parsedUrl.Path)
-	leafName := strings.TrimSuffix(fileName, path.Ext(fileName))
-	leafName = strings.ToLower(leafName)
-	reg := regexp.MustCompile(`[^a-z0-9-]+`)
-	leafName = reg.ReplaceAllString(leafName, "-")
-	leafName = strings.Trim(leafName, "-")
-	if len(leafName) > 253 {
-		leafName = leafName[:253]
+func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformation {
+	return &nfv.SoftwareImageInformation{
+		SoftwareImageId: &nfv.Identifier{
+			Value: string(dv.GetUID()),
+		},
 	}
-	return leafName
 }

@@ -7,8 +7,8 @@ import (
 )
 
 const (
-    K8sSourceLabel    = "app.kubevim.kubenfv.io/source"
-    K8sSourceUrlLabel = "app.kubevim.kubenfv.io/source-url"
+	K8sSourceLabel    = "app.kubevim.kubenfv.io/source"
+	K8sSourceUrlLabel = "app.kubevim.kubenfv.io/source-url"
 )
 
 type Manager interface {

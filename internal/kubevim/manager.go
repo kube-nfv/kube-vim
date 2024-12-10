@@ -96,9 +96,13 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 	if cfg == nil {
 		return fmt.Errorf("imageConfig can't be empty")
 	}
+	cdiCtrl, err := image.NewCdiController(k8sConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initialize kubevirt cdi controller: %w", err)
+	}
 	if cfg.Http != nil {
 		var err error
-		m.imageMgr, err = http_im.NewHttpImageManager(k8sConfig, cfg.Http)
+		m.imageMgr, err = http_im.NewHttpImageManager(cdiCtrl, cfg.Http)
 		if err != nil {
 			return fmt.Errorf("failed to initialize Htpp image manager: %w", err)
 		}

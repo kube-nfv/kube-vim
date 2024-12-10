@@ -1,16 +1,26 @@
 package image
 
 import (
+	"context"
 	"fmt"
+	"net/url"
+	"path"
+	"regexp"
+	"strings"
+
+	"github.com/DiMalovanyy/kube-vim/internal/config"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	cdi "kubevirt.io/client-go/generated/containerized-data-importer/clientset/versioned"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 var (
-    ApplyOptionErr     = fmt.Errorf("failed to apply option")
-    DVAlreadyExistsErr = fmt.Errorf("Data Volume already exists")
-    DVNotFoundErr      = fmt.Errorf("Data Volume not found")
+	ApplyOptionErr     = fmt.Errorf("failed to apply option")
+	DVAlreadyExistsErr = fmt.Errorf("Data Volume already exists")
+	DVNotFoundErr      = fmt.Errorf("Data Volume not found")
 )
 
 // kubevirt CDI (Contrinerized Data Imported) controller manage the lifecycle of the DVs(Data Volume)
@@ -18,47 +28,192 @@ var (
 // efficient since the calls to the kube-api need to be made on each call.
 type CdiController struct {
 	cdiClient *cdi.Clientset
+	namespace string
 }
 
-// Returns the DV(Data Volume) if it exists
-func (c *CdiController) GetDv(opts ...option) (*v1beta1.DataVolume, error) {
-    // Apply each option
-    cfg := getDefaultDvOpts()
-    for _, opt := range opts {
-        opt.apply(&cfg)
-    }
-    if cfg.Name != "" {
-        return c.cdiClient.CdiV1beta1().DataVolumes(cfg.Namespace).Get(cfg.Ctx, cfg.Name, v1.GetOptions{})
-    } else if cfg.UID != "" {
-        dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(cfg.Namespace).List(cfg.Ctx, v1.ListOptions{})
-        if err != nil {
-            return nil, err
-        }
-        for idx, _ := range dvList.Items {
-            dvRef := &dvList.Items[idx]
-            if string(dvRef.GetUID()) == cfg.UID {
-                return dvRef, nil
-            }
-        }
-        return nil, DVNotFoundErr
-    } else if cfg.SourceUrl != "" {
-        dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(cfg.Namespace).List(cfg.Ctx, v1.ListOptions{
-            LabelSelector: fmt.Sprintf("%s=%s", K8sSourceUrlLabel, cfg.SourceUrl),
-        })
-        if err != nil {
-            return nil, err
-        }
-        if len(dvList.Items) > 1 {
-            return nil, fmt.Errorf("more that one Data Volume specified by source URL \"%s\"", cfg.SourceUrl)
-        }
-        return &dvList.Items[0], nil
-    }
-    return nil, fmt.Errorf("Either UID or Source should be specified to find Data Volume")
+// Creates new controller for the CDI resources like DV within default KubeNfv namespace.
+func NewCdiController(k8sConfig *rest.Config) (*CdiController, error) {
+	c, err := cdi.NewForConfig(k8sConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubevirt cdi k8s client: %w", err)
+	}
+	return &CdiController{
+		cdiClient: c,
+		namespace: config.KubeNfvDefaultNamespace,
+	}, nil
+}
+
+// Creates new controller for the CDI resources like DV within the specified namespace.
+func NewNamespacedCdiController(k8sConfig *rest.Config, namespace string) (*CdiController, error) {
+	c, err := cdi.NewForConfig(k8sConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubevirt cdi k8s client: %w", err)
+	}
+	return &CdiController{
+		cdiClient: c,
+		namespace: namespace,
+	}, nil
+}
+
+type GetDvOpt func(*getDvOpts)
+type getDvOpts struct {
+	Name      string
+	UID       string
+	SourceUrl string
+}
+
+// Option to specify Name for k8s resource. The best option to make Data Volume queries since it won't do bulk Get.
+func FindByName(name string) GetDvOpt {
+	return func(gdo *getDvOpts) {
+		gdo.Name = name
+	}
+}
+
+// Option to specify UID. If WithName specified togather it will be ignored.
+func FindByUID(uid string) GetDvOpt {
+	return func(gdo *getDvOpts) {
+		gdo.UID = uid
+	}
+}
+
+// Option to specify Source. If either WithName or WithUID specified it will be ignored
+func FindBySourceUrl(sourceUrl string) GetDvOpt {
+	return func(gdo *getDvOpts) {
+		gdo.SourceUrl = sourceUrl
+	}
+}
+
+// Returns the DV(Data Volume) if it exists. Data Volume should be identified by name, UID or created source URL.
+func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOpt) (*v1beta1.DataVolume, error) {
+	// Apply each option
+	cfg := getDvOpts{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Name != "" {
+		return c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+	} else if cfg.UID != "" {
+		dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).List(ctx, v1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		for idx, _ := range dvList.Items {
+			dvRef := &dvList.Items[idx]
+			if string(dvRef.GetUID()) == cfg.UID {
+				return dvRef, nil
+			}
+		}
+		return nil, DVNotFoundErr
+	} else if cfg.SourceUrl != "" {
+		dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).List(ctx, v1.ListOptions{
+			LabelSelector: fmt.Sprintf("%s=%s", K8sSourceUrlLabel, cfg.SourceUrl),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(dvList.Items) > 1 {
+			return nil, fmt.Errorf("more that one Data Volume specified by source URL \"%s\"", cfg.SourceUrl)
+		}
+		return &dvList.Items[0], nil
+	}
+	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume")
+}
+
+type CreateDvOpt func(*createDvOpts)
+type createDvOpts struct {
+	Name                string
+	Size                *resource.Quantity
+	StorageClassName    string
+	PreferredAccessMode corev1.PersistentVolumeAccessMode
+}
+
+func defaultCreateDvOpts() createDvOpts {
+	return createDvOpts{
+		Name:                "",
+		Size:                resource.NewQuantity(50*1024*1024 /*50Mi*/, resource.BinarySI),
+		StorageClassName:    "default",
+		PreferredAccessMode: corev1.ReadOnlyMany,
+	}
+}
+
+// specify the name for a created Data Volume. If not specified name will be automatically
+// calculated from the source
+func CreateWithName(name string) CreateDvOpt {
+	return func(cdo *createDvOpts) {
+		cdo.Name = name
+	}
+}
+
+// spcify size of the Data Volume to be created. If not specifed DV will be created
+// with default size 50Mi
+func CreateWithSize(size *resource.Quantity) CreateDvOpt {
+	return func(cdo *createDvOpts) {
+		cdo.Size = size
+	}
+}
+
+// specify the k8s storage class name to be used while creating Data Volume. If not specified
+// the DV will be create with the "default" storage class.
+func CreateWithStorageClass(name string) CreateDvOpt {
+	return func(cdo *createDvOpts) {
+		cdo.StorageClassName = name
+	}
+}
+
+// specify the Data Volume PVC accessMode. If not specified RX is used. If specified
+// storage class not support RX then supported access mode will be used.
+func CreateWithPreferredPVAccessMode(accessMode corev1.PersistentVolumeAccessMode) CreateDvOpt {
+	return func(cdo *createDvOpts) {
+		cdo.PreferredAccessMode = accessMode
+	}
 }
 
 // Creates the DV(Data Volume) with provided source spec.
-func CreateDv() {
+func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeSource, opts ...CreateDvOpt) (*v1beta1.DataVolume, error) {
+	cfg := defaultCreateDvOpts()
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Name == "" {
+		var err error
+		cfg.Name, err = formatDVNameFromSource(source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format Data Voule name from source: %w", err)
+		}
+	}
+	var storageClassName *string = nil
+	if cfg.StorageClassName != "" && cfg.StorageClassName != "default" {
+		storageClassName = &cfg.StorageClassName
+	}
 
+	// TODO: add storage class verification
+	return c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).Create(ctx, &v1beta1.DataVolume{
+		ObjectMeta: v1.ObjectMeta{
+			Name: cfg.Name,
+			Labels: map[string]string{
+				config.K8sManagedByLabel: config.KubeNfvName,
+			},
+			Annotations: map[string]string{
+				// Temporary solution to imidiately bind PVC to the storage class with WaitForFirstConsumer option
+				"cdi.kubevirt.io/storage.bind.immediate.requested": "true",
+			},
+		},
+		Spec: v1beta1.DataVolumeSpec{
+			Source:      source,
+			ContentType: "kubevirt",
+			Storage: &v1beta1.StorageSpec{
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: *cfg.Size,
+					},
+				},
+				AccessModes: []corev1.PersistentVolumeAccessMode{
+					cfg.PreferredAccessMode,
+				},
+				StorageClassName: storageClassName,
+			},
+		},
+	}, v1.CreateOptions{})
 }
 
 // DeleteDV(Data Volume) specified by id or name.
@@ -68,4 +223,33 @@ func DeleteDv() {
 
 func GetDvs() {
 
+}
+
+func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
+	if source == nil {
+		return "", fmt.Errorf("source can't be nil")
+	}
+	switch {
+	case source.HTTP != nil:
+		return formatDvNameFromHttpSource(source.HTTP)
+	default:
+		return "", fmt.Errorf("can't format name from the specified source: %w", config.UnsupportedErr)
+	}
+}
+
+func formatDvNameFromHttpSource(httpSource *v1beta1.DataVolumeSourceHTTP) (string, error) {
+	url, err := url.Parse(httpSource.URL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse url \"%s\": %w", httpSource.URL, err)
+	}
+	fileName := path.Base(url.Path)
+	leafName := strings.TrimSuffix(fileName, path.Ext(fileName))
+	leafName = strings.ToLower(leafName)
+	reg := regexp.MustCompile(`[^a-z0-9-]+`)
+	leafName = reg.ReplaceAllString(leafName, "-")
+	leafName = strings.Trim(leafName, "-")
+	if len(leafName) > 253 {
+		leafName = leafName[:253]
+	}
+	return leafName, nil
 }
