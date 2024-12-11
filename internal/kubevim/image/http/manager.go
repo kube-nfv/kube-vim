@@ -120,5 +120,7 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 		SoftwareImageId: &nfv.Identifier{
 			Value: string(dv.GetUID()),
 		},
+        Name: dv.Name,
+		Size: dv.Spec.Storage.Resources.Requests.Memory(),
 	}
 }
