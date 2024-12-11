@@ -11,6 +11,12 @@ const (
 	K8sSourceUrlLabel = "app.kubevim.kubenfv.io/source-url"
 )
 
+type SourceType string
+const (
+    HTTP  SourceType = "http"
+    HTTPS            = "https"
+)
+
 type Manager interface {
 	GetImage(context.Context, *nfv.Identifier) (*nfv.SoftwareImageInformation, error)
 	GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error)

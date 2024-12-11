@@ -105,18 +105,27 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOpt) (*v1beta1.Da
 		}
 		return nil, DVNotFoundErr
 	} else if cfg.SourceUrl != "" {
-		dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).List(ctx, v1.ListOptions{
-			LabelSelector: fmt.Sprintf("%s=%s", K8sSourceUrlLabel, cfg.SourceUrl),
-		})
+		dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).List(ctx, v1.ListOptions{})
 		if err != nil {
 			return nil, err
 		}
-		if len(dvList.Items) > 1 {
-			return nil, fmt.Errorf("more that one Data Volume specified by source URL \"%s\"", cfg.SourceUrl)
-		}
-		return &dvList.Items[0], nil
+        for idx, _ := range dvList.Items {
+			dvRef := &dvList.Items[idx]
+            sourceType, ok := dvRef.Labels[K8sSourceLabel]
+            if !ok {
+                continue
+            }
+            switch SourceType(sourceType) {
+            case HTTP:
+                fallthrough
+            case HTTPS:
+                if dvRef.Spec.Source.HTTP != nil && dvRef.Spec.Source.HTTP.URL == cfg.SourceUrl {
+                    return dvRef, nil
+                }
+            }
+        }
 	}
-	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume")
+    return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", config.NotFoundErr)
 }
 
 type CreateDvOpt func(*createDvOpts)
@@ -185,6 +194,10 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 	if cfg.StorageClassName != "" && cfg.StorageClassName != "default" {
 		storageClassName = &cfg.StorageClassName
 	}
+    sourceType, err := formatSourceNameFromSource(source)
+    if err != nil {
+        return nil, fmt.Errorf("failed to identify source type from Data Volume Source: %w", err)
+    }
 
 	// TODO: add storage class verification
 	return c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).Create(ctx, &v1beta1.DataVolume{
@@ -192,6 +205,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 			Name: cfg.Name,
 			Labels: map[string]string{
 				config.K8sManagedByLabel: config.KubeNfvName,
+                K8sSourceLabel: string(sourceType),
 			},
 			Annotations: map[string]string{
 				// Temporary solution to imidiately bind PVC to the storage class with WaitForFirstConsumer option
@@ -223,6 +237,19 @@ func DeleteDv() {
 
 func GetDvs() {
 
+}
+
+func formatSourceNameFromSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
+	if source == nil {
+		return "", fmt.Errorf("source can't be nil")
+	}
+    if source.HTTP != nil {
+        if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
+            return HTTPS, nil
+        }
+        return HTTP, nil
+    }
+    return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
 }
 
 func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {

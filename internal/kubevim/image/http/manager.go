@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,7 +12,8 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"k8s.io/apimachinery/pkg/api/errors"
+	v1 "k8s.io/api/core/v1"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
@@ -49,7 +51,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if strings.HasPrefix(imageId.GetValue(), "http") || strings.HasPrefix(imageId.GetValue(), "https") {
 		getDvOpts = append(getDvOpts, image.FindBySourceUrl(imageId.GetValue()))
 		isSource = true
-	} else if _, err := uuid.Parse(imageId.GetValue()); err != nil {
+	} else if _, err := uuid.Parse(imageId.GetValue()); err == nil {
 		getDvOpts = append(getDvOpts, image.FindByUID(imageId.GetValue()))
 	} else {
 		getDvOpts = append(getDvOpts, image.FindByName(imageId.GetValue()))
@@ -58,7 +60,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if err == nil {
 		return softwareImageInfoFromDv(dv), nil
 	}
-	if !errors.IsNotFound(err) {
+    if !k8s_errors.IsNotFound(err) && !errors.Is(err, config.NotFoundErr) {
 		return nil, fmt.Errorf("can't get k8s Data Volume specified by the imageId \"%s\": %w", imageId.GetValue(), err)
 	}
 	// Data volume not found and need to be created.
@@ -66,7 +68,11 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", config.UnsupportedErr)
 	}
 
-	createDvOpts := []image.CreateDvOpt{}
+	createDvOpts := []image.CreateDvOpt{
+        // temporary solution while storage class not implemented. kind cluster for testing, standard storage class
+        // supports only RWO
+        image.CreateWithPreferredPVAccessMode(v1.ReadWriteOnce),
+    }
 	contentLength, err := tryCalculeteContentLength(imageId.GetValue())
 	if err == nil {
 		contentLengthEpsilon := float64(contentLength) * 0.2
