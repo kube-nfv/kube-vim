@@ -65,13 +65,13 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if !isSource {
 		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", config.UnsupportedErr)
 	}
-	vis, err = m.cdiCtrl.CreateVirtualImportSource(ctx, &v1beta1.ImportSourceType{
+	vis, err = m.cdiCtrl.CreateVolumeImportSource(ctx, &v1beta1.ImportSourceType{
 		HTTP: &v1beta1.DataVolumeSourceHTTP{
 			URL: imageId.GetValue(),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s Data Volume resource: %w", err)
+		return nil, fmt.Errorf("failed to create k8s Vir resource: %w", err)
 	}
 	return softwareImageInfoFromVolumeImportSource(vis), nil
 }

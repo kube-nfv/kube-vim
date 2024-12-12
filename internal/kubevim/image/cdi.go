@@ -167,7 +167,7 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 			}
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Volume Import Source: %w", config.NotFoundErr)
 }
 
 type CreateDvOpt func(*createDvOpts)
@@ -273,7 +273,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 }
 
 // Create Virtual Import Source from spec.
-func (c CdiController) CreateVirtualImportSource(ctx context.Context, source *v1beta1.ImportSourceType) (*v1beta1.VolumeImportSource, error) {
+func (c CdiController) CreateVolumeImportSource(ctx context.Context, source *v1beta1.ImportSourceType) (*v1beta1.VolumeImportSource, error) {
 	name, err := formatVisNameFromSource(source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format Virtual Import Source name from source: %w", err)

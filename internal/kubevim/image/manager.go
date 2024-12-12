@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	K8sSourceLabel    = "app.kubevim.kubenfv.io/image/source"
-	K8sSourceUrlLabel = "app.kubevim.kubenfv.io/image/source-url"
+	K8sSourceLabel    = "app.kubevim.kubenfv.io/image-source"
+    K8sSourceUrlLabel = "app.kubevim.kubenfv.io/image-source-url"
 )
 
 type SourceType string
