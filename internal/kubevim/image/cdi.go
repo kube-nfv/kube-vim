@@ -55,38 +55,38 @@ func NewNamespacedCdiController(k8sConfig *rest.Config, namespace string) (*CdiC
 	}, nil
 }
 
-type GetDvOpt func(*getDvOpts)
-type getDvOpts struct {
+type GetDvOrVisOpt func(*getDvOrVisOpts)
+type getDvOrVisOpts struct {
 	Name      string
 	UID       string
 	SourceUrl string
 }
 
 // Option to specify Name for k8s resource. The best option to make Data Volume queries since it won't do bulk Get.
-func FindByName(name string) GetDvOpt {
-	return func(gdo *getDvOpts) {
+func FindByName(name string) GetDvOrVisOpt {
+	return func(gdo *getDvOrVisOpts) {
 		gdo.Name = name
 	}
 }
 
 // Option to specify UID. If WithName specified togather it will be ignored.
-func FindByUID(uid string) GetDvOpt {
-	return func(gdo *getDvOpts) {
+func FindByUID(uid string) GetDvOrVisOpt {
+	return func(gdo *getDvOrVisOpts) {
 		gdo.UID = uid
 	}
 }
 
 // Option to specify Source. If either WithName or WithUID specified it will be ignored
-func FindBySourceUrl(sourceUrl string) GetDvOpt {
-	return func(gdo *getDvOpts) {
+func FindBySourceUrl(sourceUrl string) GetDvOrVisOpt {
+	return func(gdo *getDvOrVisOpts) {
 		gdo.SourceUrl = sourceUrl
 	}
 }
 
 // Returns the DV(Data Volume) if it exists. Data Volume should be identified by name, UID or created source URL.
-func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOpt) (*v1beta1.DataVolume, error) {
+func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1beta1.DataVolume, error) {
 	// Apply each option
-	cfg := getDvOpts{}
+	cfg := getDvOrVisOpts{}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -103,29 +103,71 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOpt) (*v1beta1.Da
 				return dvRef, nil
 			}
 		}
-		return nil, DVNotFoundErr
 	} else if cfg.SourceUrl != "" {
 		dvList, err := c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).List(ctx, v1.ListOptions{})
 		if err != nil {
 			return nil, err
 		}
-        for idx, _ := range dvList.Items {
+		for idx, _ := range dvList.Items {
 			dvRef := &dvList.Items[idx]
-            sourceType, ok := dvRef.Labels[K8sSourceLabel]
-            if !ok {
-                continue
-            }
-            switch SourceType(sourceType) {
-            case HTTP:
-                fallthrough
-            case HTTPS:
-                if dvRef.Spec.Source.HTTP != nil && dvRef.Spec.Source.HTTP.URL == cfg.SourceUrl {
-                    return dvRef, nil
-                }
-            }
-        }
+			sourceType, ok := dvRef.Labels[K8sSourceLabel]
+			if !ok {
+				continue
+			}
+			switch SourceType(sourceType) {
+			case HTTP:
+				fallthrough
+			case HTTPS:
+				if dvRef.Spec.Source.HTTP != nil && dvRef.Spec.Source.HTTP.URL == cfg.SourceUrl {
+					return dvRef, nil
+				}
+			}
+		}
 	}
-    return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", config.NotFoundErr)
+	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", config.NotFoundErr)
+}
+
+func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvOrVisOpt) (*v1beta1.VolumeImportSource, error) {
+	// Apply each option
+	cfg := getDvOrVisOpts{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Name != "" {
+		return c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+	} else if cfg.UID != "" {
+		visList, err := c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).List(ctx, v1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		for idx, _ := range visList.Items {
+			visRef := &visList.Items[idx]
+			if string(visRef.GetUID()) == cfg.UID {
+				return visRef, nil
+			}
+		}
+	} else if cfg.SourceUrl != "" {
+		visList, err := c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).List(ctx, v1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		for idx, _ := range visList.Items {
+			visRef := &visList.Items[idx]
+			sourceType, ok := visRef.Labels[K8sSourceLabel]
+			if !ok {
+				continue
+			}
+			switch SourceType(sourceType) {
+			case HTTP:
+				fallthrough
+			case HTTPS:
+				if visRef.Spec.Source.HTTP != nil && visRef.Spec.Source.HTTP.URL == cfg.SourceUrl {
+					return visRef, nil
+				}
+			}
+		}
+	}
+	return nil, nil
 }
 
 type CreateDvOpt func(*createDvOpts)
@@ -194,10 +236,10 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 	if cfg.StorageClassName != "" && cfg.StorageClassName != "default" {
 		storageClassName = &cfg.StorageClassName
 	}
-    sourceType, err := formatSourceNameFromSource(source)
-    if err != nil {
-        return nil, fmt.Errorf("failed to identify source type from Data Volume Source: %w", err)
-    }
+	sourceType, err := formatSourceNameFromDvSource(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to identify source type from Data Volume Source: %w", err)
+	}
 
 	// TODO: add storage class verification
 	return c.cdiClient.CdiV1beta1().DataVolumes(c.namespace).Create(ctx, &v1beta1.DataVolume{
@@ -205,7 +247,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 			Name: cfg.Name,
 			Labels: map[string]string{
 				config.K8sManagedByLabel: config.KubeNfvName,
-                K8sSourceLabel: string(sourceType),
+				K8sSourceLabel:           string(sourceType),
 			},
 			Annotations: map[string]string{
 				// Temporary solution to imidiately bind PVC to the storage class with WaitForFirstConsumer option
@@ -230,6 +272,30 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 	}, v1.CreateOptions{})
 }
 
+// Create Virtual Import Source from spec.
+func (c CdiController) CreateVirtualImportSource(ctx context.Context, source *v1beta1.ImportSourceType) (*v1beta1.VolumeImportSource, error) {
+	name, err := formatVisNameFromSource(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format Virtual Import Source name from source: %w", err)
+	}
+	sourceType, err := formatSourceNameFromVisSource(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to identify source type from Virtual Import Source: %w", err)
+	}
+	return c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).Create(ctx, &v1beta1.VolumeImportSource{
+		ObjectMeta: v1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				config.K8sManagedByLabel: config.KubeNfvName,
+				K8sSourceLabel:           string(sourceType),
+			},
+		},
+		Spec: v1beta1.VolumeImportSourceSpec{
+			Source: source,
+		},
+	}, v1.CreateOptions{})
+}
+
 // DeleteDV(Data Volume) specified by id or name.
 func DeleteDv() {
 
@@ -239,20 +305,45 @@ func GetDvs() {
 
 }
 
-func formatSourceNameFromSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
+func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
 	if source == nil {
 		return "", fmt.Errorf("source can't be nil")
 	}
-    if source.HTTP != nil {
-        if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
-            return HTTPS, nil
-        }
-        return HTTP, nil
-    }
-    return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
+	if source.HTTP != nil {
+		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
+			return HTTPS, nil
+		}
+		return HTTP, nil
+	}
+	return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
+}
+
+func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (SourceType, error) {
+	if source == nil {
+		return "", fmt.Errorf("source can't be nil")
+	}
+	if source.HTTP != nil {
+		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
+			return HTTPS, nil
+		}
+		return HTTP, nil
+	}
+	return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
 }
 
 func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
+	if source == nil {
+		return "", fmt.Errorf("source can't be nil")
+	}
+	switch {
+	case source.HTTP != nil:
+		return formatDvNameFromHttpSource(source.HTTP)
+	default:
+		return "", fmt.Errorf("can't format name from the specified source: %w", config.UnsupportedErr)
+	}
+}
+
+func formatVisNameFromSource(source *v1beta1.ImportSourceType) (string, error) {
 	if source == nil {
 		return "", fmt.Errorf("source can't be nil")
 	}
