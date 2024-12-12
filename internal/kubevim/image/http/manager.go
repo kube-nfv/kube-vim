@@ -101,6 +101,8 @@ func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*locatio
 	return config.NotImplementedErr
 }
 
+// TODO: HTTP HEAD returns actual image size, while PVC need to be created with virtual.
+// Add qemu-img size check
 func tryCalculeteContentLength(url string) (int64, error) {
 	resp, err := http.Head(url)
 	if err != nil {

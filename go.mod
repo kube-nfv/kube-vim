@@ -7,7 +7,7 @@ replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f9
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud v1.14.0
-	github.com/kube-nfv/kube-vim-api v0.0.3-alpha.1
+	github.com/kube-nfv/kube-vim-api v0.0.3-alpha.2
 	github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
