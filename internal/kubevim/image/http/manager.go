@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -56,7 +57,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	}
 	vis, err := m.cdiCtrl.GetVolumeImportSource(ctx, getDvOpts...)
 	if err == nil {
-		return softwareImageInfoFromVolumeImportSource(vis), nil
+		return softwareImageInfoFromVolumeImportSource(vis)
 	}
 	if !k8s_errors.IsNotFound(err) && !errors.Is(err, config.NotFoundErr) {
 		return nil, fmt.Errorf("can't get k8s Data Volume specified by the imageId \"%s\": %w", imageId.GetValue(), err)
@@ -73,7 +74,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if err != nil {
 		return nil, fmt.Errorf("failed to create k8s Vir resource: %w", err)
 	}
-	return softwareImageInfoFromVolumeImportSource(vis), nil
+	return softwareImageInfoFromVolumeImportSource(vis)
 }
 
 func (m *manager) GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
@@ -88,6 +89,7 @@ func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*locatio
 
 // TODO: HTTP HEAD returns actual image size, while PVC need to be created with virtual.
 // Add qemu-img size check
+// Also some http enpoints not supports http HEAD (ex. S3)
 func tryCalculeteContentLength(url string) (int64, error) {
 	resp, err := http.Head(url)
 	if err != nil {
@@ -118,11 +120,33 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 	}
 }
 
-func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) *nfv.SoftwareImageInformation {
+func getHttpSourceUrlFromVis(vis *v1beta1.VolumeImportSource) (src string, err error) {
+    if httpSource := vis.Spec.Source.HTTP; httpSource == nil {
+        err = fmt.Errorf("Volume Import Source missed http section")
+    } else {
+        src = httpSource.URL
+    }
+    return
+}
+
+// TODO(dmalovan): Add metadata labels with sourceType and source as well info is image already downloaded or not.
+func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*nfv.SoftwareImageInformation, error) {
+    meta := &nfv.Metadata{
+        Fields: map[string]string{},
+    }
+    meta.Fields[image.K8sSourceLabel] = string(image.HTTP)
+    srcUrl, err := getHttpSourceUrlFromVis(vis)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get Http source url from Volume Import Source: %w", err)
+    }
+    meta.Fields[image.K8sSourceUrlLabel] = srcUrl
+
 	return &nfv.SoftwareImageInformation{
 		SoftwareImageId: &nfv.Identifier{
 			Value: string(vis.GetUID()),
 		},
 		Name: vis.Name,
-	}
+        Size: resource.NewQuantity(0, resource.BinarySI),
+        Metadata: meta,
+	}, nil
 }

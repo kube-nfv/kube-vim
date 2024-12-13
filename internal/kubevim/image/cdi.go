@@ -110,11 +110,15 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 		}
 		for idx, _ := range dvList.Items {
 			dvRef := &dvList.Items[idx]
-			sourceType, ok := dvRef.Labels[K8sSourceLabel]
+			sourceTypeStr, ok := dvRef.Labels[K8sSourceLabel]
 			if !ok {
 				continue
 			}
-			switch SourceType(sourceType) {
+            sourceType, err := SourceTypeFromString(sourceTypeStr)
+            if err != nil {
+                continue
+            }
+			switch sourceType {
 			case HTTP:
 				fallthrough
 			case HTTPS:
@@ -153,11 +157,15 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 		}
 		for idx, _ := range visList.Items {
 			visRef := &visList.Items[idx]
-			sourceType, ok := visRef.Labels[K8sSourceLabel]
+			sourceTypeStr, ok := visRef.Labels[K8sSourceLabel]
 			if !ok {
 				continue
 			}
-			switch SourceType(sourceType) {
+            sourceType, err := SourceTypeFromString(sourceTypeStr)
+            if err != nil {
+                continue
+            }
+			switch sourceType {
 			case HTTP:
 				fallthrough
 			case HTTPS:
@@ -305,10 +313,7 @@ func GetDvs() {
 
 }
 
-func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
-	if source == nil {
-		return "", fmt.Errorf("source can't be nil")
-	}
+func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil
@@ -318,10 +323,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (SourceType,
 	return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
 }
 
-func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (SourceType, error) {
-	if source == nil {
-		return "", fmt.Errorf("source can't be nil")
-	}
+func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (sourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil
@@ -332,9 +334,6 @@ func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (SourceType
 }
 
 func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
-	if source == nil {
-		return "", fmt.Errorf("source can't be nil")
-	}
 	switch {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
@@ -344,9 +343,6 @@ func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
 }
 
 func formatVisNameFromSource(source *v1beta1.ImportSourceType) (string, error) {
-	if source == nil {
-		return "", fmt.Errorf("source can't be nil")
-	}
 	switch {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
