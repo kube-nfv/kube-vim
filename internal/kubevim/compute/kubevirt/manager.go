@@ -10,8 +10,14 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	kubevirt "kubevirt.io/client-go/generated/kubevirt/clientset/versioned"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 // kubevirt manager for allocation and management of the compute resources.
@@ -74,6 +80,51 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	if req.VcImageId == nil || req.VcImageId.GetValue() == "" {
 		return nil, fmt.Errorf("vcImageId can't be empty")
 	}
-
+    _, err = m.imageManager.GetImage(ctx, req.GetVcImageId())
+    if err != nil {
+        return nil, fmt.Errorf("failed to get image with id \"%s\": %w", req.GetVcImageId(), err)
+    }
 	return nil, nil
 }
+
+
+func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation) (*kubevirtv1.DataVolumeTemplateSpec, error) {
+    if imageInfo == nil {
+        return nil, fmt.Errorf("nfv software image info can't be empty")
+    }
+    if imageInfo.Name == "" {
+        return nil, fmt.Errorf("nfv software image info name can't be empty")
+    }
+    if imageInfo.Size == nil || imageInfo.GetSize().Equal(*resource.NewQuantity(0, resource.BinarySI)) {
+        return nil, fmt.Errorf("nfv software image size can't be 0")
+    }
+
+    return &kubevirtv1.DataVolumeTemplateSpec{
+        ObjectMeta: v1.ObjectMeta{
+            Name: imageInfo.Name + "-dv",
+            Labels: map[string]string{
+                config.K8sManagedByLabel: config.KubeNfvName,
+            },
+        },
+        Spec: v1beta1.DataVolumeSpec{
+            PVC: &corev1.PersistentVolumeClaimSpec{
+                DataSourceRef: &corev1.TypedObjectReference{
+                    APIGroup: &v1beta1.CDIGroupVersionKind.Group,
+                    Kind: v1beta1.VolumeImportSourceRef,
+                    Name: imageInfo.Name,
+                },
+                AccessModes: []corev1.PersistentVolumeAccessMode{
+                    // TODO: Temporary solution to make only readWriteOnce data volumes.
+                    // Rewrite this with identifying accessmode from the storage class
+                    corev1.ReadWriteOnce,
+                },
+                Resources: corev1.VolumeResourceRequirements{
+                    Requests: corev1.ResourceList{
+                        corev1.ResourceStorage: *imageInfo.GetSize(),
+                    },
+                },
+            },
+        },
+    }, nil
+}
+
