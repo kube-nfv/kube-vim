@@ -23,7 +23,7 @@ const (
 
 type KubeVirtFlavourMetadata struct {
 	VirtualMachineInstanceTypeName string
-	VirtualMachinePreferencesName  string
+	VirtualMachinePreferenceName  string
 }
 
 type manager struct {
@@ -106,7 +106,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 	var instPref *v1beta1.VirtualMachinePreference
 	if err != nil && instPrefList != nil && len(instPrefList.Items) == 1 {
 		instPref = &instPrefList.Items[0]
-		kubeVirtFlavourMeta.VirtualMachinePreferencesName = instPref.Name
+		kubeVirtFlavourMeta.VirtualMachinePreferenceName = instPref.Name
 	}
 	nfvFlavour, err := nfvFlavourFromKubeVirtInstanceTypePreferences(id.GetValue(), instType, instPref)
 	if err != nil {
