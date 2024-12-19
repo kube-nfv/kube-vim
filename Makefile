@@ -101,6 +101,7 @@ KUBE_OVN_VERSION ?= v1.13.0
 KUBE_OVN_RELEASE ?= 1.13
 KUBE_VIRT_VERSION ?= v1.4.0
 KUBE_VIRT_CDI_VERSION ?=v1.61.0
+MULTUS_CNI_VERSION ?= v4.1.4
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
@@ -136,6 +137,8 @@ kube-virt-cdi: $(LOCALBIN)
 	@test -e $(KUBE_VIRT_CDI_CR) || \
 	wget -P $(LOCALBIN)/kube-virt-cdi https://github.com/kubevirt/containerized-data-importer/releases/download/$(KUBE_VIRT_CDI_VERSION)/cdi-cr.yaml
 
+.PHONY: multus-cni
+multus-cni: $(LOCALBIN)
 
 ##@ Deployment
 

@@ -118,3 +118,24 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 	}
 	return sub, nil
 }
+
+func formatSubnetName(networkName string, subnetName string) string {
+    return fmt.Sprintf("%s-subnet-%s", networkName, subnetName)
+}
+
+func formatNetAttachName(subnetName string) string {
+    return subnetName + "-netattach"
+}
+
+func formatNetAttachConfig(netAttachName string, namespace string) string {
+    return fmt.Sprintf(`{
+"cniVersion": "0.3.0",
+"type": "kube-ovn",
+"server_socket": "/run/openvswitch/kube-ovn-daemon.sock",
+"provider": "%s"
+}`, formatNetAttachKubeOvnProvider(netAttachName, namespace))
+}
+
+func formatNetAttachKubeOvnProvider(netAttachName, namespace string) string {
+    return fmt.Sprintf("%s.%s.ovn", netAttachName, namespace)
+}

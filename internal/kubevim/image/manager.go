@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	K8sSourceLabel    = "app.kubevim.kubenfv.io/image-source"
-    K8sSourceUrlLabel = "app.kubevim.kubenfv.io/image-source-url"
-    K8sIsUploadLabel  = "app.kubevim.kubenfv.io/image-uploaded"
+	K8sSourceLabel    = "image.kubevim.kubenfv.io/source"
+    K8sSourceUrlLabel = "image.kubevim.kubenfv.io/source-url"
+    K8sIsUploadLabel  = "image.kubevim.kubenfv.io/uploaded"
 )
 
 type Manager interface {
