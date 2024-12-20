@@ -92,6 +92,7 @@ KUBE_VIRT_OPERATOR ?= $(LOCALBIN)/kube-virt/kubevirt-operator.yaml
 KUBE_VIRT_CR       ?= $(LOCALBIN)/kube-virt/kubevirt-cr.yaml
 KUBE_VIRT_CDI_OPERATOR ?= $(LOCALBIN)/kube-virt-cdi/cdi-operator.yaml
 KUBE_VIRT_CDI_CR       ?= $(LOCALBIN)/kube-virt-cdi/cdi-cr.yaml
+MULTUS_CNI_THICK_DS ?= $(LOCALBIN)/multus-cni/multus-daemonset-thick.yml
 
 KIND_VERSION ?= v0.23.0
 YQ_VERSION ?= v4.44.1
@@ -139,6 +140,8 @@ kube-virt-cdi: $(LOCALBIN)
 
 .PHONY: multus-cni
 multus-cni: $(LOCALBIN)
+	@test -e (MULTUS_CNI_THICK_DS) || \
+	wget -P $(LOCALBIN)/multus-cni https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/$(MULTUS_CNI_VERSION)/deployments/multus-daemonset-thick.yml
 
 ##@ Deployment
 
@@ -180,6 +183,9 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi ## Prepare 
 	@$(MAKE) kind-untaint-control-plane
 	@echo "Installing kube-ovn to the kind"
 	cd bin/kube-ovn; sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
+	@echo "Installing multus-cni to the kind"
+	kubectl create -f $(MULTUS_CNI_THICK_DS)
+	kubectl rollout status daemonset/kube-multus-ds -n kube-system
 	@echo "Installing kube-virt to the kind"
 	kubectl create -f $(KUBE_VIRT_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CR)
