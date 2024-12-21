@@ -68,9 +68,10 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		if req.TypeNetworkData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field typeNetworkData can't be empty with Network resource type")
 		}
-		// TODO:
-		_, err := s.NetworkMgr.CreateNetwork(ctx, *req.NetworkResourceName, req.TypeNetworkData)
-		return &nfv.AllocateNetworkResponse{}, err
+		net, err := s.NetworkMgr.CreateNetwork(ctx, *req.NetworkResourceName, req.TypeNetworkData)
+		return &nfv.AllocateNetworkResponse{
+            NetworkData: net, 
+        }, err
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())
 	}

@@ -10,7 +10,7 @@ import (
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
-	"github.com/google/uuid"
+	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -50,7 +50,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if strings.HasPrefix(imageId.GetValue(), "http") || strings.HasPrefix(imageId.GetValue(), "https") {
 		getDvOpts = append(getDvOpts, image.FindBySourceUrl(imageId.GetValue()))
 		isSource = true
-	} else if _, err := uuid.Parse(imageId.GetValue()); err == nil {
+    } else if err := misc.IsUUID(imageId.GetValue()); err == nil {
 		getDvOpts = append(getDvOpts, image.FindByUID(imageId.GetValue()))
 	} else {
 		getDvOpts = append(getDvOpts, image.FindByName(imageId.GetValue()))

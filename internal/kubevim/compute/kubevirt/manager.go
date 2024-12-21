@@ -9,6 +9,7 @@ import (
 	kubevirt_flavour "github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
+	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-    // TODO(dmalovan): find a way to get the Kind from not initialized object. 
+    // TODO(dmalovan): find a way to get the Kind from not initialized object.
     // See: k8s.io/apimachinery/pkg/runtime/scheme.go:AddKnowTypes
     KubevirtVolumeImportSourceKind = "VolumeImportSource"
     KubevirtVirtualMachineInstanceTypeKind = "VirtualMachineInstanceType"
@@ -167,6 +168,24 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation) (*kubevirtv1.D
                 },
             },
         },
+    }, nil
+}
+
+func initNetwork(ctx context.Context, netManager network.Manager, networkData *nfv.VirtualInterfaceData) (*kubevirtv1.Network, error) {
+    if networkData.NetworkId == nil || networkData.NetworkId.Value == "" {
+        return nil, fmt.Errorf("networkId can't be empty for VirtualInterfaceData: %w", config.InvalidArgumentErr)
+    }
+    getSubnetOpts := make([]network.GetSubnetOpt, 0)
+    if err := misc.IsUUID(networkData.NetworkId.Value); err == nil {
+        getSubnetOpts = append(getSubnetOpts, network.GetSubnetByUid(networkData.GetNetworkId()))
+    } else {
+        getSubnetOpts = append(getSubnetOpts, network.GetSubnetByName(networkData.GetNetworkId().Value))
+    }
+    nfvSubnet, err := netManager.GetSubnet(ctx, getSubnetOpts...)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkData.GetNetworkId().Value, err)
+    }
+    return &kubevirtv1.Network{
     }, nil
 }
 
