@@ -72,7 +72,6 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
                     Labels: map[string]string{
                         config.K8sManagedByLabel: config.KubeNfvName,
                         network.K8sSubnetNameLabel: subnet.GetName(),
-                        network.K8sNetworkIdLabel : string(subnet.GetUID()),
                     },
                 },
                 Spec: netattv1.NetworkAttachmentDefinitionSpec{

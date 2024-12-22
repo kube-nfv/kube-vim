@@ -5,8 +5,8 @@ import (
 	"net"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/k8s"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
+	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +41,7 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc) (*nfv.VirtualNetwork, error) {
 		return nil, fmt.Errorf("Name for kube-ovn vpc can't be empty")
 	}
 	return &nfv.VirtualNetwork{
-		NetworkResourceId:   k8s.UIDToIdentifier(uid),
+		NetworkResourceId:   misc.UIDToIdentifier(uid),
 		NetworkResourceName: &name,
         Bandwidth: 0,
         NetworkType: "flat",
@@ -150,10 +150,10 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
     if kubeovnSub == nil {
         return nil, fmt.Errorf("subnet can't be nil")
     }
-    if kubeovnSub.UID == "" || kubeovnSub.CreationTimestamp.IsZero() {
+    if !misc.IsObjectInstantiated(kubeovnSub) {
         return nil, fmt.Errorf("subnet is not from Kubernetes (likely created manually)")
     }
-    if managedBy, ok := kubeovnSub.Labels[config.K8sManagedByLabel]; !ok || managedBy != config.KubeNfvName {
+    if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
         return nil, fmt.Errorf("subnet \"%s\" with uid \"%s\" is not managed by the kube-nfv", kubeovnSub.GetName(), kubeovnSub.GetUID())
     }
 
@@ -168,7 +168,7 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
         return nil, fmt.Errorf("failed to convert ip protocol from the kubeovn resource spec: %w", err)
     }
     return &nfv.NetworkSubnet{
-        ResourceId: k8s.UIDToIdentifier(kubeovnSub.UID),
+        ResourceId: misc.UIDToIdentifier(kubeovnSub.UID),
         NetworkId: optNetworkId,
         IpVersion: *ipVersion,
         GatewayIp: &nfv.IPAddress{

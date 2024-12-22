@@ -140,7 +140,7 @@ kube-virt-cdi: $(LOCALBIN)
 
 .PHONY: multus-cni
 multus-cni: $(LOCALBIN)
-	@test -e (MULTUS_CNI_THICK_DS) || \
+	@test -e $(MULTUS_CNI_THICK_DS) || \
 	wget -P $(LOCALBIN)/multus-cni https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/$(MULTUS_CNI_VERSION)/deployments/multus-daemonset-thick.yml
 
 ##@ Deployment
@@ -176,7 +176,7 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi ## Prepare kind cluster for kube-vim installation
+kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni ## Prepare kind cluster for kube-vim installation
 	#kubectl delete --ignore-not-found sc standard
 	#kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)

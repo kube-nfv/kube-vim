@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
+	kubevirt_flavour "github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
+	kubevirt_compute "github.com/DiMalovanyy/kube-vim/internal/kubevim/compute/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/glance"
 	http_im "github.com/DiMalovanyy/kube-vim/internal/kubevim/image/http"
@@ -28,6 +30,7 @@ type kubevimManager struct {
 	imageMgr   image.Manager
 	networkMgr network.Manager
 	flavourMgr flavour.Manager
+    computeMgr  compute.Manager
 
 	nbServer *server.NorthboundServer
 }
@@ -63,6 +66,9 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("failed to initialize flavour manager: %w", err)
 	}
+    if err := mgr.initComputeManager(k8sConfig, cfg.K8s); err != nil {
+        return nil, fmt.Errorf("failed to initialize compute manager: %w", err)
+    }
 	if err := mgr.initNorthboundServer(cfg.Service); err != nil {
 		return nil, fmt.Errorf("Failed to configure northbound server: %w", err)
 	}
@@ -144,11 +150,23 @@ func (m *kubevimManager) initFlavourManager(k8sConfig *rest.Config, cfg *config.
 		return fmt.Errorf("k8sConfig can't be empty")
 	}
 	var err error
-	m.flavourMgr, err = kubevirt.NewFlavourManager(k8sConfig, cfg)
+	m.flavourMgr, err = kubevirt_flavour.NewFlavourManager(k8sConfig, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt flavour manager: %w", err)
 	}
 	return nil
+}
+
+func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
+	if k8sConfig == nil {
+		return fmt.Errorf("k8sConfig can't be empty")
+	}
+    var err error
+    m.computeMgr, err = kubevirt_compute.NewComputeManager(k8sConfig, cfg, m.flavourMgr, m.imageMgr, m.networkMgr)
+    if err != nil {
+        return fmt.Errorf("failed to create kubevirt compute manager: %w", err)
+    }
+    return nil
 }
 
 func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {
@@ -156,7 +174,7 @@ func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {
 		return fmt.Errorf("ServiceConfig can't be empty")
 	}
 	var err error
-	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr, m.networkMgr, m.flavourMgr)
+	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize NorthboundServer: %w", err)
 	}

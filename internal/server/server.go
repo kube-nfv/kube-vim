@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
@@ -35,7 +36,8 @@ func NewNorthboundServer(
 	log *zap.Logger,
 	imageMgr image.Manager,
 	networkManager network.Manager,
-	flavourManager flavour.Manager) (*NorthboundServer, error) {
+	flavourManager flavour.Manager,
+    computeManager compute.Manager) (*NorthboundServer, error) {
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
@@ -73,6 +75,7 @@ func NewNorthboundServer(
 		ImageMgr:   imageMgr,
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,
+        ComputeMgr: computeManager,
 	})
 	reflection.Register(server)
 	return &NorthboundServer{

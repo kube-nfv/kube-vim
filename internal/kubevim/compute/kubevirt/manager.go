@@ -71,28 +71,32 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	if req.ComputeFlavourId == nil || req.ComputeFlavourId.GetValue() == "" {
 		return nil, fmt.Errorf("computeFlavourId can't be empty")
 	}
-	_, flavourMeta, err := m.flavourManager.GetFlavour(ctx, req.ComputeFlavourId)
+	flav, err := m.flavourManager.GetFlavour(ctx, req.ComputeFlavourId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrive flavour with id \"%s\": %w", req.ComputeFlavourId.GetValue(), err)
 	}
-	if flavourMeta == nil {
+	if flav.Metadata == nil {
 		return nil, fmt.Errorf("flavour metadata can't be nil: %w", config.UnsupportedErr)
 	}
-	kubeVirtFlavourMetaIf, ok := flavourMeta[kubevirt_flavour.KubeVirtFlavourMetadataKeyName]
-	if !ok {
-		return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", config.UnsupportedErr)
-	}
+
 	// TODO(dmalovan): Add the ability to works with different flavours providers/managers (eg. get flavours directly from the openstack nova)
-    kubeVirtFlavourMeta, ok := kubeVirtFlavourMetaIf.(*kubevirt_flavour.KubeVirtFlavourMetadata)
-	if !ok {
-        return nil, fmt.Errorf("failed to convert kubevirt flavour metadata. Invaid object type: %w", config.UnsupportedErr)
-	}
-    instanceTypeMatcher, err := initVmInstanceTypeMatcher(kubeVirtFlavourMeta.VirtualMachineInstanceTypeName)
+    if flavourSource, ok := flav.Metadata.Fields[flavour.K8sFlavourSourceLabel]; !ok || flavourSource != kubevirt_flavour.KubevirtFlavourSource {
+		return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", config.UnsupportedErr)
+    }
+    vmInstanceTypeName, ok := flav.Metadata.Fields[kubevirtv1.InstancetypeAnnotation]
+    if !ok {
+        return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.InstancetypeAnnotation, config.InvalidArgumentErr)
+    }
+    instanceTypeMatcher, err := initVmInstanceTypeMatcher(vmInstanceTypeName)
     if err != nil {
-        return nil, fmt.Errorf("failed to initialize kubevirt instance type matcher \"%s\": %w", kubeVirtFlavourMeta.VirtualMachineInstanceTypeName, err)
+        return nil, fmt.Errorf("failed to initialize kubevirt instance type matcher \"%s\": %w", vmInstanceTypeName, err)
+    }
+    vmPreferenceName, ok := flav.Metadata.Fields[kubevirtv1.PreferenceAnnotation]
+    if !ok {
+        return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.PreferenceAnnotation, config.InvalidArgumentErr)
     }
     // Note(dmalovan): preference matcher can be nil if some errors are returned. (eg. missed preference name in meta)
-    preferenceMatcher, _ := initVmPreferenceMatcher(kubeVirtFlavourMeta.VirtualMachinePreferenceName)
+    preferenceMatcher, _ := initVmPreferenceMatcher(vmPreferenceName)
 
 	// Get the Request related image and place it
 	if req.VcImageId == nil || req.VcImageId.GetValue() == "" {
@@ -123,7 +127,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 
     runStrategy := kubevirtv1.RunStrategyAlways
 
-    m.kubevirtClient.KubevirtV1().VirtualMachines(m.cfg.Namespace).Create(ctx, &kubevirtv1.VirtualMachine{
+    vm := &kubevirtv1.VirtualMachine{
         ObjectMeta: v1.ObjectMeta{
             Name: vmName,
             Labels: map[string]string{
@@ -171,9 +175,10 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
                 },
             },
         },
-    }, v1.CreateOptions{})
+    }
+    _, err = m.kubevirtClient.KubevirtV1().VirtualMachines(m.cfg.Namespace).Create(ctx, vm, v1.CreateOptions{})
 
-	return nil, nil
+	return &nfv.VirtualCompute{}, err
 }
 
 

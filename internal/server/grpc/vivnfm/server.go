@@ -3,6 +3,7 @@ package vivnfm
 import (
 	"context"
 
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
@@ -17,6 +18,7 @@ type ViVnfmServer struct {
 	ImageMgr   image.Manager
 	FlavourMgr flavour.Manager
 	NetworkMgr network.Manager
+    ComputeMgr compute.Manager
 }
 
 // TODO:
@@ -36,7 +38,10 @@ func (s *ViVnfmServer) QueryImage(ctx context.Context, req *nfv.QueryImageReques
 	}, err
 }
 func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, req *nfv.AllocateComputeRequest) (*nfv.AllocateComputeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AllocateVirtualisedComputeResource not implemented")
+    res, err := s.ComputeMgr.AllocateComputeResource(ctx, req)
+    return &nfv.AllocateComputeResponse{
+        ComputeData: res,
+    }, err
 }
 
 func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.CreateComputeFlavourRequest) (*nfv.CreateComputeFlavourResponse, error) {
@@ -46,8 +51,16 @@ func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.Create
 	}, err
 }
 
+// TODO: Change this to use Filter instead of identifier
 func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryComputeFlavourRequest) (*nfv.QueryComputeFlavourResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QueryComputeFlavour not implemented")
+    res, err := s.FlavourMgr.GetFlavour(ctx, &nfv.Identifier{
+        Value: req.QueryComputeFlavourFilter.Value,
+    })
+    return &nfv.QueryComputeFlavourResponse{
+       Flavours: []*nfv.VirtualComputeFlavour{
+            res,
+       },
+    }, err
 }
 func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.DeleteComputeFlavourRequest) (*nfv.DeleteComputeFlavourResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteComputeFlavour not implemented")
@@ -70,7 +83,7 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		}
 		net, err := s.NetworkMgr.CreateNetwork(ctx, *req.NetworkResourceName, req.TypeNetworkData)
 		return &nfv.AllocateNetworkResponse{
-            NetworkData: net, 
+            NetworkData: net,
         }, err
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())

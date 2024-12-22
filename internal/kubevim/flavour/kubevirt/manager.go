@@ -17,14 +17,12 @@ import (
 
 const (
 	CreateFlavourRqTimeout         = time.Second * 5
-	KubeVimFlavourIdLabel          = "app.kubevim.kubenfv.io/flavour-id"
-	KubeVirtFlavourMetadataKeyName = "kube-virt"
+    // Note(dmalovan): Name Annotations used from kubevirt.io/api/v1 but it lack of
+    // Id annotations which is important to know.
+    KubevirtInstanceTypeIdAnnotation = "kubevirt.io/instancetype-id"
+    KubevirtPreferenceIdAnnotation   = "kubevirt.io/preference-id"
+    KubevirtFlavourSource = "kubevirt.io"
 )
-
-type KubeVirtFlavourMetadata struct {
-	VirtualMachineInstanceTypeName string
-	VirtualMachinePreferenceName  string
-}
 
 type manager struct {
 	kubevirtClient *kubevirt.Clientset
@@ -78,43 +76,38 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 	}, nil
 }
 
-func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.VirtualComputeFlavour, flavour.FlavourMetadata, error) {
-	if id == nil {
-		return nil, nil, fmt.Errorf("id can't be nil")
+func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.VirtualComputeFlavour, error) {
+	if id == nil || id.GetValue() == "" {
+		return nil, fmt.Errorf("id can't be nil")
 	}
-	flavourIdSelector := fmt.Sprintf("%s=%s", KubeVimFlavourIdLabel, id.GetValue())
+	flavourIdSelector := fmt.Sprintf("%s=%s", flavour.K8sFlavourIdLabel, id.GetValue())
 	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(m.cfg.Namespace).List(ctx, v1.ListOptions{
 		LabelSelector: flavourIdSelector,
 	})
 	if err != nil || instTypeList == nil {
-		return nil, nil, fmt.Errorf("failed to get VirtualMachineInstanceType objects from the kube-virt: %w", err)
+		return nil, fmt.Errorf("failed to get VirtualMachineInstanceType objects from the kube-virt: %w", err)
 	}
 	if len(instTypeList.Items) == 0 {
-		return nil, nil, fmt.Errorf("no flavours found specified by the id \"%s\"", id.GetValue())
+		return nil, fmt.Errorf("no flavours found specified by the id \"%s\"", id.GetValue())
 	}
 	if len(instTypeList.Items) > 1 {
-		return nil, nil, fmt.Errorf("more than one flavour found specified by the id \"%s\"", id.GetValue())
+		return nil, fmt.Errorf("more than one flavour found specified by the id \"%s\"", id.GetValue())
 	}
 	instType := &instTypeList.Items[0]
-	kubeVirtFlavourMeta := &KubeVirtFlavourMetadata{
-		VirtualMachineInstanceTypeName: instType.Name,
-	}
+
 	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(m.cfg.Namespace).List(ctx, v1.ListOptions{
 		LabelSelector: flavourIdSelector,
 	})
 	// It's totaly possible that instancePreference won't exists in the cluster
 	var instPref *v1beta1.VirtualMachinePreference
-	if err != nil && instPrefList != nil && len(instPrefList.Items) == 1 {
+	if err == nil && instPrefList != nil && len(instPrefList.Items) == 1 {
 		instPref = &instPrefList.Items[0]
-		kubeVirtFlavourMeta.VirtualMachinePreferenceName = instPref.Name
 	}
 	nfvFlavour, err := nfvFlavourFromKubeVirtInstanceTypePreferences(id.GetValue(), instType, instPref)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert kube-virt instance type and preferences to the kube-nfv resources: %w", err)
+		return nil, fmt.Errorf("failed to convert kube-virt instance type and preferences to the kube-nfv resources: %w", err)
 	}
-	return nfvFlavour, flavour.FlavourMetadata{
-		KubeVirtFlavourMetadataKeyName: kubeVirtFlavourMeta,
-	}, nil
+	return nfvFlavour, nil
 }
 
 func (m *manager) GetFlavours() ([]*nfv.VirtualComputeFlavour, error) {
