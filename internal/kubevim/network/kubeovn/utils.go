@@ -167,7 +167,6 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
     if err != nil {
         return nil, fmt.Errorf("failed to convert ip protocol from the kubeovn resource spec: %w", err)
     }
-
     return &nfv.NetworkSubnet{
         ResourceId: k8s.UIDToIdentifier(kubeovnSub.UID),
         NetworkId: optNetworkId,
@@ -179,6 +178,9 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
             Cidr: kubeovnSub.Spec.CIDRBlock,
         },
         IsDhcpEnabled: kubeovnSub.Spec.EnableDHCP,
+        Metadata: &nfv.Metadata{
+            Fields: kubeovnSub.Labels, 
+        },
     }, nil
 }
 

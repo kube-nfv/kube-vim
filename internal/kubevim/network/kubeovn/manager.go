@@ -85,6 +85,7 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
         // specify the netattach provider for the kube-ovn subnet
         subnet.Spec.Provider = formatNetAttachKubeOvnProvider(netAttachName, m.namespace)
         subnet.Labels[network.K8sNetworkIdLabel] = string(createdVpc.GetUID())
+        subnet.Labels[network.K8sSubnetNetAttachNameLabel] = netAttachName
 		createdSubnet, err := m.kubeOvnClient.KubeovnV1().Subnets().Create(ctx, subnet, v1.CreateOptions{})
         if err != nil {
             m.DeleteNetwork(ctx, name)

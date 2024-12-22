@@ -27,6 +27,9 @@ const (
     KubevirtVolumeImportSourceKind = "VolumeImportSource"
     KubevirtVirtualMachineInstanceTypeKind = "VirtualMachineInstanceType"
     KubevirtVirtualMachinePreferenceKind  = "VirtualMachinePreference"
+
+    KubevirtVmMgmtNetworkName = "default"
+    KubevirtVmMgmtRootVolumeName = "root-volume"
 )
 
 // kubevirt manager for allocation and management of the compute resources.
@@ -104,6 +107,72 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
         return nil, fmt.Errorf("failed to initialize kubevirt data volume: %w", err)
     }
 
+    networks, err := initNetworks(ctx, m.networkManager, req.InterfaceData)
+    if err != nil {
+        return nil, fmt.Errorf("failed to initialize kubevirt networks: %w", err)
+    }
+
+    var vmName string
+    if req.ComputeName == nil || *req.ComputeName == "" {
+        // Note(dmalovan): If multiple vm created from the same image this name will conflict. Need to implement the way how to
+        // make this name unique if it is not specified by the producer.
+        vmName = imgInfo.Name + "-vm"
+    } else {
+        vmName = *req.ComputeName
+    }
+
+    runStrategy := kubevirtv1.RunStrategyAlways
+
+    m.kubevirtClient.KubevirtV1().VirtualMachines(m.cfg.Namespace).Create(ctx, &kubevirtv1.VirtualMachine{
+        ObjectMeta: v1.ObjectMeta{
+            Name: vmName,
+            Labels: map[string]string{
+                kubevirtv1.VirtualMachineLabel: vmName,
+                config.K8sManagedByLabel: config.KubeNfvName,
+            },
+        },
+        Spec: kubevirtv1.VirtualMachineSpec{
+            DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{*dv},
+            Instancetype: instanceTypeMatcher,
+            Preference: preferenceMatcher,
+            RunStrategy: &runStrategy,
+            Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+                ObjectMeta: v1.ObjectMeta{
+                    Labels: map[string]string{
+                        kubevirtv1.VirtualMachineLabel: vmName,
+                    },
+                },
+                Spec: kubevirtv1.VirtualMachineInstanceSpec{
+                    Domain: kubevirtv1.DomainSpec{
+                        Devices: kubevirtv1.Devices{
+                            Disks: []kubevirtv1.Disk{
+                                {
+                                    Name: KubevirtVmMgmtRootVolumeName,
+                                    DiskDevice: kubevirtv1.DiskDevice{
+                                        Disk: &kubevirtv1.DiskTarget{
+                                            Bus: "virtio",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    Networks: networks,
+                    Volumes: []kubevirtv1.Volume{
+                        {
+                            Name: KubevirtVmMgmtRootVolumeName,
+                            VolumeSource: kubevirtv1.VolumeSource{
+                                DataVolume: &kubevirtv1.DataVolumeSource{
+                                    Name: dv.Name,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    }, v1.CreateOptions{})
+
 	return nil, nil
 }
 
@@ -171,6 +240,25 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation) (*kubevirtv1.D
     }, nil
 }
 
+func initNetworks(ctx context.Context, netManager network.Manager, networksData []*nfv.VirtualInterfaceData) ([]kubevirtv1.Network, error) {
+    networks := make([]kubevirtv1.Network, 0, len(networksData) + 1 /*+ mgmtNetwork*/)
+    // Add mgmt network
+    networks = append(networks, kubevirtv1.Network{
+        Name: KubevirtVmMgmtNetworkName,
+        NetworkSource: kubevirtv1.NetworkSource{
+            Pod: &kubevirtv1.PodNetwork{},
+        },
+    })
+    for _, netData := range networksData {
+        net, err := initNetwork(ctx, netManager, netData)
+        if err != nil {
+            return nil, fmt.Errorf("failed to initialize kubevirt network from reference \"%s\": %w", netData.NetworkId.GetValue(), err)
+        }
+        networks = append(networks, *net)
+    }
+    return networks, nil
+}
+
 func initNetwork(ctx context.Context, netManager network.Manager, networkData *nfv.VirtualInterfaceData) (*kubevirtv1.Network, error) {
     if networkData.NetworkId == nil || networkData.NetworkId.Value == "" {
         return nil, fmt.Errorf("networkId can't be empty for VirtualInterfaceData: %w", config.InvalidArgumentErr)
@@ -185,7 +273,25 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkData *n
     if err != nil {
         return nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkData.GetNetworkId().Value, err)
     }
+    if nfvSubnet.Metadata == nil {
+        return nil, fmt.Errorf("subnet \"%s\" metadata can't be empty: %w", nfvSubnet.ResourceId.String(), config.InvalidArgumentErr)
+    }
+    netAttachName, ok := nfvSubnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
+    if !ok {
+        return nil, fmt.Errorf("network subnet missing label \"%s\" to identify network attachment definition: %w", network.K8sSubnetNetAttachNameLabel, config.InvalidArgumentErr)
+    }
+    subnetName, ok := nfvSubnet.Metadata.Fields[network.K8sSubnetNameLabel]
+    if !ok {
+        return nil, fmt.Errorf("network subnet missing label \"%s\" to identify the subnet name: %w", network.K8sSubnetNameLabel, config.UnsupportedErr)
+    }
     return &kubevirtv1.Network{
+        Name: subnetName,
+        NetworkSource: kubevirtv1.NetworkSource{
+            Multus: &kubevirtv1.MultusNetwork{
+                //Note(dmalovan): Ignore the namespace for the networkAttachmentDefinition name since it will use VMI namesapce
+                NetworkName: netAttachName,
+            },
+        },
     }, nil
 }
 
