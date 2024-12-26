@@ -27,6 +27,10 @@ nodes:
         controllerManager:
           extraArgs:
             node-cidr-mask-size-ipv4: "24"
+        apiServer:
+          extraArgs:
+            feature-gates: "AnyVolumeDataSource=true"
+
 # Expose the kube-vim port to the MacOS host
     extraPortMappings:
     - containerPort: 30080

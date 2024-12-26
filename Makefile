@@ -94,10 +94,27 @@ KUBE_VIRT_CDI_OPERATOR ?= $(LOCALBIN)/kube-virt-cdi/cdi-operator.yaml
 KUBE_VIRT_CDI_CR       ?= $(LOCALBIN)/kube-virt-cdi/cdi-cr.yaml
 MULTUS_CNI_THICK_DS ?= $(LOCALBIN)/multus-cni/multus-daemonset-thick.yml
 
+CSI_SNAPSHOTTER_CRS_DIR  ?= $(LOCALBIN)/csi-snapshotter
+CSI_SNAPSHOTTER_CR_NAMES ?= snapshot.storage.k8s.io_volumesnapshotclasses.yaml \
+					   		snapshot.storage.k8s.io_volumesnapshotcontents.yaml \
+					   		snapshot.storage.k8s.io_volumesnapshots.yaml
+CSI_SNAPSHOTTER_CTRL_NAMES ?= rbac-snapshot-controller.yaml \
+							  setup-snapshot-controller.yaml
+CSI_HOSTPATH_DRIVER_INSTALL  ?= $(LOCALBIN)/csi-hostpath/deploy-hostpath.sh
+CSI_HOSTPATH_DRIVER_DEPS_DIR ?= $(LOCALBIN)/csi-hostpath/hostpath
+CSI_HOSTPATH_DRIVER_DEPS     ?= csi-hostpath-driverinfo.yaml \
+								csi-hostpath-plugin.yaml \
+								csi-hostpath-snapshotclass.yaml \
+								csi-hostpath-testing.yaml
+
+
 KIND_VERSION ?= v0.23.0
 YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
 
+CSI_SNAPSHOTTER_CR_VERSION ?= release-6.3
+CSI_SNAPSHOTTER_CONTROLLER_VERSION ?= v6.3.3
+CSI_HOSTPATH_DRIVER_VERSION ?= v1.15.0
 KUBE_OVN_VERSION ?= v1.13.0
 KUBE_OVN_RELEASE ?= 1.13
 KUBE_VIRT_VERSION ?= v1.4.0
@@ -118,6 +135,28 @@ kind: $(LOCALBIN)
 yq: $(LOCALBIN)
 	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
+.PHONY: csi-snapshotter
+csi-snapshotter: $(LOCALBIN)
+	@for snapshotter_cr in $(CSI_SNAPSHOTTER_CR_NAMES); do \
+		CR_PATH="$(CSI_SNAPSHOTTER_CRS_DIR)/$$snapshotter_cr"; \
+		test -e $$CR_PATH || \
+		wget -P $(CSI_SNAPSHOTTER_CRS_DIR) https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/$(CSI_SNAPSHOTTER_CR_VERSION)/client/config/crd/$$snapshotter_cr; \
+	done
+	@for snapshotter_ctrl in $(CSI_SNAPSHOTTER_CTRL_NAMES); do \
+		CTRL_PATH="$(CSI_SNAPSHOTTER_CRS_DIR)/$$snapshotter_ctrl"; \
+		test -e $$CTRL_PATH || \
+		wget -P $(CSI_SNAPSHOTTER_CRS_DIR) https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/$(CSI_SNAPSHOTTER_CONTROLLER_VERSION)/deploy/kubernetes/snapshot-controller/$$snapshotter_ctrl; \
+	done
+
+.PHONY: csi-host-path
+csi-host-path: $(LOCALBIN)
+	@test -x $(CSI_HOSTPATH_DRIVER_INSTALL) || \
+	wget -P $(LOCALBIN)/csi-hostpath https://raw.githubusercontent.com/kubernetes-csi/csi-driver-host-path/$(CSI_HOSTPATH_DRIVER_VERSION)/deploy/util/deploy-hostpath.sh; \
+	chmod +x $(CSI_HOSTPATH_DRIVER_INSTALL)
+	@for dep in $(CSI_HOSTPATH_DRIVER_DEPS); do \
+		wget -P $(LOCALBIN)/csi-hostpath/hostpath https://raw.githubusercontent.com/kubernetes-csi/csi-driver-host-path/$(CSI_HOSTPATH_DRIVER_VERSION)/deploy/kubernetes-1.27/hostpath/$$dep; \
+	done
 
 .PHONY: kube-ovn
 kube-ovn: $(LOCALBIN)
@@ -177,8 +216,9 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 
 .PHONY: kind-prepare
 kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni ## Prepare kind cluster for kube-vim installation
-	#kubectl delete --ignore-not-found sc standard
-	#kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
+	# delete default storage class
+	kubectl delete --ignore-not-found sc standard
+	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
 	kubectl config use-context kind-$(KIND_CLUSTER_NAME)
 	@$(MAKE) kind-untaint-control-plane
 	@echo "Installing kube-ovn to the kind"
@@ -192,6 +232,11 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni 
 	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
 	kubectl create -f $(KUBE_VIRT_CDI_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CDI_CR)
+
+.PHONY: kind-prepare-dev
+kind-prepare-dev: ## Prepare development evironment for kube-vim operation
+	kubectl create -f $(CSI_SNAPSHOTTER_CRS_DIR)
+	bash $(CSI_HOSTPATH_DRIVER_INSTALL)
 
 .PHONY: kind-install
 kind-install: kind-prepare ## Install kube-vim into prepared kind cluster

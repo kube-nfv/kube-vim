@@ -159,6 +159,14 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
                                     },
                                 },
                             },
+                            Interfaces: []kubevirtv1.Interface{
+                                {
+                                    Name: KubevirtVmMgmtNetworkName,
+                                    InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+                                        Masquerade: &kubevirtv1.InterfaceMasquerade{},
+                                    },
+                                },
+                            },
                         },
                     },
                     Networks: networks,
