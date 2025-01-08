@@ -1,0 +1,127 @@
+openapi: 3.0.0
+info:
+  title: Kube-Vim Configuration schema
+  version: 1.0.0
+components:
+  schemas:
+    Config:
+      type: object
+      properties:
+        Service:
+          $ref: '#/components/schemas/ServiceConfig'
+        K8s:
+          $ref: '#/components/schemas/K8sConfig'
+        Image:
+          $ref: '#/components/schemas/ImageConfig'
+        Network:
+          $ref: '#/components/schemas/NetworkConfig'
+
+    ServiceConfig:
+      type: object
+      properties:
+        Ip:
+          type: string
+          format: ipv4
+        Port:
+          type: string
+        LogLevel:
+          type: string
+    
+    K8sConfig:
+      type: object
+      properties:
+        Config:
+          type: string
+        Namespace:
+          type: string
+    
+    ImageConfig:
+      type: object
+      properties:
+        Glance:
+          $ref: '#/components/schemas/GlanceConfig'
+        Local:
+          $ref: '#/components/schemas/LocalImageConfig'
+        Http:
+          $ref: '#/components/schemas/HttpImageConfig'
+    
+    NetworkConfig:
+      type: object
+      properties:
+        Mgmt:
+          $ref: '#/components/schemas/MgmtNetworkConfig'
+    
+    GlanceConfig:
+      type: object
+      properties:
+        Identity:
+          $ref: '#/components/schemas/OpenstackIdentityConfig'
+        Region:
+          type: string
+    
+    LocalImageConfig:
+      type: object
+      properties:
+        Location:
+          type: string
+    
+    HttpImageConfig:
+      type: object
+      properties:
+        initEmpty:
+          type: boolean
+        StorageClass:
+          type: string
+    
+    OpenstackIdentityConfig:
+      type: object
+      properties:
+        Endpoint:
+          type: string
+          format: uri
+        Username:
+          type: string
+        Password:
+          type: string
+          format: password
+    
+    MgmtNetworkConfig:
+      type: object
+      properties:
+        Underlay:
+          $ref: '#/components/schemas/UnderlayNetworkConfig'
+    
+    UnderlayNetworkConfig:
+      type: object
+      properties:
+        ProviderNetwork:
+          $ref: '#/components/schemas/ProviderNetworkConfig'
+        Vlan:
+          $ref: '#/components/schemas/VlanConfig'
+        Subnet:
+          $ref: '#/components/schemas/SubnetConfig'
+    
+    ProviderNetworkConfig:
+      type: object
+      properties:
+        DefaultInterface:
+          type: string
+    
+    VlanConfig:
+      type: object
+      properties:
+        Id:
+          type: integer
+          format: int32
+    
+    SubnetConfig:
+      type: object
+      properties:
+        Protocol:
+          type: string
+        CidrBlock:
+          type: string
+          format: ipv4
+        Gateway:
+          type: string
+          format: ipv4

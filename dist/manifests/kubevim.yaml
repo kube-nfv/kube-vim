@@ -139,6 +139,17 @@ data:
       logLevel: "debug"
     image:
       http: {}
+    network:
+      mgmt:
+        underlay:
+          providerNetwork:
+            defaultInterface: eth1
+          vlan:
+            id: 100
+          subnet:
+            protocol: "IPv4"
+            cidrBlock: 172.17.0.0/16
+            gateway: 172.17.0.1
 ---
 apiVersion: apps/v1
 kind: Deployment

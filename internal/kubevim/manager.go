@@ -180,3 +180,8 @@ func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {
 	}
 	return nil
 }
+
+func initMgmtNetwork(netMgr network.Manager, mgmtNet *config.MgmtNetworkConfig) error {
+
+    return nil
+}
