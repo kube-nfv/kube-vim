@@ -38,6 +38,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: generate
+generate: ## Generate golang files
+	go generate ./...
+
 .PHONY: mod-tidy
 mod-tidy: ## Run go mod tidy against code.
 	go mod tidy
@@ -53,7 +57,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 
 .PHONY: build
-build: fmt vet
+build: generate fmt vet
 	go build -o bin/kubevim cmd/kube-vim/main.go
 
 .PHONY: test
@@ -87,6 +91,7 @@ $(HELM_PLUGINS):
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 KIND ?= $(LOCALBIN)/kind
 YQ = $(LOCALBIN)/yq
+OAPI_CODEGEN ?= $(LOCALBIN)/oapi-codegen
 KUBE_OVN_INSTALL ?= $(LOCALBIN)/kube-ovn/install.sh
 KUBE_VIRT_OPERATOR ?= $(LOCALBIN)/kube-virt/kubevirt-operator.yaml
 KUBE_VIRT_CR       ?= $(LOCALBIN)/kube-virt/kubevirt-cr.yaml
@@ -111,6 +116,7 @@ CSI_HOSTPATH_DRIVER_DEPS     ?= csi-hostpath-driverinfo.yaml \
 KIND_VERSION ?= v0.23.0
 YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
+OAPI_CODEGEN_VERSION ?= v2.4.0
 
 CSI_SNAPSHOTTER_CR_VERSION ?= release-6.3
 CSI_SNAPSHOTTER_CONTROLLER_VERSION ?= v6.3.3
@@ -135,6 +141,11 @@ kind: $(LOCALBIN)
 yq: $(LOCALBIN)
 	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
+.PHONY: oapi-codegen
+oapi-codegen: $(LOCALBIN)
+	@test -x $(OAPI_CODEGEN) && $(OAPI_CODEGEN) --version | grep -q $(OAPI_CODEGEN_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen$(OAPI_CODEGEN_VERSION)
 
 .PHONY: csi-snapshotter
 csi-snapshotter: $(LOCALBIN)
@@ -244,7 +255,6 @@ kind-install: kind-prepare ## Install kube-vim into prepared kind cluster
 	@if [ "$(DEV)" = "1" ]; then \
 		kubectl create -f dist/manifests/dev/nodeport.yaml; \
 	fi
-
 
 .PHONY: kind-untaint-control-plane
 kind-untaint-control-plane:

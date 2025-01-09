@@ -11,7 +11,7 @@ import (
 // Marshal marshals src (interface{}) into dst (*anypb.Any).
 func MarshalAny(dst *anypb.Any, src interface{}) error {
 	if dst == nil {
-        fmt.Errorf("dst can't be nil")
+		return fmt.Errorf("dst can't be nil")
 	}
 
 	var message protoreflect.ProtoMessage
@@ -29,28 +29,28 @@ func MarshalAny(dst *anypb.Any, src interface{}) error {
 		message = wrapperspb.Double(v)
 	case bool:
 		message = wrapperspb.Bool(v)
-    case protoreflect.ProtoMessage:
+	case protoreflect.ProtoMessage:
 		message = v
 	default:
 		return fmt.Errorf("unsupported type for marshaling: %T", src)
 	}
-    var err error
+	var err error
 	dst, err = anypb.New(message)
-    if err != nil {
-        return fmt.Errorf("failed to create protobuf Any from type \"%T\": %w", src, err)
-    }
-    return nil
+	if err != nil {
+		return fmt.Errorf("failed to create protobuf Any from type \"%T\": %w", src, err)
+	}
+	return nil
 }
 
 func UnmarshalAny(src *anypb.Any, dst interface{}) error {
-    if src == nil {
-        return fmt.Errorf("src can't be nil")
-    }
-    if dst == nil {
-        return fmt.Errorf("dst can't be nil")
-    }
+	if src == nil {
+		return fmt.Errorf("src can't be nil")
+	}
+	if dst == nil {
+		return fmt.Errorf("dst can't be nil")
+	}
 
-    switch d := dst.(type) {
+	switch d := dst.(type) {
 	case *string:
 		var wrapper wrapperspb.StringValue
 		if err := src.UnmarshalTo(&wrapper); err != nil {
@@ -87,12 +87,12 @@ func UnmarshalAny(src *anypb.Any, dst interface{}) error {
 			return fmt.Errorf("failed to unmarshal Any to bool: %w", err)
 		}
 		*d = wrapper.Value
-    case protoreflect.ProtoMessage:
+	case protoreflect.ProtoMessage:
 		if err := src.UnmarshalTo(d); err != nil {
 			return fmt.Errorf("failed to unmarshal Any to proto.Message: %w", err)
 		}
 	default:
 		return fmt.Errorf("unsupported type for unmarshaling: %T", dst)
 	}
-    return nil
+	return nil
 }

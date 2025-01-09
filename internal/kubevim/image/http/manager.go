@@ -50,7 +50,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if strings.HasPrefix(imageId.GetValue(), "http") || strings.HasPrefix(imageId.GetValue(), "https") {
 		getDvOpts = append(getDvOpts, image.FindBySourceUrl(imageId.GetValue()))
 		isSource = true
-    } else if err := misc.IsUUID(imageId.GetValue()); err == nil {
+	} else if err := misc.IsUUID(imageId.GetValue()); err == nil {
 		getDvOpts = append(getDvOpts, image.FindByUID(imageId.GetValue()))
 	} else {
 		getDvOpts = append(getDvOpts, image.FindByName(imageId.GetValue()))
@@ -121,33 +121,33 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 }
 
 func getHttpSourceUrlFromVis(vis *v1beta1.VolumeImportSource) (src string, err error) {
-    if httpSource := vis.Spec.Source.HTTP; httpSource == nil {
-        err = fmt.Errorf("Volume Import Source missed http section")
-    } else {
-        src = httpSource.URL
-    }
-    return
+	if httpSource := vis.Spec.Source.HTTP; httpSource == nil {
+		err = fmt.Errorf("Volume Import Source missed http section")
+	} else {
+		src = httpSource.URL
+	}
+	return
 }
 
 // TODO(dmalovan): Add metadata labels with sourceType and source as well info is image already downloaded or not.
 func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*nfv.SoftwareImageInformation, error) {
-    meta := &nfv.Metadata{
-        Fields: map[string]string{},
-    }
-    meta.Fields[image.K8sSourceLabel] = string(image.HTTP)
-    srcUrl, err := getHttpSourceUrlFromVis(vis)
-    if err != nil {
-        return nil, fmt.Errorf("failed to get Http source url from Volume Import Source: %w", err)
-    }
-    meta.Fields[image.K8sSourceUrlLabel] = srcUrl
+	meta := &nfv.Metadata{
+		Fields: map[string]string{},
+	}
+	meta.Fields[image.K8sSourceLabel] = string(image.HTTP)
+	srcUrl, err := getHttpSourceUrlFromVis(vis)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Http source url from Volume Import Source: %w", err)
+	}
+	meta.Fields[image.K8sSourceUrlLabel] = srcUrl
 
 	return &nfv.SoftwareImageInformation{
 		SoftwareImageId: &nfv.Identifier{
 			Value: string(vis.GetUID()),
 		},
 		Name: vis.Name,
-        // Temportary solution to allocated 1 Gi to the image
-        Size: resource.NewQuantity(1 * 1024 * 1024 * 1024, resource.BinarySI),
-        Metadata: meta,
+		// Temportary solution to allocated 1 Gi to the image
+		Size:     resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+		Metadata: meta,
 	}, nil
 }

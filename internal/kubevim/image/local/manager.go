@@ -19,21 +19,21 @@ type manager struct {
 }
 
 func NewLocalImageManager(cfg *config.LocalImageConfig) (*manager, error) {
-	stat, err := os.Stat(cfg.Location)
+	stat, err := os.Stat(*cfg.Location)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file \"%s\"stats: %w", cfg.Location, err)
+		return nil, fmt.Errorf("failed to get file \"%s\"stats: %w", *cfg.Location, err)
 	}
 	if !stat.IsDir() {
-		return nil, fmt.Errorf("provided location \"%s\" is not directory", cfg.Location)
+		return nil, fmt.Errorf("provided location \"%s\" is not directory", *cfg.Location)
 	}
 	if stat.Mode()&0400 == 0 {
-		return nil, fmt.Errorf("no read permissions for provided location \"%s\"", cfg.Location)
+		return nil, fmt.Errorf("no read permissions for provided location \"%s\"", *cfg.Location)
 	}
 	if stat.Mode()&0200 == 0 {
-		return nil, fmt.Errorf("no write permissions for provided location \"%s\"", cfg.Location)
+		return nil, fmt.Errorf("no write permissions for provided location \"%s\"", *cfg.Location)
 	}
 	return &manager{
-		location: cfg.Location,
+		location: *cfg.Location,
 		lock:     sync.Mutex{},
 	}, nil
 }

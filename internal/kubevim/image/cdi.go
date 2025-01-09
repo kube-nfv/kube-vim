@@ -114,10 +114,10 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 			if !ok {
 				continue
 			}
-            sourceType, err := SourceTypeFromString(sourceTypeStr)
-            if err != nil {
-                continue
-            }
+			sourceType, err := SourceTypeFromString(sourceTypeStr)
+			if err != nil {
+				continue
+			}
 			switch sourceType {
 			case HTTP:
 				fallthrough
@@ -161,10 +161,10 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 			if !ok {
 				continue
 			}
-            sourceType, err := SourceTypeFromString(sourceTypeStr)
-            if err != nil {
-                continue
-            }
+			sourceType, err := SourceTypeFromString(sourceTypeStr)
+			if err != nil {
+				continue
+			}
 			switch sourceType {
 			case HTTP:
 				fallthrough

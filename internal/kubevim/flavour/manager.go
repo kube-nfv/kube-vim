@@ -8,7 +8,7 @@ import (
 
 const (
 	K8sFlavourIdLabel     = "flavour.kubevim.kubenfv.io/id"
-    K8sFlavourSourceLabel = "flavour.kubevim.kubenfv.io/source"
+	K8sFlavourSourceLabel = "flavour.kubevim.kubenfv.io/source"
 )
 
 type Manager interface {

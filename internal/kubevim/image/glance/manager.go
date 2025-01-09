@@ -24,18 +24,18 @@ type manager struct {
 	lock sync.Mutex
 }
 
-func NewGlanceImageManager(cfg *config.GlanceConfig) (*manager, error) {
+func NewGlanceImageManager(cfg *config.GlanceImageConfig) (*manager, error) {
 	client, err := openstack.AuthenticatedClient(gophercloud.AuthOptions{
-		IdentityEndpoint: cfg.Identity.Endpoint,
-		Username:         cfg.Identity.Username,
-		Password:         cfg.Identity.Password,
+		// IdentityEndpoint: cfg.Identity.Endpoint,
+		// Username:         cfg.Identity.Username,
+		// Password:         cfg.Identity.Password,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create client to the openstack Identity service: %w", err)
 	}
 
 	glanceClient, err := openstack.NewImageServiceV2(client, gophercloud.EndpointOpts{
-		Region: cfg.Region,
+		// Region: cfg.Region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Glance Image service client: %w", err)

@@ -37,7 +37,7 @@ func NewNorthboundServer(
 	imageMgr image.Manager,
 	networkManager network.Manager,
 	flavourManager flavour.Manager,
-    computeManager compute.Manager) (*NorthboundServer, error) {
+	computeManager compute.Manager) (*NorthboundServer, error) {
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
@@ -75,7 +75,7 @@ func NewNorthboundServer(
 		ImageMgr:   imageMgr,
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,
-        ComputeMgr: computeManager,
+		ComputeMgr: computeManager,
 	})
 	reflection.Register(server)
 	return &NorthboundServer{
@@ -87,7 +87,7 @@ func NewNorthboundServer(
 
 func (s *NorthboundServer) Start(ctx context.Context) error {
 	// c.cfg.Ip might be "", which is also fine
-	listenAddr := fmt.Sprintf("%s:%s", s.cfg.Ip, s.cfg.Port)
+	listenAddr := fmt.Sprintf(":%d", *s.cfg.Port)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("Failed to listend address %s: %w", listenAddr, err)

@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	CreateFlavourRqTimeout         = time.Second * 5
-    // Note(dmalovan): Name Annotations used from kubevirt.io/api/v1 but it lack of
-    // Id annotations which is important to know.
-    KubevirtInstanceTypeIdAnnotation = "kubevirt.io/instancetype-id"
-    KubevirtPreferenceIdAnnotation   = "kubevirt.io/preference-id"
-    KubevirtFlavourSource = "kubevirt.io"
+	CreateFlavourRqTimeout = time.Second * 5
+	// Note(dmalovan): Name Annotations used from kubevirt.io/api/v1 but it lack of
+	// Id annotations which is important to know.
+	KubevirtInstanceTypeIdAnnotation = "kubevirt.io/instancetype-id"
+	KubevirtPreferenceIdAnnotation   = "kubevirt.io/preference-id"
+	KubevirtFlavourSource            = "kubevirt.io"
 )
 
 type manager struct {
@@ -61,12 +61,12 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 	createCtx, cancel := context.WithTimeout(ctx, CreateFlavourRqTimeout)
 	defer cancel()
 
-	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(m.cfg.Namespace).Create(createCtx, instType, v1.CreateOptions{})
+	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).Create(createCtx, instType, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kube-virt VirtualMachineInstanceType: %w", err)
 	}
 
-	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(m.cfg.Namespace).Create(createCtx, instPref, v1.CreateOptions{})
+	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).Create(createCtx, instPref, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kube-virt VirtualMachinePreferences: %w", err)
 	}
@@ -81,7 +81,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 		return nil, fmt.Errorf("id can't be nil")
 	}
 	flavourIdSelector := fmt.Sprintf("%s=%s", flavour.K8sFlavourIdLabel, id.GetValue())
-	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(m.cfg.Namespace).List(ctx, v1.ListOptions{
+	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).List(ctx, v1.ListOptions{
 		LabelSelector: flavourIdSelector,
 	})
 	if err != nil || instTypeList == nil {
@@ -95,7 +95,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 	}
 	instType := &instTypeList.Items[0]
 
-	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(m.cfg.Namespace).List(ctx, v1.ListOptions{
+	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).List(ctx, v1.ListOptions{
 		LabelSelector: flavourIdSelector,
 	})
 	// It's totaly possible that instancePreference won't exists in the cluster

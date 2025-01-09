@@ -57,47 +57,47 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 				Name: flavourPreferenceNameFromId(flavorId),
 				Labels: map[string]string{
 					config.K8sManagedByLabel:  config.KubeNfvName,
-                    flavour.K8sFlavourIdLabel: flavorId,
+					flavour.K8sFlavourIdLabel: flavorId,
 				},
 			},
 		}, nil
 }
 
 func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v1beta1.VirtualMachineInstancetype, pref *v1beta1.VirtualMachinePreference) (*nfv.VirtualComputeFlavour, error) {
-    if instType == nil || pref == nil {
-        return nil, fmt.Errorf("VirtualMachineInstancetype or VirtualMachinePreference can't be nil")
-    }
-    if !misc.IsObjectInstantiated(instType) || !misc.IsObjectInstantiated(pref) {
-        return nil, fmt.Errorf("virtualmachineinstancetype or virtualmachinepreference is not from Kubernetes (likely created manually)")
-    }
-    if !misc.IsObjectManagedByKubeNfv(instType) || !misc.IsObjectManagedByKubeNfv(pref) {
-        return nil, fmt.Errorf("virtualmachineinstancetype \"%s\" with uid \"%s\" or virtualmachinepreference \"%s\" with uid \"%s\" is not managed by the kube-nfv", instType.GetName(), instType.GetUID(), pref.GetName(), pref.GetUID())
-    }
-    virtualMem := &nfv.VirtualMemoryData{}
-    // TODO:
+	if instType == nil || pref == nil {
+		return nil, fmt.Errorf("VirtualMachineInstancetype or VirtualMachinePreference can't be nil")
+	}
+	if !misc.IsObjectInstantiated(instType) || !misc.IsObjectInstantiated(pref) {
+		return nil, fmt.Errorf("virtualmachineinstancetype or virtualmachinepreference is not from Kubernetes (likely created manually)")
+	}
+	if !misc.IsObjectManagedByKubeNfv(instType) || !misc.IsObjectManagedByKubeNfv(pref) {
+		return nil, fmt.Errorf("virtualmachineinstancetype \"%s\" with uid \"%s\" or virtualmachinepreference \"%s\" with uid \"%s\" is not managed by the kube-nfv", instType.GetName(), instType.GetUID(), pref.GetName(), pref.GetUID())
+	}
+	virtualMem := &nfv.VirtualMemoryData{}
+	// TODO:
 
-    virtualCpu := &nfv.VirtualCpuData{}
-    // TODO:
+	virtualCpu := &nfv.VirtualCpuData{}
+	// TODO:
 
-    isPublic := false
-    metadata := map[string]string{
-        kubevirtv1.InstancetypeAnnotation: instType.GetName(),
-        KubevirtInstanceTypeIdAnnotation:  string(instType.GetUID()),
-        kubevirtv1.PreferenceAnnotation:   pref.GetName(),
-        KubevirtPreferenceIdAnnotation:    string(pref.GetUID()),
-        flavour.K8sFlavourSourceLabel:     KubevirtFlavourSource,
-    }
+	isPublic := false
+	metadata := map[string]string{
+		kubevirtv1.InstancetypeAnnotation: instType.GetName(),
+		KubevirtInstanceTypeIdAnnotation:  string(instType.GetUID()),
+		kubevirtv1.PreferenceAnnotation:   pref.GetName(),
+		KubevirtPreferenceIdAnnotation:    string(pref.GetUID()),
+		flavour.K8sFlavourSourceLabel:     KubevirtFlavourSource,
+	}
 	return &nfv.VirtualComputeFlavour{
-        FlavourId: &nfv.Identifier{
-            Value: flavourId,
-        },
-        IsPublic: &isPublic,
-        VirtualMemory: virtualMem,
-        VirtualCpu: virtualCpu,
-        Metadata: &nfv.Metadata{
-            Fields: metadata,
-        },
-    }, nil
+		FlavourId: &nfv.Identifier{
+			Value: flavourId,
+		},
+		IsPublic:      &isPublic,
+		VirtualMemory: virtualMem,
+		VirtualCpu:    virtualCpu,
+		Metadata: &nfv.Metadata{
+			Fields: metadata,
+		},
+	}, nil
 }
 
 func flavourNameFromId(id string) string {

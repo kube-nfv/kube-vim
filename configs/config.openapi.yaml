@@ -1,127 +1,81 @@
 openapi: 3.0.0
 info:
-  title: Kube-Vim Configuration schema
+  title: Kube-Vim Configuration Schema
   version: 1.0.0
 components:
   schemas:
     Config:
       type: object
+      description: "Top-level configuration node for kube-vim."
       properties:
-        Service:
+        service:
           $ref: '#/components/schemas/ServiceConfig'
-        K8s:
+        k8s:
           $ref: '#/components/schemas/K8sConfig'
-        Image:
+        image:
           $ref: '#/components/schemas/ImageConfig'
-        Network:
+        network:
           $ref: '#/components/schemas/NetworkConfig'
-
     ServiceConfig:
       type: object
+      description: "Configuration related to the kube-vim service."
       properties:
-        Ip:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 50051
+          description: "A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051."
+        logLevel:
           type: string
-          format: ipv4
-        Port:
-          type: string
-        LogLevel:
-          type: string
-    
+          enum:
+            - trace
+            - debug
+            - info
+            - warn
+            - error
+          default: info
+          description: "Log level for the kube-vim application. Must be one of 'trace', 'debug', 'info', 'warn', or 'error'. Default is 'info'."
     K8sConfig:
       type: object
+      description: "Configuration related to Kubernetes operations."
       properties:
-        Config:
+        namespace:
           type: string
-        Namespace:
+          default: "kube-nfv"
+          description: "Kubernetes namespace where kube-vim operates. Default is 'kube-nfv'."
+        config:
           type: string
-    
+          description: "Specific path to find k8s config file. By default k8s ServiceAccount place is used"
+
     ImageConfig:
       type: object
+      description: "Configuration for kube-vim image providers."
       properties:
-        Glance:
-          $ref: '#/components/schemas/GlanceConfig'
-        Local:
-          $ref: '#/components/schemas/LocalImageConfig'
-        Http:
+        http:
           $ref: '#/components/schemas/HttpImageConfig'
-    
-    NetworkConfig:
-      type: object
-      properties:
-        Mgmt:
-          $ref: '#/components/schemas/MgmtNetworkConfig'
-    
-    GlanceConfig:
-      type: object
-      properties:
-        Identity:
-          $ref: '#/components/schemas/OpenstackIdentityConfig'
-        Region:
-          type: string
-    
-    LocalImageConfig:
-      type: object
-      properties:
-        Location:
-          type: string
-    
+        local:
+          $ref: '#/components/schemas/LocalImageConfig'
+        glance:
+          $ref: '#/components/schemas/GlanceImageConfig'
     HttpImageConfig:
       type: object
-      properties:
-        initEmpty:
-          type: boolean
-        StorageClass:
-          type: string
-    
-    OpenstackIdentityConfig:
+      description: "Configuration for HTTP image provider."
+    LocalImageConfig:
       type: object
+      description: "Configuration for Local image provider."
       properties:
-        Endpoint:
+        location:
           type: string
-          format: uri
-        Username:
-          type: string
-        Password:
-          type: string
-          format: password
-    
-    MgmtNetworkConfig:
+          description: "Location where to locate images."
+    GlanceImageConfig:
       type: object
-      properties:
-        Underlay:
-          $ref: '#/components/schemas/UnderlayNetworkConfig'
-    
-    UnderlayNetworkConfig:
+      description: "Configuration for Glance image provider."
+
+    NetworkConfig:
       type: object
+      description: "Configuration for kube-vim cluster static network."
       properties:
-        ProviderNetwork:
-          $ref: '#/components/schemas/ProviderNetworkConfig'
-        Vlan:
-          $ref: '#/components/schemas/VlanConfig'
-        Subnet:
-          $ref: '#/components/schemas/SubnetConfig'
-    
-    ProviderNetworkConfig:
-      type: object
-      properties:
-        DefaultInterface:
-          type: string
-    
-    VlanConfig:
-      type: object
-      properties:
-        Id:
-          type: integer
-          format: int32
-    
-    SubnetConfig:
-      type: object
-      properties:
-        Protocol:
-          type: string
-        CidrBlock:
-          type: string
-          format: ipv4
-        Gateway:
-          type: string
-          format: ipv4
+        mgmt:
+          type: object
+          description: "Configuration for kube-vim management network."

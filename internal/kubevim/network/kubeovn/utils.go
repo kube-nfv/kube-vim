@@ -43,10 +43,10 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc) (*nfv.VirtualNetwork, error) {
 	return &nfv.VirtualNetwork{
 		NetworkResourceId:   misc.UIDToIdentifier(uid),
 		NetworkResourceName: &name,
-        Bandwidth: 0,
-        NetworkType: "flat",
-        IsShared: false,
-        OperationalState: nfv.OperationalState_ENABLED,
+		Bandwidth:           0,
+		NetworkType:         "flat",
+		IsShared:            false,
+		OperationalState:    nfv.OperationalState_ENABLED,
 	}, nil
 }
 
@@ -75,19 +75,18 @@ func kubeovnIpVersionFromNfv(ipVersion *nfv.IPVersion) (string, error) {
 // Kubeovn IPVersion string MUST be one of the: IPv4, IPv6 or Dual
 // Note(dmalovan): Dual IPVersion is not yet supported.
 func nfvIpversionFromKubeovn(ipVersion string) (*nfv.IPVersion, error) {
-    if ipVersion == "" {
-        return nil, fmt.Errorf("ip version not specified")
-    }
-    switch ipVersion {
-    case "IPv4":
-        return nfv.IPVersion_IPV4.Enum(), nil
-    case "IPv6":
-        return nfv.IPVersion_IPV6.Enum(), nil
-    default:
-        return nil, fmt.Errorf("unknown ip version: %s", ipVersion)
-    }
+	if ipVersion == "" {
+		return nil, fmt.Errorf("ip version not specified")
+	}
+	switch ipVersion {
+	case "IPv4":
+		return nfv.IPVersion_IPV4.Enum(), nil
+	case "IPv6":
+		return nfv.IPVersion_IPV6.Enum(), nil
+	default:
+		return nil, fmt.Errorf("unknown ip version: %s", ipVersion)
+	}
 }
-
 
 // Returns the kubeovn Subnet k8s object or error if convertation from the
 // NetworkSubnetData structure failed.
@@ -147,53 +146,53 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 // Converts the instantiated kubeovn Subnet resource to the nfv.NetworkSubnet.
 // TODO(dmalovan): Add address pool if it is exists
 func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.NetworkSubnet, error) {
-    if kubeovnSub == nil {
-        return nil, fmt.Errorf("subnet can't be nil")
-    }
-    if !misc.IsObjectInstantiated(kubeovnSub) {
-        return nil, fmt.Errorf("subnet is not from Kubernetes (likely created manually)")
-    }
-    if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
-        return nil, fmt.Errorf("subnet \"%s\" with uid \"%s\" is not managed by the kube-nfv", kubeovnSub.GetName(), kubeovnSub.GetUID())
-    }
+	if kubeovnSub == nil {
+		return nil, fmt.Errorf("subnet can't be nil")
+	}
+	if !misc.IsObjectInstantiated(kubeovnSub) {
+		return nil, fmt.Errorf("subnet is not from Kubernetes (likely created manually)")
+	}
+	if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
+		return nil, fmt.Errorf("subnet \"%s\" with uid \"%s\" is not managed by the kube-nfv", kubeovnSub.GetName(), kubeovnSub.GetUID())
+	}
 
-    var optNetworkId *nfv.Identifier
-    if networkId, ok := kubeovnSub.Labels[network.K8sNetworkIdLabel]; ok && networkId != "" {
-        optNetworkId = &nfv.Identifier{
-            Value: networkId,
-        }
-    }
-    ipVersion, err := nfvIpversionFromKubeovn(kubeovnSub.Spec.Protocol)
-    if err != nil {
-        return nil, fmt.Errorf("failed to convert ip protocol from the kubeovn resource spec: %w", err)
-    }
-    return &nfv.NetworkSubnet{
-        ResourceId: misc.UIDToIdentifier(kubeovnSub.UID),
-        NetworkId: optNetworkId,
-        IpVersion: *ipVersion,
-        GatewayIp: &nfv.IPAddress{
-            Ip: kubeovnSub.Spec.Gateway,
-        },
-        Cidr: &nfv.IPSubnetCIDR{
-            Cidr: kubeovnSub.Spec.CIDRBlock,
-        },
-        IsDhcpEnabled: kubeovnSub.Spec.EnableDHCP,
-        Metadata: &nfv.Metadata{
-            Fields: kubeovnSub.Labels, 
-        },
-    }, nil
+	var optNetworkId *nfv.Identifier
+	if networkId, ok := kubeovnSub.Labels[network.K8sNetworkIdLabel]; ok && networkId != "" {
+		optNetworkId = &nfv.Identifier{
+			Value: networkId,
+		}
+	}
+	ipVersion, err := nfvIpversionFromKubeovn(kubeovnSub.Spec.Protocol)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert ip protocol from the kubeovn resource spec: %w", err)
+	}
+	return &nfv.NetworkSubnet{
+		ResourceId: misc.UIDToIdentifier(kubeovnSub.UID),
+		NetworkId:  optNetworkId,
+		IpVersion:  *ipVersion,
+		GatewayIp: &nfv.IPAddress{
+			Ip: kubeovnSub.Spec.Gateway,
+		},
+		Cidr: &nfv.IPSubnetCIDR{
+			Cidr: kubeovnSub.Spec.CIDRBlock,
+		},
+		IsDhcpEnabled: kubeovnSub.Spec.EnableDHCP,
+		Metadata: &nfv.Metadata{
+			Fields: kubeovnSub.Labels,
+		},
+	}, nil
 }
 
 func formatSubnetName(networkName string, subnetName string) string {
-    return fmt.Sprintf("%s-subnet-%s", networkName, subnetName)
+	return fmt.Sprintf("%s-subnet-%s", networkName, subnetName)
 }
 
 func formatNetAttachName(subnetName string) string {
-    return subnetName + "-netattach"
+	return subnetName + "-netattach"
 }
 
 func formatNetAttachConfig(netAttachName string, namespace string) string {
-    return fmt.Sprintf(`{
+	return fmt.Sprintf(`{
 "cniVersion": "0.3.0",
 "type": "kube-ovn",
 "server_socket": "/run/openvswitch/kube-ovn-daemon.sock",
@@ -202,5 +201,5 @@ func formatNetAttachConfig(netAttachName string, namespace string) string {
 }
 
 func formatNetAttachKubeOvnProvider(netAttachName, namespace string) string {
-    return fmt.Sprintf("%s.%s.ovn", netAttachName, namespace)
+	return fmt.Sprintf("%s.%s.ovn", netAttachName, namespace)
 }

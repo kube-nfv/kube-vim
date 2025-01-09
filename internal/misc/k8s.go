@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-
 func UIDToIdentifier(uid types.UID) *nfv.Identifier {
 	return &nfv.Identifier{
 		Value: string(uid),
@@ -23,20 +22,20 @@ func IdentifierToUID(identifier *nfv.Identifier) types.UID {
 }
 
 func IsObjectInstantiated(obj metav1.Object) bool {
-    return obj.GetResourceVersion() != "" &&
-           obj.GetUID() != "" &&
-           !obj.GetCreationTimestamp().Time.IsZero()
+	return obj.GetResourceVersion() != "" &&
+		obj.GetUID() != "" &&
+		!obj.GetCreationTimestamp().Time.IsZero()
 }
 
 func IsObjectManagedByKubeNfv(obj metav1.Object) bool {
-    labels := obj.GetLabels()
-    if managedBy, ok := labels[config.K8sManagedByLabel]; ok && managedBy == config.KubeNfvName {
-        return true
-    }
-    return false
+	labels := obj.GetLabels()
+	if managedBy, ok := labels[config.K8sManagedByLabel]; ok && managedBy == config.KubeNfvName {
+		return true
+	}
+	return false
 }
 
 func DumpObjectAsJSON(obj runtime.Object, out io.Writer) error {
-    encoder := json.NewSerializer(json.DefaultMetaFactory, nil, nil, false)
-    return encoder.Encode(obj, out)
+	encoder := json.NewSerializer(json.DefaultMetaFactory, nil, nil, false)
+	return encoder.Encode(obj, out)
 }

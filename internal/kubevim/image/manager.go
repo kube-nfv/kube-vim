@@ -10,8 +10,8 @@ import (
 
 const (
 	K8sSourceLabel    = "image.kubevim.kubenfv.io/source"
-    K8sSourceUrlLabel = "image.kubevim.kubenfv.io/source-url"
-    K8sIsUploadLabel  = "image.kubevim.kubenfv.io/uploaded"
+	K8sSourceUrlLabel = "image.kubevim.kubenfv.io/source-url"
+	K8sIsUploadLabel  = "image.kubevim.kubenfv.io/uploaded"
 )
 
 type Manager interface {
@@ -20,16 +20,20 @@ type Manager interface {
 }
 
 type sourceType string
+
 const (
-	HTTP  sourceType = "http"
-	HTTPS            = "https"
-    Unknown          = ""
+	HTTP    sourceType = "http"
+	HTTPS              = "https"
+	Unknown            = ""
 )
 
 func SourceTypeFromString(sourceTypeStr string) (sourceType, error) {
-    switch sourceTypeStr {
-    case string(HTTPS): return HTTPS, nil
-    case string(HTTP): return HTTP, nil
-    default: return Unknown, fmt.Errorf("unknown source type \"%s\": %w", sourceTypeStr, config.UnsupportedErr)
-    }
+	switch sourceTypeStr {
+	case string(HTTPS):
+		return HTTPS, nil
+	case string(HTTP):
+		return HTTP, nil
+	default:
+		return Unknown, fmt.Errorf("unknown source type \"%s\": %w", sourceTypeStr, config.UnsupportedErr)
+	}
 }
