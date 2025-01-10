@@ -1,9 +1,0 @@
-  service:
-    logLevel: "debug"
-  image:
-    glance:
-      identity:
-        endpoint: "https://openstack.example.com:5000/v2.0"
-        username: "admin"
-        password: "admin"
-      region: "admin"

@@ -16,7 +16,7 @@ var (
 func init() {
 	// Set config defaults
 	viper.SetDefault("service.logLevel", "Info")
-	viper.SetDefault("service.port", 50051)
+	viper.SetDefault("service.server.port", 50051)
 
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" {

@@ -12,10 +12,11 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
-	"github.com/DiMalovanyy/kube-vim/internal/server/grpc/vivnfm"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/server/grpc/vivnfm"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 )
@@ -27,12 +28,12 @@ const (
 type NorthboundServer struct {
 	server *grpc.Server
 
-	cfg    *config.ServiceConfig
+	cfg    *config.ServerConfig
 	logger *zap.Logger
 }
 
 func NewNorthboundServer(
-	cfg *config.ServiceConfig,
+	cfg *config.ServerConfig,
 	log *zap.Logger,
 	imageMgr image.Manager,
 	networkManager network.Manager,
@@ -41,34 +42,18 @@ func NewNorthboundServer(
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
-		grpc.UnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-			// Retrieve the client IP address
-			var clientIP string
-			if p, ok := peer.FromContext(ctx); ok {
-				if addr, ok := p.Addr.(*net.TCPAddr); ok {
-					clientIP = addr.IP.String()
-				}
-			}
-			log.Info("Started request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
-			start := time.Now()
-			resp, err = handler(ctx, req)
-			duration := time.Since(start)
-			if err != nil {
-				log.Error(
-					"Failed to complete request",
-					zap.String("Request", info.FullMethod),
-					zap.String("IP", clientIP),
-					zap.Duration("Duration", duration),
-					zap.Error(err))
-			} else {
-				log.Info(
-					"Request completed successfully",
-					zap.String("Request", info.FullMethod),
-					zap.String("IP", clientIP),
-					zap.Duration("Duration", duration))
-			}
-			return
-		}),
+		grpc.UnaryInterceptor(
+			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+				return loggingInterceptor(ctx, req, info, handler, log)
+			},
+		),
+	}
+	if cfg.Tls != nil {
+		creds, err := credentials.NewServerTLSFromFile(*cfg.Tls.Cert, *cfg.Tls.Key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize server TLS credentials from file: %w", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
 	}
 	server := grpc.NewServer(opts...)
 	nfv.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
@@ -116,4 +101,33 @@ func (s *NorthboundServer) Start(ctx context.Context) error {
 	}
 	s.logger.Warn("NorthboundServer stopped", zap.Error(err))
 	return err
+}
+
+func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler, log *zap.Logger) (resp any, err error) {
+	// Retrieve the client IP address
+	var clientIP string
+	if p, ok := peer.FromContext(ctx); ok {
+		if addr, ok := p.Addr.(*net.TCPAddr); ok {
+			clientIP = addr.IP.String()
+		}
+	}
+	log.Info("Started request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
+	start := time.Now()
+	resp, err = handler(ctx, req)
+	duration := time.Since(start)
+	if err != nil {
+		log.Error(
+			"Failed to complete request",
+			zap.String("Request", info.FullMethod),
+			zap.String("IP", clientIP),
+			zap.Duration("Duration", duration),
+			zap.Error(err))
+	} else {
+		log.Info(
+			"Request completed successfully",
+			zap.String("Request", info.FullMethod),
+			zap.String("IP", clientIP),
+			zap.Duration("Duration", duration))
+	}
+	return
 }

@@ -20,12 +20,8 @@ components:
       type: object
       description: "Configuration related to the kube-vim service."
       properties:
-        port:
-          type: integer
-          minimum: 1
-          maximum: 65535
-          default: 50051
-          description: "A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051."
+        server:
+          $ref: '#/components/schemas/ServerConfig'
         logLevel:
           type: string
           enum:
@@ -36,6 +32,26 @@ components:
             - error
           default: info
           description: "Log level for the kube-vim application. Must be one of 'trace', 'debug', 'info', 'warn', or 'error'. Default is 'info'."
+    ServerConfig:
+      type: object
+      description: "Kube-vim Server configuration."
+      properties:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 50051
+          description: "A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051."
+        tls:
+          type: object
+          description: "Kube-vim server TLS configuration."
+          properties:
+            cert:
+              type: string
+              description: "Path to the x.509 certificate"
+            key:
+              type: string
+              description: "Path to the x.509 private key"
     K8sConfig:
       type: object
       description: "Configuration related to Kubernetes operations."

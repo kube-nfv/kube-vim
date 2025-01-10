@@ -66,13 +66,28 @@ type NetworkConfig struct {
 	Mgmt *map[string]interface{} `json:"mgmt,omitempty"`
 }
 
+// ServerConfig Kube-vim Server configuration.
+type ServerConfig struct {
+	// Port A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051.
+	Port *int `json:"port,omitempty"`
+
+	// Tls Kube-vim server TLS configuration.
+	Tls *struct {
+		// Cert Path to the x.509 certificate
+		Cert *string `json:"cert,omitempty"`
+
+		// Key Path to the x.509 private key
+		Key *string `json:"key,omitempty"`
+	} `json:"tls,omitempty"`
+}
+
 // ServiceConfig Configuration related to the kube-vim service.
 type ServiceConfig struct {
 	// LogLevel Log level for the kube-vim application. Must be one of 'trace', 'debug', 'info', 'warn', or 'error'. Default is 'info'.
 	LogLevel *ServiceConfigLogLevel `json:"logLevel,omitempty"`
 
-	// Port A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051.
-	Port *int `json:"port,omitempty"`
+	// Server Kube-vim Server configuration.
+	Server *ServerConfig `json:"server,omitempty"`
 }
 
 // ServiceConfigLogLevel Log level for the kube-vim application. Must be one of 'trace', 'debug', 'info', 'warn', or 'error'. Default is 'info'.

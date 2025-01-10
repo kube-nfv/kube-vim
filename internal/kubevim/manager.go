@@ -15,7 +15,7 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image/local"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network/kubeovn"
-	"github.com/DiMalovanyy/kube-vim/internal/server"
+	"github.com/DiMalovanyy/kube-vim/internal/kubevim/server"
 	"go.uber.org/zap"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -69,7 +69,7 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if err := mgr.initComputeManager(k8sConfig, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("failed to initialize compute manager: %w", err)
 	}
-	if err := mgr.initNorthboundServer(cfg.Service); err != nil {
+	if err := mgr.initNorthboundServer(cfg.Service.Server); err != nil {
 		return nil, fmt.Errorf("Failed to configure northbound server: %w", err)
 	}
 	return mgr, nil
@@ -169,7 +169,7 @@ func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.
 	return nil
 }
 
-func (m *kubevimManager) initNorthboundServer(cfg *config.ServiceConfig) error {
+func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("ServiceConfig can't be empty")
 	}
