@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
@@ -112,10 +113,10 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 
 func (m *manager) GetFlavours() ([]*nfv.VirtualComputeFlavour, error) {
 
-	return nil, config.NotImplementedErr
+	return nil, common.NotImplementedErr
 }
 
 func (m *manager) DeleteFlavour(*nfv.Identifier) error {
 
-	return config.NotImplementedErr
+	return common.NotImplementedErr
 }

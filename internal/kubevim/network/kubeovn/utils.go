@@ -23,7 +23,7 @@ func kubeovnVpcFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
+				common.K8sManagedByLabel: common.KubeNfvName,
 			},
 		},
 		Spec: kubeovnv1.VpcSpec{},
@@ -117,7 +117,7 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
+				common.K8sManagedByLabel: common.KubeNfvName,
 			},
 		},
 		Spec: kubeovnv1.SubnetSpec{

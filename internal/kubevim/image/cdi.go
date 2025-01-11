@@ -39,7 +39,7 @@ func NewCdiController(k8sConfig *rest.Config) (*CdiController, error) {
 	}
 	return &CdiController{
 		cdiClient: c,
-		namespace: config.KubeNfvDefaultNamespace,
+		namespace: common.KubeNfvDefaultNamespace,
 	}, nil
 }
 
@@ -128,7 +128,7 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 			}
 		}
 	}
-	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", config.NotFoundErr)
+	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", common.NotFoundErr)
 }
 
 func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvOrVisOpt) (*v1beta1.VolumeImportSource, error) {
@@ -175,7 +175,7 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 			}
 		}
 	}
-	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Volume Import Source: %w", config.NotFoundErr)
+	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Volume Import Source: %w", common.NotFoundErr)
 }
 
 type CreateDvOpt func(*createDvOpts)
@@ -254,7 +254,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 		ObjectMeta: v1.ObjectMeta{
 			Name: cfg.Name,
 			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
+				common.K8sManagedByLabel: common.KubeNfvName,
 				K8sSourceLabel:           string(sourceType),
 			},
 			Annotations: map[string]string{
@@ -294,7 +294,7 @@ func (c CdiController) CreateVolumeImportSource(ctx context.Context, source *v1b
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
+				common.K8sManagedByLabel: common.KubeNfvName,
 				K8sSourceLabel:           string(sourceType),
 			},
 		},
@@ -320,7 +320,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType,
 		}
 		return HTTP, nil
 	}
-	return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
+	return "", fmt.Errorf("unsupported source: %w", common.NotImplementedErr)
 }
 
 func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (sourceType, error) {
@@ -330,7 +330,7 @@ func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (sourceType
 		}
 		return HTTP, nil
 	}
-	return "", fmt.Errorf("unsupported source: %w", config.NotImplementedErr)
+	return "", fmt.Errorf("unsupported source: %w", common.NotImplementedErr)
 }
 
 func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
@@ -338,7 +338,7 @@ func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
 	default:
-		return "", fmt.Errorf("can't format name from the specified source: %w", config.UnsupportedErr)
+		return "", fmt.Errorf("can't format name from the specified source: %w", common.UnsupportedErr)
 	}
 }
 
@@ -347,7 +347,7 @@ func formatVisNameFromSource(source *v1beta1.ImportSourceType) (string, error) {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
 	default:
-		return "", fmt.Errorf("can't format name from the specified source: %w", config.UnsupportedErr)
+		return "", fmt.Errorf("can't format name from the specified source: %w", common.UnsupportedErr)
 	}
 }
 

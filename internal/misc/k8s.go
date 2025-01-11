@@ -29,7 +29,7 @@ func IsObjectInstantiated(obj metav1.Object) bool {
 
 func IsObjectManagedByKubeNfv(obj metav1.Object) bool {
 	labels := obj.GetLabels()
-	if managedBy, ok := labels[config.K8sManagedByLabel]; ok && managedBy == config.KubeNfvName {
+	if managedBy, ok := labels[common.K8sManagedByLabel]; ok && managedBy == common.KubeNfvName {
 		return true
 	}
 	return false

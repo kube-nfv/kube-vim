@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	kubevirt_compute "github.com/DiMalovanyy/kube-vim/internal/kubevim/compute/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"

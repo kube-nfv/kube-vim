@@ -34,6 +34,6 @@ func SourceTypeFromString(sourceTypeStr string) (sourceType, error) {
 	case string(HTTP):
 		return HTTP, nil
 	default:
-		return Unknown, fmt.Errorf("unknown source type \"%s\": %w", sourceTypeStr, config.UnsupportedErr)
+		return Unknown, fmt.Errorf("unknown source type \"%s\": %w", sourceTypeStr, common.UnsupportedErr)
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"

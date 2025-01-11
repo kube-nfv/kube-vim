@@ -1,0 +1,48 @@
+openapi: 3.0.0
+info:
+  title: Kube-Vim Gateway Configuration Schema
+  version: 1.0.0
+components:
+  schemas:
+    Config:
+      type: object
+      description: "Top-level configuration node for kube-vim gateway."
+      properties:
+        service:
+          $ref: '#/components/schemas/ServiceConfig'
+    ServiceConfig:
+      type: object
+      description: "Configuration related to the kube-vim Gateway service."
+      properties:
+        logLevel:
+          $ref: './common.openapi.yaml#/components/schemas/logLevel'
+        server:
+          $ref: '#/components/schemas/ServerConfig'
+    ServerConfig:
+      type: object
+      description: "Kube-vim Gateway Server configuration."
+      properties:
+        port:
+          $ref: './common.openapi.yaml#/components/schemas/port'
+          default: 51155
+          description: "Kube-vim Gateway server listening port."
+        tls:
+          $ref: './common.openapi.yaml#/components/schemas/tlsServerConfig'
+          description: "Kube-vim Gateway server TLS configuration."
+    KubeVimConfig:
+      type: object
+      description: "Kube-vim connection configuration."
+      properties:
+        ip:
+          $ref: './common.openapi.yaml#/components/schemas/ipAddress'
+          description: "IP address of the kube-vim server. Tipically kube-vim launches in the same k8s pod as a kube-vim gateway"
+          default: 127.0.0.1
+        port:
+          $ref: './common.openapi.yaml#/components/schemas/port'
+          description: "Port of the kube-vim server."
+          default: 50051
+        tls:
+          $ref: './common.openapi.yaml#/components/schemas/tlsClientConfig'
+          description: |
+            "TLS configuration for the kube-vim server connection. In most cases TLS is not needed since both kube-vim and
+            gateway launcehs in the same pod and the network is isoloted and communication is performed over loopback."

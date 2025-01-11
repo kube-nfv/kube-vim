@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -27,6 +28,24 @@ var (
 func init() {
 	// Parse CmdLine flags
 	flag.StringVar(&opts.confgPath, "config", "/etc/kube-vim/config.yaml", "kube-vim configuration file path")
+
+	// Init Viper Defaults
+	viper.SetDefault("service.logLevel", "info")
+	viper.SetDefault("service.server.port", 50051)
+
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podNamespace == "" {
+		podNamespace = common.KubeNfvDefaultNamespace
+	}
+	viper.SetDefault("k8s.namespace", podNamespace)
+}
+
+func SetConfigDefaultAfterInit() {
+	// Temporary hack to initialize http node in configuration if it is empty like
+	// http: {}
+	if viper.IsSet("image.http") {
+		viper.SetDefault("image.http.initEmpty", true)
+	}
 }
 
 func main() {
@@ -35,7 +54,7 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Can't read kube-vim configuration from path %s. Error: %v", opts.confgPath, err)
 	}
-	config.InitDefaultAfterReading()
+	SetConfigDefaultAfterInit()
 	var config config.Config
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)

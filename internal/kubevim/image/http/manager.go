@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
+	common "github.com/DiMalovanyy/kube-vim/internal/config"
+	config "github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
 	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
@@ -59,12 +60,12 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if err == nil {
 		return softwareImageInfoFromVolumeImportSource(vis)
 	}
-	if !k8s_errors.IsNotFound(err) && !errors.Is(err, config.NotFoundErr) {
+	if !k8s_errors.IsNotFound(err) && !errors.Is(err, common.NotFoundErr) {
 		return nil, fmt.Errorf("can't get k8s Data Volume specified by the imageId \"%s\": %w", imageId.GetValue(), err)
 	}
 	// Data volume not found and need to be created.
 	if !isSource {
-		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", config.UnsupportedErr)
+		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", common.UnsupportedErr)
 	}
 	vis, err = m.cdiCtrl.CreateVolumeImportSource(ctx, &v1beta1.ImportSourceType{
 		HTTP: &v1beta1.DataVolumeSourceHTTP{
@@ -79,12 +80,12 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 
 func (m *manager) GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
 
-	return nil, config.NotImplementedErr
+	return nil, common.NotImplementedErr
 }
 
 func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*location*/) error {
 
-	return config.NotImplementedErr
+	return common.NotImplementedErr
 }
 
 // TODO: HTTP HEAD returns actual image size, while PVC need to be created with virtual.

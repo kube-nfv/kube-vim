@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 )
 

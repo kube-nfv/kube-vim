@@ -36,7 +36,7 @@ func NewKubeovnNetworkManager(k8sConfig *rest.Config) (*manager, error) {
 	return &manager{
 		kubeOvnClient:   ovnC,
 		netAttachClient: netAttC,
-		namespace:       config.KubeNfvDefaultNamespace,
+		namespace:       common.KubeNfvDefaultNamespace,
 	}, nil
 }
 
@@ -70,7 +70,7 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
 				ObjectMeta: v1.ObjectMeta{
 					Name: netAttachName,
 					Labels: map[string]string{
-						config.K8sManagedByLabel:   config.KubeNfvName,
+						common.K8sManagedByLabel:   common.KubeNfvName,
 						network.K8sSubnetNameLabel: subnet.GetName(),
 					},
 				},
@@ -128,9 +128,9 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 				return nfvNetworkSubnetFromKubeovnSubnet(subnetRef)
 			}
 		}
-		return nil, fmt.Errorf("kubeovn subnet with id \"%s\" not found: %w", cfg.Uid.GetValue(), config.NotFoundErr)
+		return nil, fmt.Errorf("kubeovn subnet with id \"%s\" not found: %w", cfg.Uid.GetValue(), common.NotFoundErr)
 	}
-	return nil, fmt.Errorf("either subnet name or uid should be specified to get kubeovn subnet: %w", config.InvalidArgumentErr)
+	return nil, fmt.Errorf("either subnet name or uid should be specified to get kubeovn subnet: %w", common.InvalidArgumentErr)
 }
 
 func (m *manager) DeleteNetwork(ctx context.Context, name string) error {

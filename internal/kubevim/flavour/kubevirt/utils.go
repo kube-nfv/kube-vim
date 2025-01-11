@@ -47,7 +47,7 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 			ObjectMeta: v1.ObjectMeta{
 				Name: flavourNameFromId(flavorId),
 				Labels: map[string]string{
-					config.K8sManagedByLabel:  config.KubeNfvName,
+					common.K8sManagedByLabel:  common.KubeNfvName,
 					flavour.K8sFlavourIdLabel: flavorId,
 				},
 			},
@@ -56,7 +56,7 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 			ObjectMeta: v1.ObjectMeta{
 				Name: flavourPreferenceNameFromId(flavorId),
 				Labels: map[string]string{
-					config.K8sManagedByLabel:  config.KubeNfvName,
+					common.K8sManagedByLabel:  common.KubeNfvName,
 					flavour.K8sFlavourIdLabel: flavorId,
 				},
 			},

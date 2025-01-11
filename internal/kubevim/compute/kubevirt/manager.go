@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	kubevirt_flavour "github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
@@ -76,16 +77,16 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 		return nil, fmt.Errorf("failed to retrive flavour with id \"%s\": %w", req.ComputeFlavourId.GetValue(), err)
 	}
 	if flav.Metadata == nil {
-		return nil, fmt.Errorf("flavour metadata can't be nil: %w", config.UnsupportedErr)
+		return nil, fmt.Errorf("flavour metadata can't be nil: %w", common.UnsupportedErr)
 	}
 
 	// TODO(dmalovan): Add the ability to works with different flavours providers/managers (eg. get flavours directly from the openstack nova)
 	if flavourSource, ok := flav.Metadata.Fields[flavour.K8sFlavourSourceLabel]; !ok || flavourSource != kubevirt_flavour.KubevirtFlavourSource {
-		return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", config.UnsupportedErr)
+		return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", common.UnsupportedErr)
 	}
 	vmInstanceTypeName, ok := flav.Metadata.Fields[kubevirtv1.InstancetypeAnnotation]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.InstancetypeAnnotation, config.InvalidArgumentErr)
+		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.InstancetypeAnnotation, common.InvalidArgumentErr)
 	}
 	instanceTypeMatcher, err := initVmInstanceTypeMatcher(vmInstanceTypeName)
 	if err != nil {
@@ -93,7 +94,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	}
 	vmPreferenceName, ok := flav.Metadata.Fields[kubevirtv1.PreferenceAnnotation]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.PreferenceAnnotation, config.InvalidArgumentErr)
+		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.PreferenceAnnotation, common.InvalidArgumentErr)
 	}
 	// Note(dmalovan): preference matcher can be nil if some errors are returned. (eg. missed preference name in meta)
 	preferenceMatcher, _ := initVmPreferenceMatcher(vmPreferenceName)
@@ -132,7 +133,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 			Name: vmName,
 			Labels: map[string]string{
 				kubevirtv1.VirtualMachineLabel: vmName,
-				config.K8sManagedByLabel:       config.KubeNfvName,
+				common.K8sManagedByLabel:       common.KubeNfvName,
 			},
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
@@ -227,7 +228,7 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation) (*kubevirtv1.D
 		ObjectMeta: v1.ObjectMeta{
 			Name: dvName,
 			Labels: map[string]string{
-				config.K8sManagedByLabel: config.KubeNfvName,
+				common.K8sManagedByLabel: common.KubeNfvName,
 			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
@@ -273,7 +274,7 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 
 func initNetwork(ctx context.Context, netManager network.Manager, networkData *nfv.VirtualInterfaceData) (*kubevirtv1.Network, error) {
 	if networkData.NetworkId == nil || networkData.NetworkId.Value == "" {
-		return nil, fmt.Errorf("networkId can't be empty for VirtualInterfaceData: %w", config.InvalidArgumentErr)
+		return nil, fmt.Errorf("networkId can't be empty for VirtualInterfaceData: %w", common.InvalidArgumentErr)
 	}
 	getSubnetOpts := make([]network.GetSubnetOpt, 0)
 	if err := misc.IsUUID(networkData.NetworkId.Value); err == nil {
@@ -286,15 +287,15 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkData *n
 		return nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkData.GetNetworkId().Value, err)
 	}
 	if nfvSubnet.Metadata == nil {
-		return nil, fmt.Errorf("subnet \"%s\" metadata can't be empty: %w", nfvSubnet.ResourceId.String(), config.InvalidArgumentErr)
+		return nil, fmt.Errorf("subnet \"%s\" metadata can't be empty: %w", nfvSubnet.ResourceId.String(), common.InvalidArgumentErr)
 	}
 	netAttachName, ok := nfvSubnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
 	if !ok {
-		return nil, fmt.Errorf("network subnet missing label \"%s\" to identify network attachment definition: %w", network.K8sSubnetNetAttachNameLabel, config.InvalidArgumentErr)
+		return nil, fmt.Errorf("network subnet missing label \"%s\" to identify network attachment definition: %w", network.K8sSubnetNetAttachNameLabel, common.InvalidArgumentErr)
 	}
 	subnetName, ok := nfvSubnet.Metadata.Fields[network.K8sSubnetNameLabel]
 	if !ok {
-		return nil, fmt.Errorf("network subnet missing label \"%s\" to identify the subnet name: %w", network.K8sSubnetNameLabel, config.UnsupportedErr)
+		return nil, fmt.Errorf("network subnet missing label \"%s\" to identify the subnet name: %w", network.K8sSubnetNameLabel, common.UnsupportedErr)
 	}
 	return &kubevirtv1.Network{
 		Name: subnetName,

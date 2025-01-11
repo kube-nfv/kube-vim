@@ -20,38 +20,21 @@ components:
       type: object
       description: "Configuration related to the kube-vim service."
       properties:
+        logLevel:
+          $ref: './common.openapi.yaml#/components/schemas/logLevel'
         server:
           $ref: '#/components/schemas/ServerConfig'
-        logLevel:
-          type: string
-          enum:
-            - trace
-            - debug
-            - info
-            - warn
-            - error
-          default: info
-          description: "Log level for the kube-vim application. Must be one of 'trace', 'debug', 'info', 'warn', or 'error'. Default is 'info'."
     ServerConfig:
       type: object
       description: "Kube-vim Server configuration."
       properties:
         port:
-          type: integer
-          minimum: 1
-          maximum: 65535
+          $ref: './common.openapi.yaml#/components/schemas/port'
           default: 50051
-          description: "A valid TCP port number (1-65535) for the kube-vim gRPC service. Default is 50051."
+          description: "Kube-vim gRPC service listening port."
         tls:
-          type: object
-          description: "Kube-vim server TLS configuration."
-          properties:
-            cert:
-              type: string
-              description: "Path to the x.509 certificate"
-            key:
-              type: string
-              description: "Path to the x.509 private key"
+          $ref: './common.openapi.yaml#/components/schemas/tlsServerConfig'
+          description: "Kube-vim gRPC service TLS configuration."
     K8sConfig:
       type: object
       description: "Configuration related to Kubernetes operations."
