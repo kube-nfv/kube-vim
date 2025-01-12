@@ -1,6 +1,14 @@
 NAME ?= kube-vim
 
-IMG ?= ghcr.io/kube-nfv/kube-vim:latest
+
+IMG_BASE ?= ghcr.io/kube-nfv
+KUBEVIM = kube-vim
+KUBEVIM_VERSION ?= latest
+KUBEVIM_IMG ?= $(IMG_BASE)/$(KUBEVIM):$(KUBEVIM_VERSION)
+
+KUBEVIM_GATEWAY = gateway
+KUBEVIM_GATEWAY_VERSION ?= latest
+KUBEVIM_GATEWAY_IMG ?= $(IMG_BASE)/$(KUBEVIM_GATEWAY):$(KUBEVIM_GATEWAY_VERSION)
 
 DEV ?= 0
 
@@ -12,6 +20,7 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
+LOCALBIN ?= $(shell pwd)/bin
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
@@ -57,8 +66,13 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet
-	go build -o bin/kubevim cmd/kube-vim/main.go
+build: generate fmt vet $(LOCALBIN)/$(KUBEVIM) $(LOCALBIN)/$(KUBEVIM_GATEWAY)
+
+$(LOCALBIN)/$(KUBEVIM): $(LOCALBIN) FORCE
+	go build -o $@ cmd/kube-vim/main.go
+
+$(LOCALBIN)/$(KUBEVIM_GATEWAY): $(LOCALBIN) FORCE
+	go build -o $@ cmd/kube-vim-gateway/main.go
 
 .PHONY: test
 test: fmt vet
@@ -68,8 +82,15 @@ test: fmt vet
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} -f dist/Dockerfile .
+docker-build: docker-kubevim-build docker-gateway-build ## Build kubevim related docker images.
+
+.PHONY: docker-kubevim-build
+docker-kubevim-build: ## Build kubevim docker image.
+	$(CONTAINER_TOOL) build -t $(KUBEVIM_IMG) -f dist/Dockerfile.$(KUBEVIM) .
+
+.PHONY: docker-gateway-build
+docker-gateway-build: ## Build kubevim gateway docker image.
+	$(CONTAINER_TOOL) build -t $(KUBEVIM_GATEWAY_IMG) -f dist/Dockerfile.$(KUBEVIM_GATEWAY) .
 
 .PHONY: build-dist-manifests
 build-dist-manifests:
@@ -78,7 +99,6 @@ build-dist-manifests:
 ##@ Dependencies
 
 ## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
@@ -91,6 +111,7 @@ $(HELM_PLUGINS):
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 KIND ?= $(LOCALBIN)/kind
 YQ = $(LOCALBIN)/yq
+# TODO: Replace with the kube-openapi generator
 OAPI_CODEGEN ?= $(LOCALBIN)/oapi-codegen
 KUBE_OVN_INSTALL ?= $(LOCALBIN)/kube-ovn/install.sh
 KUBE_VIRT_OPERATOR ?= $(LOCALBIN)/kube-virt/kubevirt-operator.yaml
@@ -207,8 +228,15 @@ endif
 CONTROL_PLANE_TAINTS = node-role.kubernetes.io/master node-role.kubernetes.io/control-plane
 
 .PHONY: kind-load
-kind-load: docker-build kind kind-create ## Build and upload docker image to the local Kind cluster.
-	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
+kind-load: kind-load-kubevim kind-load-gateway ## Upload docker images realted to the kubevim application to the local Kind cluster.
+
+.PHONY: kind-load-kubevim
+kind-load-kubevim: docker-kubevim-build kind kind-create ## Upload kubevim image to the local Kind cluster.
+	$(KIND) load docker-image $(KUBEVIM_IMG) --name $(KIND_CLUSTER_NAME)
+
+.PHONY: kind-load-gateway
+kind-load-gateway: docker-gateway-build kind kind-create ## Upload kubevim gateway image to the local Kind cluster.
+	$(KIND) load docker-image $(KUBEVIM_GATEWAY_IMG) --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
@@ -266,3 +294,5 @@ kind-untaint-control-plane:
 			fi; \
 		done; \
 	done
+
+FORCE:

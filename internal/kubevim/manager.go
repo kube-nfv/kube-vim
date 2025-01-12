@@ -85,9 +85,11 @@ func (m *kubevimManager) Start(ctx context.Context) {
 		}
 	}()
 	go func() {
-		err := <-errCh
-		m.logger.Error("Kubevim manager received unrecoverable error. Control loop will terminate", zap.Error(err))
-		cancel()
+		select {
+		case err := <-errCh:
+			m.logger.Error("Kubevim manager received unrecoverable error. Control loop will terminate", zap.Error(err))
+			cancel()
+		}
 	}()
 	select {
 	case <-ctx.Done():

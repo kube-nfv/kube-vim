@@ -13,6 +13,7 @@ import (
 	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim"
+	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -61,18 +62,15 @@ func main() {
 	}
 
 	// Initialize the logger
-	// TODO(dmalovan): Add log level configuration based on the config value
-	baseLoggerCfg := zap.NewProductionConfig()
-	baseLoggerCfg.DisableStacktrace = true
-	logger, err := baseLoggerCfg.Build()
+	logger, err := common.InitLogger(*config.Service.LogLevel)
 	if err != nil {
-		log.Fatalf("Can't initialize zap logger: %v", err)
+		log.Fatalf("failed to initialize zap logger: %v", err)
 	}
 	defer logger.Sync() // Ensure all logs are flushed before the application exits
 
 	cfgStr, err := json.Marshal(config)
 	if err == nil {
-		logger.Info("", zap.String("config", string(cfgStr)))
+		logger.Debug("", zap.String("config", string(cfgStr)))
 	}
 
 	mgr, err := kubevim.NewKubeVimManager(&config, logger.Named("Kubevim"))
@@ -91,30 +89,15 @@ func main() {
 
 	wg.Add(2)
 	go func() {
-		shutdownHandler(logger, ctx, sigs, cancel)
-		wg.Done()
+        defer wg.Done()
+		misc.ShutdownHandler(logger, ctx, sigs, cancel)
 	}()
 	go func() {
+        defer wg.Done()
 		mgr.Start(ctx)
-		wg.Done()
 	}()
 
 	wg.Wait()
 	logger.Info("Exiting cleanly...")
 	os.Exit(0)
-}
-
-func shutdownHandler(log *zap.Logger, ctx context.Context, sigs chan os.Signal, cancel context.CancelFunc) {
-	// Wait for the context do be Done or for the signal to come in to shutdown.
-	select {
-	case <-ctx.Done():
-		log.Info("Stopping shutdownHandler...")
-	case <-sigs:
-		// Call cancel on the context to close everything down.
-		cancel()
-		log.Info("shutdownHandler sent cancel signal...")
-	}
-
-	// Unregister to get default OS nuke behaviour in case we don't exit cleanly
-	signal.Stop(sigs)
 }

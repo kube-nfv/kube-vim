@@ -151,6 +151,16 @@ data:
             cidrBlock: 172.17.0.0/16
             gateway: 172.17.0.1
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-vim-gateway-config
+  namespace: kube-nfv
+data:
+  config.yaml: |
+    service:
+      logLevel: "debug"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -174,8 +184,8 @@ spec:
         name: vim
         imagePullPolicy: IfNotPresent
         volumeMounts:
-        - name: config
-          mountPath: /etc/kube-vim
+        - name: kube-vim-config
+          mountPath: /etc/kube-vim/config.yaml
           readOnly: true
         - name: images
           mountPath: /mnt/images
@@ -185,9 +195,19 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+      - image: ghcr.io/kube-nfv/gateway:latest
+        name: gateway
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: kube-vim-gateway-config
+          mountPath: /etc/kube-vim-gateway/config.yaml
+          readOnly: true
       volumes:
-      - name: config
+      - name: kube-vim-config
         configMap:
           name: kube-vim-config
+      - name: kube-vim-gateway-config
+        configMap:
+          name: kube-vim-gateway-config
       - name: images
         emptyDir:

@@ -10,6 +10,8 @@ components:
       properties:
         service:
           $ref: '#/components/schemas/ServiceConfig'
+        kubevim:
+          $ref: '#/components/schemas/KubeVimConfig'
     ServiceConfig:
       type: object
       description: "Configuration related to the kube-vim Gateway service."
@@ -22,6 +24,10 @@ components:
       type: object
       description: "Kube-vim Gateway Server configuration."
       properties:
+        ip:
+          $ref: './common.openapi.yaml#/components/schemas/ipAddress'
+          description: "IP address of the kube-vim Gateway server."
+          default: 127.0.0.1
         port:
           $ref: './common.openapi.yaml#/components/schemas/port'
           default: 51155

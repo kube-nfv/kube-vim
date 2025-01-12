@@ -9,6 +9,9 @@ import (
 
 // Config Top-level configuration node for kube-vim gateway.
 type Config struct {
+	// Kubevim Kube-vim connection configuration.
+	Kubevim *KubeVimConfig `json:"kubevim,omitempty"`
+
 	// Service Configuration related to the kube-vim Gateway service.
 	Service *ServiceConfig `json:"service,omitempty"`
 }
@@ -42,6 +45,17 @@ type KubeVimConfig struct {
 
 // ServerConfig Kube-vim Gateway Server configuration.
 type ServerConfig struct {
+	// Ip "IP address in either IPv4 or IPv6 format. An IP address is used to uniquely identify
+	// a device on a network. This schema can accept both IPv4 addresses (e.g., '192.168.0.1')
+	// and IPv6 addresses (e.g., '2001:0db8:85a3:0000:0000:8a2e:0370:7334').
+	//
+	// The address must be in a valid format according to the respective version. IPv4 addresses
+	// are written as four decimal numbers (each between 0 and 255) separated by periods (e.g., '192.168.1.1').
+	// IPv6 addresses are written as eight groups of four hexadecimal digits, separated by colons (e.g., '2001:db8::ff00:42:8329').
+	//
+	// The format will be validated to ensure the correct syntax for either version."
+	Ip *externalRef0.IpAddress `json:"ip,omitempty"`
+
 	// Port "A TCP port number specifies the endpoint for network communication on the service.
 	// Port numbers range from 1 to 65535, with the lower range (1-1023) typically reserved for well-known services and system processes.
 	// It is important to choose a port within the allowed range that does not conflict with other services running on the host.
