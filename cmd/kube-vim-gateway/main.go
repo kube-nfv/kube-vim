@@ -32,7 +32,6 @@ func init() {
 
 	//Init Viper defaults
 	viper.SetDefault("service.logLevel", "info")
-	viper.SetDefault("service.server.ip", "127.0.0.1")
 	viper.SetDefault("service.server.port", 51155)
 
 	viper.SetDefault("kubevim.ip", "127.0.0.1")

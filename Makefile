@@ -135,6 +135,7 @@ CSI_HOSTPATH_DRIVER_DEPS     ?= csi-hostpath-driverinfo.yaml \
 
 
 KIND_VERSION ?= v0.23.0
+KIND_CLOUD_PROVIDER_VERSION ?= v0.4.0
 YQ_VERSION ?= v4.44.1
 GOLANGCI_LINT_VERSION ?= v1.59.1
 OAPI_CODEGEN_VERSION ?= v2.4.0
@@ -248,13 +249,13 @@ kind-create: kind yq ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-delete
-kind-delete: kind ## Create kubernetes cluster using Kind.
+kind-delete: kind kind-delete-cloud-provider ## Create kubernetes cluster using Kind.
 	@if $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
 		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni ## Prepare kind cluster for kube-vim installation
+kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni kind-prepare-cloud-provider ## Prepare kind cluster for kube-vim installation
 	# delete default storage class
 	kubectl delete --ignore-not-found sc standard
 	kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner
@@ -271,6 +272,20 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni 
 	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
 	kubectl create -f $(KUBE_VIRT_CDI_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CDI_CR)
+
+
+KIND_CLOUD_PROVIDER_CONTAINER_NAME ?= kind-cloud-provider
+.PHONY: kind-prepare-cloud-provider
+kind-prepare-cloud-provider:
+	docker run -d --rm --network kind -v /var/run/docker.sock:/var/run/docker.sock \
+		--name $(KIND_CLOUD_PROVIDER_CONTAINER_NAME) \
+		registry.k8s.io/cloud-provider-kind/cloud-controller-manager:$(KIND_CLOUD_PROVIDER_VERSION)
+
+.PHONY: kind-delete-cloud-provider
+kind-delete-cloud-provider:
+	@if docker ps -q --filter "name=$(KIND_CLOUD_PROVIDER_CONTAINER_NAME)" | grep -q .; then \
+		docker rm -f $(KIND_CLOUD_PROVIDER_CONTAINER_NAME); \
+	fi
 
 .PHONY: kind-prepare-dev
 kind-prepare-dev: ## Prepare development evironment for kube-vim operation

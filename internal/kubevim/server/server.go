@@ -113,7 +113,7 @@ func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo
 			clientIP = addr.IP.String()
 		}
 	}
-	log.Info("Started request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
+	log.Info("New incoming request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
 	start := time.Now()
 	resp, err = handler(ctx, req)
 	duration := time.Since(start)
