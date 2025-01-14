@@ -185,7 +185,7 @@ spec:
         imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: kube-vim-config
-          mountPath: /etc/kube-vim/config.yaml
+          mountPath: /etc/kube-vim
           readOnly: true
         - name: images
           mountPath: /mnt/images
@@ -200,7 +200,7 @@ spec:
         imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: kube-vim-gateway-config
-          mountPath: /etc/kube-vim-gateway/config.yaml
+          mountPath: /etc/kube-vim-gateway
           readOnly: true
       volumes:
       - name: kube-vim-config

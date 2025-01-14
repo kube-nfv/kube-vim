@@ -286,6 +286,9 @@ kind-delete-cloud-provider:
 	@if docker ps -q --filter "name=$(KIND_CLOUD_PROVIDER_CONTAINER_NAME)" | grep -q .; then \
 		docker rm -f $(KIND_CLOUD_PROVIDER_CONTAINER_NAME); \
 	fi
+	@for ccm in $(shell docker ps -q --filter "name=kindccm"); do \
+		docker rm -f $$ccm; \
+	done
 
 .PHONY: kind-prepare-dev
 kind-prepare-dev: ## Prepare development evironment for kube-vim operation

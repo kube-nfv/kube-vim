@@ -1,4 +1,4 @@
-package misc
+package gateway
 
 import (
 	"net/http"
@@ -8,8 +8,22 @@ import (
 	"go.uber.org/zap"
 )
 
+func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        clientIP := getClientIP(r)
+
+        logger.Debug("New incoming request", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)))
+		start := time.Now()
+
+		handler.ServeHTTP(w, r)
+
+		duration := time.Since(start)
+        logger.Info("Request completed", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)), zap.Duration("Duration", duration))
+	})
+}
+
 // getClientIP extracts the client IP address from the request
-func GetClientIP(r *http.Request) string {
+func getClientIP(r *http.Request) string {
 	// Check for X-Forwarded-For header (used when behind a proxy)
 	xForwardedFor := r.Header.Get("X-Forwarded-For")
 	if xForwardedFor != "" {
@@ -25,7 +39,7 @@ func GetClientIP(r *http.Request) string {
 }
 
 // GetClientPort extracts the client port from the request
-func GetClientPort(r *http.Request) string {
+func getClientPort(r *http.Request) string {
 	remoteAddr := r.RemoteAddr
 	if remoteAddr != "" {
 		parts := strings.Split(remoteAddr, ":")
@@ -34,18 +48,4 @@ func GetClientPort(r *http.Request) string {
 		}
 	}
 	return "unknown"
-}
-
-func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        clientIP := GetClientIP(r)
-
-        logger.Debug("New incoming request", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", GetClientPort(r)))
-		start := time.Now()
-
-		handler.ServeHTTP(w, r)
-
-		duration := time.Since(start)
-        logger.Info("Request completed", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", GetClientPort(r)), zap.Duration("Duration", duration))
-	})
 }

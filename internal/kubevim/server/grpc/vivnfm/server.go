@@ -2,7 +2,9 @@ package vivnfm
 
 import (
 	"context"
+	"fmt"
 
+	common "github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
@@ -53,6 +55,9 @@ func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.Create
 
 // TODO: Change this to use Filter instead of identifier
 func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryComputeFlavourRequest) (*nfv.QueryComputeFlavourResponse, error) {
+    if req.QueryComputeFlavourFilter == nil {
+        return nil, fmt.Errorf("filter can't be empty: %w", common.UnsupportedErr)
+    }
 	res, err := s.FlavourMgr.GetFlavour(ctx, &nfv.Identifier{
 		Value: req.QueryComputeFlavourFilter.Value,
 	})
@@ -62,6 +67,7 @@ func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryCo
 		},
 	}, err
 }
+
 func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.DeleteComputeFlavourRequest) (*nfv.DeleteComputeFlavourResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteComputeFlavour not implemented")
 }

@@ -8,7 +8,6 @@ import (
 
 	common "github.com/DiMalovanyy/kube-vim/internal/config"
 	config "github.com/DiMalovanyy/kube-vim/internal/config/gateway"
-	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"go.uber.org/zap"
@@ -53,14 +52,16 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	defer conn.Close()
 	g.logger.Info("successfully connected to the kubevim gRPC endpoint", zap.String("Endpoint", connAddr))
 
-	gwmux := runtime.NewServeMux()
+	gwmux := runtime.NewServeMux(
+        runtime.SetQueryParameterParser(&queryParameterParser{}),
+    )
 	if err = nfv.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
 		return fmt.Errorf("failed to register viVnfm gateway handler: %w", err)
 	}
 	servAddr := fmt.Sprintf(":%d", *g.cfg.Service.Server.Port)
 	server := &http.Server{
 		Addr:    servAddr,
-        Handler: misc.LogMiddlewareHandler(gwmux, g.logger),
+        Handler: LogMiddlewareHandler(gwmux, g.logger),
 	}
 
 	errCh := make(chan error, 1) // buffered channel to avoid goroutine leak
@@ -93,7 +94,6 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	g.logger.Info("kubevim gateway server shutdown completed")
 	return nil
 }
-
 
 func waitForConnectionReady(ctx context.Context, conn *grpc.ClientConn) error {
 	for {
