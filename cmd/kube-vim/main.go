@@ -89,11 +89,11 @@ func main() {
 
 	wg.Add(2)
 	go func() {
-        defer wg.Done()
+		defer wg.Done()
 		misc.ShutdownHandler(logger, ctx, sigs, cancel)
 	}()
 	go func() {
-        defer wg.Done()
+		defer wg.Done()
 		mgr.Start(ctx)
 	}()
 

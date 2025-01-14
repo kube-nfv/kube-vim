@@ -44,6 +44,9 @@ func NewFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) (*manager,
 }
 
 func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComputeFlavour) (*nfv.Identifier, error) {
+	if nfvFlavour == nil {
+		return nil, fmt.Errorf("flavour can't be nil")
+	}
 	var flavourId string
 	if nfvFlavour.FlavourId != nil && nfvFlavour.FlavourId.Value != "" {
 		flavourId = nfvFlavour.FlavourId.Value

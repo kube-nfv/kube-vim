@@ -55,8 +55,8 @@ func NewNorthboundServer(
 		}
 		opts = append(opts, grpc.Creds(creds))
 	} else {
-        log.Warn("No TLS configuration specified. Kubevim gRPC server will launch unsecure!")
-    }
+		log.Warn("No TLS configuration specified. Kubevim gRPC server will launch unsecure!")
+	}
 	server := grpc.NewServer(opts...)
 	nfv.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
 		ImageMgr:   imageMgr,

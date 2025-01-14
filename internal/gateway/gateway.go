@@ -53,15 +53,15 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	g.logger.Info("successfully connected to the kubevim gRPC endpoint", zap.String("Endpoint", connAddr))
 
 	gwmux := runtime.NewServeMux(
-        runtime.SetQueryParameterParser(&queryParameterParser{}),
-    )
+		runtime.SetQueryParameterParser(&queryParameterParser{}),
+	)
 	if err = nfv.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
 		return fmt.Errorf("failed to register viVnfm gateway handler: %w", err)
 	}
 	servAddr := fmt.Sprintf(":%d", *g.cfg.Service.Server.Port)
 	server := &http.Server{
 		Addr:    servAddr,
-        Handler: LogMiddlewareHandler(gwmux, g.logger),
+		Handler: LogMiddlewareHandler(gwmux, g.logger),
 	}
 
 	errCh := make(chan error, 1) // buffered channel to avoid goroutine leak
@@ -72,7 +72,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 				errCh <- fmt.Errorf("failed to start TLS kube-vim Gateway server: %w", err)
 			}
 		} else {
-            g.logger.Warn("No TLS configuration specified. Kubevim Gateway server will launch unsecure!")
+			g.logger.Warn("No TLS configuration specified. Kubevim Gateway server will launch unsecure!")
 			if err := server.ListenAndServe(); err != nil {
 				errCh <- fmt.Errorf("failed to start kube-vim Gateway server: %w", err)
 			}

@@ -272,6 +272,7 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni 
 	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
 	kubectl create -f $(KUBE_VIRT_CDI_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CDI_CR)
+	kubectl create -f dist/manifests/kubevim-lb.yaml
 
 
 KIND_CLOUD_PROVIDER_CONTAINER_NAME ?= kind-cloud-provider
@@ -294,6 +295,7 @@ kind-delete-cloud-provider:
 kind-prepare-dev: ## Prepare development evironment for kube-vim operation
 	kubectl create -f $(CSI_SNAPSHOTTER_CRS_DIR)
 	bash $(CSI_HOSTPATH_DRIVER_INSTALL)
+	kubectl create -f dist/manifests/dev/csi-storageclass.yaml
 
 .PHONY: kind-install
 kind-install: kind-prepare ## Install kube-vim into prepared kind cluster

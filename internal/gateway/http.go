@@ -10,15 +10,15 @@ import (
 
 func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        clientIP := getClientIP(r)
+		clientIP := getClientIP(r)
 
-        logger.Debug("New incoming request", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)))
+		logger.Debug("New incoming request", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)))
 		start := time.Now()
 
 		handler.ServeHTTP(w, r)
 
 		duration := time.Since(start)
-        logger.Info("Request completed", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)), zap.Duration("Duration", duration))
+		logger.Info("Request completed", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)), zap.Duration("Duration", duration))
 	})
 }
 

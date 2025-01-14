@@ -62,10 +62,10 @@ func main() {
 		logger.Debug("", zap.String("config", string(cfgStr)))
 	}
 
-    gw, err := gateway.NewKubeVimGateway(&config, logger.Named("Geteway"))
-    if err != nil {
-        log.Fatal("failed to initialize kube-vim gateway", zap.Error(err))
-    }
+	gw, err := gateway.NewKubeVimGateway(&config, logger.Named("Geteway"))
+	if err != nil {
+		log.Fatal("failed to initialize kube-vim gateway", zap.Error(err))
+	}
 
 	// Create main context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -77,16 +77,16 @@ func main() {
 
 	wg.Add(2)
 	go func() {
-        defer wg.Done()
+		defer wg.Done()
 		misc.ShutdownHandler(logger, ctx, sigs, cancel)
 	}()
-    go func() {
-        defer wg.Done()
-        if err := gw.Start(ctx); err != nil {
-            log.Fatalf("failed to start kubevim gateway server. %w", err)
-        }
-    }()
-    wg.Wait()
+	go func() {
+		defer wg.Done()
+		if err := gw.Start(ctx); err != nil {
+			log.Fatalf("failed to start kubevim gateway server. %v", err)
+		}
+	}()
+	wg.Wait()
 	logger.Info("Exiting cleanly...")
 	os.Exit(0)
 }

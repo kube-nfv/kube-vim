@@ -160,6 +160,10 @@ github.com/kube-nfv/kube-vim-api v0.0.3-alpha.8 h1:8sAdi62kk6LgV4HHPN1FNqxwwgwyd
 github.com/kube-nfv/kube-vim-api v0.0.3-alpha.8/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api v0.0.3-alpha.9 h1:5hWQEaDbVt5p9q3ZORCa6cqWMTYgi/oy0tD9EIxCeGU=
 github.com/kube-nfv/kube-vim-api v0.0.3-alpha.9/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
+github.com/kube-nfv/kube-vim-api v0.0.3 h1:fAgdKO9QM5+fW0AWG7QXdyfgrDgXljDpYciq3ooGtEo=
+github.com/kube-nfv/kube-vim-api v0.0.3/go.mod h1:nWWmA+P9BRyf/5fnN9QxvOhK22r4doMyeYK50O8q5KU=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.1 h1:Wr61CNiBRklYPiOgF8+ACGw2swH0eZKACdwa1wa3dv8=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.1/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2 h1:03fNpa4ZRm4aRZAaLugSUN92RWdQSeG9UtgjGhuAmNA=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2/go.mod h1:3C5sIEmwrUi/1CYd2UUmQlr9mO+uY3rzdesSl4kFqSQ=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
