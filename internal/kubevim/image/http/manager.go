@@ -51,7 +51,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if strings.HasPrefix(imageId.GetValue(), "http") || strings.HasPrefix(imageId.GetValue(), "https") {
 		getDvOpts = append(getDvOpts, image.FindBySourceUrl(imageId.GetValue()))
 		isSource = true
-	} else if err := misc.IsUUID(imageId.GetValue()); err == nil {
+	} else if misc.IsUUID(imageId.GetValue()) {
 		getDvOpts = append(getDvOpts, image.FindByUID(imageId.GetValue()))
 	} else {
 		getDvOpts = append(getDvOpts, image.FindByName(imageId.GetValue()))

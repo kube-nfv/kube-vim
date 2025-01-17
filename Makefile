@@ -272,7 +272,6 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni 
 	# kubectl -n kubevirt wait kv kubevirt --for condition=Available
 	kubectl create -f $(KUBE_VIRT_CDI_OPERATOR)
 	kubectl create -f $(KUBE_VIRT_CDI_CR)
-	kubectl create -f dist/manifests/kubevim-lb.yaml
 
 
 KIND_CLOUD_PROVIDER_CONTAINER_NAME ?= kind-cloud-provider
@@ -303,6 +302,7 @@ kind-install: kind-prepare ## Install kube-vim into prepared kind cluster
 	@if [ "$(DEV)" = "1" ]; then \
 		kubectl create -f dist/manifests/dev/nodeport.yaml; \
 	fi
+	kubectl create -f dist/manifests/kubevim-lb.yaml
 
 .PHONY: kind-untaint-control-plane
 kind-untaint-control-plane:

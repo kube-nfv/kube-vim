@@ -17,7 +17,10 @@ const (
 type Manager interface {
 	CreateNetwork(context.Context, string /*name*/, *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error)
 	GetNetwork(context.Context, ...GetNetworkOpt) (*nfv.VirtualNetwork, error)
+	DeleteNetwork(context.Context, ...GetNetworkOpt) error
+	CreateSubnet(context.Context, string /*name*/, *nfv.NetworkSubnetData) (*nfv.NetworkSubnet, error)
 	GetSubnet(context.Context, ...GetSubnetOpt) (*nfv.NetworkSubnet, error)
+	DeleteSubnet(context.Context, ...GetSubnetOpt) error
 }
 
 type GetNetworkOpt func(*getNetworkOpts)

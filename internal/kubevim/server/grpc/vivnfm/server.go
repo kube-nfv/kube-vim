@@ -91,7 +91,22 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return &nfv.AllocateNetworkResponse{
 			NetworkData: net,
 		}, err
+    case nfv.AllocateNetworkRequest_SUBNET:
+        if req.TypeSubnetData == nil {
+            return nil, status.Error(codes.InvalidArgument, "field TypeSubnetData can't be empty with Subnet resource type")
+        }
+        subnet, err := s.NetworkMgr.CreateSubnet(ctx, *req.NetworkResourceName, req.TypeSubnetData)
+        return &nfv.AllocateNetworkResponse{
+            SubnetData: subnet,
+        }, err
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())
 	}
+}
+func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req *nfv.QueryNetworkRequest) (*nfv.QueryNetworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryVirtualisedNetworkResource not implemented")
+}
+
+func (s *ViVnfmServer) TerminateVirtualisedNetworkResource(ctx context.Context, req *nfv.TerminateNetworkRequest) (*nfv.TerminateNetworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TerminateVirtualisedNetworkResource not implemented")
 }

@@ -113,11 +113,13 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 	if _, _, err := net.ParseCIDR(nfvSubnet.Cidr.GetCidr()); err != nil {
 		return nil, fmt.Errorf("cidr \"%s\" is in incorrect format: %w", nfvSubnet.Cidr.GetCidr(), err)
 	}
+
 	sub := &kubeovnv1.Subnet{
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
+                network.K8sSubnetNameLabel: name,
 			},
 		},
 		Spec: kubeovnv1.SubnetSpec{

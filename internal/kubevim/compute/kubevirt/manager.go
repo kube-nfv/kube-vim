@@ -164,7 +164,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 								{
 									Name: KubevirtVmMgmtNetworkName,
 									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
-										Masquerade: &kubevirtv1.InterfaceMasquerade{},
+										Bridge: &kubevirtv1.InterfaceBridge{},
 									},
 								},
 							},
@@ -277,7 +277,7 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkData *n
 		return nil, fmt.Errorf("networkId can't be empty for VirtualInterfaceData: %w", common.InvalidArgumentErr)
 	}
 	getSubnetOpts := make([]network.GetSubnetOpt, 0)
-	if err := misc.IsUUID(networkData.NetworkId.Value); err == nil {
+	if misc.IsUUID(networkData.NetworkId.Value) {
 		getSubnetOpts = append(getSubnetOpts, network.GetSubnetByUid(networkData.GetNetworkId()))
 	} else {
 		getSubnetOpts = append(getSubnetOpts, network.GetSubnetByName(networkData.GetNetworkId().Value))

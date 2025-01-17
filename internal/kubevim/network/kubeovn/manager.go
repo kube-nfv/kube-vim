@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/DiMalovanyy/kube-vim/internal/config"
-	k8s_utils "github.com/DiMalovanyy/kube-vim/internal/k8s"
 	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
+	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
@@ -45,55 +45,35 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
 	if err != nil {
 		return nil, fmt.Errorf("Failed to convert nfv VirtualNetworkData to kube-ovn Vpc: %w", err)
 	}
-	subnetsToCreate := make([]*kubeovnv1.Subnet, 0, len(networkData.Layer3Attributes))
-	for idx, l3Attr := range networkData.Layer3Attributes {
-		subnet, err := kubeovnSubnetFromNfvSubnetData(formatSubnetName(name, strconv.Itoa(idx)), l3Attr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kubeovn network resource from the spicified VirtualNetworkData l3 attribute with index \"%d\": %w", idx, err)
-		}
-		// Add VPC to the subnet
-		subnet.Spec.Vpc = vpc.GetName()
-		subnet.Labels[network.K8sNetworkNameLabel] = vpc.GetName()
-		subnetsToCreate = append(subnetsToCreate, subnet)
-	}
 	createdVpc, err := m.kubeOvnClient.KubeovnV1().Vpcs().Create(ctx, vpc, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kube-ovn Vpc k8s object: %w", err)
 	}
-	subnetIds := make([]*nfv.Identifier, 0, len(subnetsToCreate))
-	for _, subnet := range subnetsToCreate {
-		// Create multus NetworkAttachmentDefinition for each subnet
-		netAttachName := formatNetAttachName(subnet.GetName())
-		_, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Create(
-			ctx,
-			&netattv1.NetworkAttachmentDefinition{
-				ObjectMeta: v1.ObjectMeta{
-					Name: netAttachName,
-					Labels: map[string]string{
-						common.K8sManagedByLabel:   common.KubeNfvName,
-						network.K8sSubnetNameLabel: subnet.GetName(),
-					},
-				},
-				Spec: netattv1.NetworkAttachmentDefinitionSpec{
-					Config: formatNetAttachConfig(netAttachName, m.namespace),
-				},
-			}, v1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create multus network-attachment-definition for subnet \"%s\": %w", subnet.GetName(), err)
+
+	var l3Failed error
+	subnetIds := make([]*nfv.Identifier, 0, len(networkData.Layer3Attributes))
+	for idx, l3attr := range networkData.Layer3Attributes {
+		if l3attr.NetworkId == nil || l3attr.NetworkId.Value == "" {
+			l3attr.NetworkId = &nfv.Identifier{
+				Value: vpc.Name,
+			}
 		}
-		// specify the netattach provider for the kube-ovn subnet
-		subnet.Spec.Provider = formatNetAttachKubeOvnProvider(netAttachName, m.namespace)
-		subnet.Labels[network.K8sNetworkIdLabel] = string(createdVpc.GetUID())
-		subnet.Labels[network.K8sSubnetNetAttachNameLabel] = netAttachName
-		createdSubnet, err := m.kubeOvnClient.KubeovnV1().Subnets().Create(ctx, subnet, v1.CreateOptions{})
+		subnetName := formatSubnetName(name, strconv.Itoa(idx))
+		subnet, err := m.CreateSubnet(ctx, subnetName, l3attr)
 		if err != nil {
-			m.DeleteNetwork(ctx, name)
-			return nil, fmt.Errorf("failed to create kubeovn subnet \"%s\": %w", subnet.GetName(), err)
+			l3Failed = fmt.Errorf("failed to create subnet from vpc l3 attribute with index \"%d\": %w", idx, err)
+			break
 		}
-		subnetIds = append(subnetIds, k8s_utils.UIDToIdentifier(createdSubnet.GetUID()))
+		subnetIds = append(subnetIds, subnet.ResourceId)
 	}
+	if l3Failed != nil {
+		// Log resource cleanup error
+		m.DeleteNetwork(ctx, network.GetNetworkByName(name))
+		return nil, fmt.Errorf("failed to create vpc l3 attributes. All created resources cleaned up: %w", err)
+	}
+
 	return &nfv.VirtualNetwork{
-		NetworkResourceId:   k8s_utils.UIDToIdentifier(createdVpc.GetUID()),
+		NetworkResourceId:   misc.UIDToIdentifier(createdVpc.GetUID()),
 		NetworkResourceName: &createdVpc.Name,
 		SubnetId:            subnetIds,
 		NetworkPort:         []*nfv.VirtualNetworkPort{},
@@ -103,9 +83,145 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
 		OperationalState:    nfv.OperationalState_ENABLED,
 	}, nil
 }
-func (m *manager) GetNetwork(context.Context, ...network.GetNetworkOpt) (*nfv.VirtualNetwork, error) {
 
-	return nil, nil
+// Return the network and all l3 attributes that was aquired.
+// Works ONLY with the networks created by kube-vim
+func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*nfv.VirtualNetwork, error) {
+	cfg := network.ApplyGetNetworkOpts(opts...)
+	var vpc *kubeovnv1.Vpc
+	if cfg.Name != "" {
+		var err error
+		vpc, err = m.kubeOvnClient.KubeovnV1().Vpcs().Get(ctx, cfg.Name, v1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubeovn vpc specified by the network name \"%s\": %w", cfg.Name, err)
+		}
+	} else if cfg.Uid != nil && cfg.Uid.Value != "" {
+		vpcList, err := m.kubeOvnClient.KubeovnV1().Vpcs().List(ctx, v1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get list of the kubeovn vpcs to identify vpc with id \"%s\": %w", cfg.Uid.Value, err)
+		}
+		uid := misc.IdentifierToUID(cfg.Uid)
+		for idx, _ := range vpcList.Items {
+			vpcRef := &vpcList.Items[idx]
+			if vpcRef.GetUID() == uid {
+				vpc = vpcRef
+				break
+			}
+		}
+		if vpc == nil {
+			return nil, fmt.Errorf("kubeovn vpc with id \"%s\" not found: %w", cfg.Uid.GetValue(), common.NotFoundErr)
+		}
+	} else {
+		return nil, fmt.Errorf("either network name or uid should be specified to get kubeovn network: %w", common.InvalidArgumentErr)
+	}
+	if !misc.IsObjectManagedByKubeNfv(vpc) {
+		return nil, fmt.Errorf("kubeovn vpc with name \"%s\" and id \"%s\" is not managed by kube-vim", vpc.GetName(), vpc.GetUID())
+	}
+
+	// TODO: When filters are ready rewrite this code to get related subnets using filer
+	subnetIds := []*nfv.Identifier{}
+	for _, subnetName := range vpc.Status.Subnets {
+		subnet, err := m.GetSubnet(ctx, network.GetSubnetByName(subnetName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subnet \"%s\" references by the vpc \"%s\": %w", subnetName, vpc.Name, err)
+		}
+		subnetIds = append(subnetIds, subnet.ResourceId)
+	}
+
+	return &nfv.VirtualNetwork{
+		NetworkResourceId:   misc.UIDToIdentifier(vpc.GetUID()),
+		NetworkResourceName: &vpc.Name,
+		SubnetId:            subnetIds,
+		NetworkPort:         []*nfv.VirtualNetworkPort{},
+		Bandwidth:           0,
+		NetworkType:         "flat",
+		IsShared:            false,
+		OperationalState:    nfv.OperationalState_ENABLED,
+	}, nil
+}
+
+// Delete the network and all aquired resource (subnets, NetworkAttachmentDefinitions, etc.)
+// It will delete the network ONLY if it was created by the kube-vim.
+func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkOpt) error {
+    net, err := m.GetNetwork(ctx, opts...)
+    if err != nil {
+        return fmt.Errorf("failed to get network: %w")
+    }
+    for _, subnetId := range net.SubnetId {
+        if err := m.DeleteSubnet(ctx, network.GetSubnetByUid(subnetId)); err != nil {
+            return fmt.Errorf("failed to deleted network related subnet with id \"%s\": %w", subnetId.Value, err)
+        }
+    }
+    if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
+        return fmt.Errorf("failed to delete kubeovn network with name \"%s\" and id \"%s\": %w", *net.NetworkResourceName, *net.NetworkResourceName, err)
+    }
+    return nil
+}
+
+// Creates the kubeovn subnet from the specified nfv.NetworkSubnetData.
+// If the subnet creation (or convertion) fails all resources (eg. Subnet, multus netowrkAttachmentDefinitions are cleared)
+func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv.NetworkSubnetData) (*nfv.NetworkSubnet, error) {
+	var vpc *nfv.VirtualNetwork
+	if netId := subnetData.NetworkId; netId != nil && netId.Value != "" {
+		opts := []network.GetNetworkOpt{}
+		if misc.IsUUID(netId.Value) {
+			opts = append(opts, network.GetNetworkByUid(netId))
+		} else {
+			opts = append(opts, network.GetNetworkByName(netId.Value))
+		}
+		var err error
+		vpc, err = m.GetNetwork(ctx, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get vpc specified by id \"%s\": %w", netId.Value, err)
+		}
+	}
+	subnet, err := kubeovnSubnetFromNfvSubnetData(name, subnetData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubeovn subnet from specified NetworkSubnetData: %w", err)
+	}
+	if vpc != nil && vpc.NetworkResourceName != nil {
+		subnet.Spec.Vpc = *vpc.NetworkResourceName
+		subnet.Labels[network.K8sNetworkNameLabel] = *vpc.NetworkResourceName
+		subnet.Labels[network.K8sNetworkIdLabel] = vpc.NetworkResourceId.Value
+	}
+	netAttachName := formatNetAttachName(subnet.GetName())
+	_, err = m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Create(
+		ctx,
+		&netattv1.NetworkAttachmentDefinition{
+			ObjectMeta: v1.ObjectMeta{
+				Name: netAttachName,
+				Labels: map[string]string{
+					common.K8sManagedByLabel:   common.KubeNfvName,
+					network.K8sSubnetNameLabel: subnet.GetName(),
+				},
+			},
+			Spec: netattv1.NetworkAttachmentDefinitionSpec{
+				Config: formatNetAttachConfig(netAttachName, m.namespace),
+			},
+		}, v1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multus network-attachment-definition for subnet \"%s\": %w", subnet.GetName(), err)
+	}
+	subnet.Spec.Provider = formatNetAttachKubeOvnProvider(netAttachName, m.namespace)
+	subnet.Labels[network.K8sSubnetNetAttachNameLabel] = netAttachName
+
+	cleanupNetAttach := func() error {
+		return m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{})
+	}
+
+	createdSubnet, err := m.kubeOvnClient.KubeovnV1().Subnets().Create(ctx, subnet, v1.CreateOptions{})
+	if err != nil {
+		cleanupNetAttach()
+		return nil, fmt.Errorf("failed to create kubeovn subnet \"%s\": %w", subnet.GetName(), err)
+	}
+
+	nfvSubnet, err := nfvNetworkSubnetFromKubeovnSubnet(createdSubnet)
+	if err != nil {
+		// Subnet deletion should also delete nettwork attachment
+		m.DeleteSubnet(ctx, network.GetSubnetByUid(misc.UIDToIdentifier(createdSubnet.GetUID())))
+		return nil, fmt.Errorf("failed to convert created kubeovn subnet with name \"%s\" and id \"%s\" to the nfv.NetworkSubnet. Subnet will be deleted: %w", createdSubnet.GetName(), createdSubnet.GetUID(), err)
+	}
+	return nfvSubnet, nil
 }
 
 func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (*nfv.NetworkSubnet, error) {
@@ -121,7 +237,7 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to list a kubeovn subnets: %w", err)
 		}
-		uid := k8s_utils.IdentifierToUID(cfg.Uid)
+		uid := misc.IdentifierToUID(cfg.Uid)
 		for idx, _ := range subnetList.Items {
 			subnetRef := &subnetList.Items[idx]
 			if subnetRef.GetUID() == uid {
@@ -133,6 +249,21 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 	return nil, fmt.Errorf("either subnet name or uid should be specified to get kubeovn subnet: %w", common.InvalidArgumentErr)
 }
 
-func (m *manager) DeleteNetwork(ctx context.Context, name string) error {
-	return nil
+func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt) error {
+    subnet, err := m.GetSubnet(ctx, opts...)
+    if err != nil {
+        return fmt.Errorf("failed to get subnet: %w", err)
+    }
+    netAttachName := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
+    // The only way to get name from the nfv.NetworkSubnet resource is to get it by label.
+    subnetName := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
+
+    // delete multus NetworkAttachmentDefinition
+    if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
+        return fmt.Errorf("failed to delete multus NetworkAttachmentDefinition \"%s\" for subnet \"%s\": %w", netAttachName, subnet.ResourceId.Value, err)
+    }
+    if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
+        return fmt.Errorf("failed to delete kubeovn subnet with name \"%s\" and id \"%s\": %w", subnetName, subnet.ResourceId.Value, err)
+    }
+    return nil
 }
