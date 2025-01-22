@@ -264,7 +264,13 @@ kind-prepare: kind-create kind-load kube-ovn kube-virt kube-virt-cdi multus-cni 
 	@echo "Installing kube-ovn to the kind"
 	cd bin/kube-ovn; sed 's/VERSION=.*/VERSION=$(KUBE_OVN_VERSION)/' $(KUBE_OVN_INSTALL) | bash
 	@echo "Installing multus-cni to the kind"
-	kubectl create -f $(MULTUS_CNI_THICK_DS)
+	@if [ "$(DEV)" = "1" ]; then \
+		kubectl create -f $(MULTUS_CNI_THICK_DS) --dry-run=client -o yaml | \
+		$(YQ) eval 'del(.spec.template.spec.containers[].resources.limits)' \
+		| kubectl apply -f -; \
+	else \
+		kubectl create -f $(MULTUS_CNI_THICK_DS); \
+	fi
 	kubectl rollout status daemonset/kube-multus-ds -n kube-system
 	@echo "Installing kube-virt to the kind"
 	kubectl create -f $(KUBE_VIRT_OPERATOR)
