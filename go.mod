@@ -1,4 +1,4 @@
-module github.com/DiMalovanyy/kube-vim
+module github.com/kube-nfv/kube-vim
 
 go 1.23.0
 
@@ -7,6 +7,7 @@ replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f9
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud v1.14.0
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
 	github.com/kube-nfv/kube-vim-api v0.0.4-alpha.2
 	github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2
@@ -41,7 +42,6 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/josharian/intern v1.0.0 // indirect

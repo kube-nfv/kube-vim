@@ -3,8 +3,8 @@ package misc
 import (
 	"io"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"

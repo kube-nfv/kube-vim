@@ -48,7 +48,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: generate
-generate: ## Generate golang files
+generate: oapi-codegen ## Generate golang files
 	go generate ./...
 
 .PHONY: mod-tidy
@@ -167,7 +167,7 @@ yq: $(LOCALBIN)
 .PHONY: oapi-codegen
 oapi-codegen: $(LOCALBIN)
 	@test -x $(OAPI_CODEGEN) && $(OAPI_CODEGEN) --version | grep -q $(OAPI_CODEGEN_VERSION) || \
-	GOBIN=$(LOCALBIN) go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen$(OAPI_CODEGEN_VERSION)
+	GOBIN=$(LOCALBIN) go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 
 .PHONY: csi-snapshotter
 csi-snapshotter: $(LOCALBIN)

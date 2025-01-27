@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	common "github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/compute"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/image"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	common "github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -91,14 +91,14 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return &nfv.AllocateNetworkResponse{
 			NetworkData: net,
 		}, err
-    case nfv.AllocateNetworkRequest_SUBNET:
-        if req.TypeSubnetData == nil {
-            return nil, status.Error(codes.InvalidArgument, "field TypeSubnetData can't be empty with Subnet resource type")
-        }
-        subnet, err := s.NetworkMgr.CreateSubnet(ctx, *req.NetworkResourceName, req.TypeSubnetData)
-        return &nfv.AllocateNetworkResponse{
-            SubnetData: subnet,
-        }, err
+	case nfv.AllocateNetworkRequest_SUBNET:
+		if req.TypeSubnetData == nil {
+			return nil, status.Error(codes.InvalidArgument, "field TypeSubnetData can't be empty with Subnet resource type")
+		}
+		subnet, err := s.NetworkMgr.CreateSubnet(ctx, *req.NetworkResourceName, req.TypeSubnetData)
+		return &nfv.AllocateNetworkResponse{
+			SubnetData: subnet,
+		}, err
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())
 	}

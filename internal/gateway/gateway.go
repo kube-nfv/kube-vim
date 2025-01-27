@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	common "github.com/DiMalovanyy/kube-vim/internal/config"
-	config "github.com/DiMalovanyy/kube-vim/internal/config/gateway"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	common "github.com/kube-nfv/kube-vim/internal/config"
+	config "github.com/kube-nfv/kube-vim/internal/config/gateway"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"

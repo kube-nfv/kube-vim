@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
-	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
+	"github.com/kube-nfv/kube-vim/internal/misc"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -118,8 +118,8 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				common.K8sManagedByLabel: common.KubeNfvName,
-                network.K8sSubnetNameLabel: name,
+				common.K8sManagedByLabel:   common.KubeNfvName,
+				network.K8sSubnetNameLabel: name,
 			},
 		},
 		Spec: kubeovnv1.SubnetSpec{

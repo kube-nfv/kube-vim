@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
 
 type manager struct {

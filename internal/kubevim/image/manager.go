@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config"
 )
 
 const (

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim"
-	"github.com/DiMalovanyy/kube-vim/internal/misc"
+	"github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	"github.com/kube-nfv/kube-vim/internal/kubevim"
+	"github.com/kube-nfv/kube-vim/internal/misc"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )

@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/network"
-	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	ovn_client "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
+	"github.com/kube-nfv/kube-vim/internal/misc"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )
@@ -143,19 +143,19 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 // Delete the network and all aquired resource (subnets, NetworkAttachmentDefinitions, etc.)
 // It will delete the network ONLY if it was created by the kube-vim.
 func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkOpt) error {
-    net, err := m.GetNetwork(ctx, opts...)
-    if err != nil {
-        return fmt.Errorf("failed to get network: %w")
-    }
-    for _, subnetId := range net.SubnetId {
-        if err := m.DeleteSubnet(ctx, network.GetSubnetByUid(subnetId)); err != nil {
-            return fmt.Errorf("failed to deleted network related subnet with id \"%s\": %w", subnetId.Value, err)
-        }
-    }
-    if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
-        return fmt.Errorf("failed to delete kubeovn network with name \"%s\" and id \"%s\": %w", *net.NetworkResourceName, *net.NetworkResourceName, err)
-    }
-    return nil
+	net, err := m.GetNetwork(ctx, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to get network: %w", err)
+	}
+	for _, subnetId := range net.SubnetId {
+		if err := m.DeleteSubnet(ctx, network.GetSubnetByUid(subnetId)); err != nil {
+			return fmt.Errorf("failed to deleted network related subnet with id \"%s\": %w", subnetId.Value, err)
+		}
+	}
+	if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("failed to delete kubeovn network with name \"%s\" and id \"%s\": %w", *net.NetworkResourceName, *net.NetworkResourceName, err)
+	}
+	return nil
 }
 
 // Creates the kubeovn subnet from the specified nfv.NetworkSubnetData.
@@ -250,20 +250,20 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 }
 
 func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt) error {
-    subnet, err := m.GetSubnet(ctx, opts...)
-    if err != nil {
-        return fmt.Errorf("failed to get subnet: %w", err)
-    }
-    netAttachName := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
-    // The only way to get name from the nfv.NetworkSubnet resource is to get it by label.
-    subnetName := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
+	subnet, err := m.GetSubnet(ctx, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to get subnet: %w", err)
+	}
+	netAttachName := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
+	// The only way to get name from the nfv.NetworkSubnet resource is to get it by label.
+	subnetName := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
 
-    // delete multus NetworkAttachmentDefinition
-    if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
-        return fmt.Errorf("failed to delete multus NetworkAttachmentDefinition \"%s\" for subnet \"%s\": %w", netAttachName, subnet.ResourceId.Value, err)
-    }
-    if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
-        return fmt.Errorf("failed to delete kubeovn subnet with name \"%s\" and id \"%s\": %w", subnetName, subnet.ResourceId.Value, err)
-    }
-    return nil
+	// delete multus NetworkAttachmentDefinition
+	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("failed to delete multus NetworkAttachmentDefinition \"%s\" for subnet \"%s\": %w", netAttachName, subnet.ResourceId.Value, err)
+	}
+	if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("failed to delete kubeovn subnet with name \"%s\" and id \"%s\": %w", subnetName, subnet.ResourceId.Value, err)
+	}
+	return nil
 }

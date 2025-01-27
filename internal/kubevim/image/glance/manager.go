@@ -7,13 +7,13 @@ import (
 	"os"
 	"sync"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config/kubevim"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/imagedata"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
 
 // Image manager for glance image storage

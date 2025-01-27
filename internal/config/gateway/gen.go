@@ -4,7 +4,7 @@
 package config
 
 import (
-	externalRef0 "github.com/DiMalovanyy/kube-vim/internal/config"
+	externalRef0 "github.com/kube-nfv/kube-vim/internal/config"
 )
 
 // Config Top-level configuration node for kube-vim gateway.

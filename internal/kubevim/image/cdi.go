@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/config"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"

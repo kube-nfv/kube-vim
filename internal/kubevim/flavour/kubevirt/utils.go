@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DiMalovanyy/kube-vim/internal/config"
-	"github.com/DiMalovanyy/kube-vim/internal/kubevim/flavour"
-	"github.com/DiMalovanyy/kube-vim/internal/misc"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	"github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
+	"github.com/kube-nfv/kube-vim/internal/misc"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
