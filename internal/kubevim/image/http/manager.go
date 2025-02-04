@@ -78,9 +78,21 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	return softwareImageInfoFromVolumeImportSource(vis)
 }
 
-func (m *manager) GetImages() ([]*nfv.SoftwareImageInformation, error) {
-
-	return nil, common.NotImplementedErr
+func (m *manager) GetImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+	images, err := m.cdiCtrl.ListVolumeImportSources(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get images: %w", err)
+	}
+	res := make([]*nfv.SoftwareImageInformation, 0, len(images))
+	for idx := range images {
+		imgRef := &images[idx]
+		imgInfo, err := softwareImageInfoFromVolumeImportSource(imgRef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert convert volumeImportSource to the imageInfo: %w", err)
+		}
+		res =append(res, imgInfo)
+	}
+	return res, nil
 }
 
 func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*location*/) error {

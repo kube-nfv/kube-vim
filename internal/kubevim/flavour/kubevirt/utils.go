@@ -36,10 +36,8 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	if nfvFlavour.VirtualMemory.VirtualMemSize == 0 {
 		return nil, nil, fmt.Errorf("virtual memory size can't be 0")
 	}
-	memQ, err := resource.ParseQuantity(fmt.Sprintf("%fM", nfvFlavour.VirtualMemory.VirtualMemSize))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert %fM to the k8s Quantity: %w", nfvFlavour.VirtualMemory.VirtualMemSize, err)
-	}
+	memQ := *resource.NewQuantity(int64(nfvFlavour.VirtualMemory.VirtualMemSize) * 1024 * 1024, resource.BinarySI)
+
 	vmInstTypeSpec.Memory = v1beta1.MemoryInstancetype{
 		Guest: memQ,
 	}
@@ -73,11 +71,13 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 	if !misc.IsObjectManagedByKubeNfv(instType) || !misc.IsObjectManagedByKubeNfv(pref) {
 		return nil, fmt.Errorf("virtualmachineinstancetype \"%s\" with uid \"%s\" or virtualmachinepreference \"%s\" with uid \"%s\" is not managed by the kube-nfv", instType.GetName(), instType.GetUID(), pref.GetName(), pref.GetUID())
 	}
-	virtualMem := &nfv.VirtualMemoryData{}
-	// TODO:
+	virtualMem := &nfv.VirtualMemoryData{
+		VirtualMemSize: float32(instType.Spec.Memory.Guest.Value()) / (1024 * 1024),
+	}
 
-	virtualCpu := &nfv.VirtualCpuData{}
-	// TODO:
+	virtualCpu := &nfv.VirtualCpuData{
+		NumVirtualCpu: instType.Spec.CPU.Guest,
+	}
 
 	isPublic := false
 	metadata := map[string]string{

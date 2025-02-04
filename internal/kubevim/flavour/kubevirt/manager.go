@@ -114,12 +114,53 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 	return nfvFlavour, nil
 }
 
-func (m *manager) GetFlavours() ([]*nfv.VirtualComputeFlavour, error) {
+func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour, error) {
+	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+		LabelSelector: common.ManagedByKubeNfvSelector,
+	})
+	if err != nil || instTypeList == nil {
+		return nil, fmt.Errorf("failed to get VirtualMachineInstanceType objects from the kube-virt: %w", err)
+	}
 
-	return nil, common.NotImplementedErr
+	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+		LabelSelector: common.ManagedByKubeNfvSelector,
+	})
+	if err != nil || instPrefList == nil {
+		return nil, fmt.Errorf("failed to get VirtualMachinePreferences objects from the kube-virt: %w", err)
+	}
+
+	res := make([]*nfv.VirtualComputeFlavour, 0, len(instTypeList.Items))
+	for idx := range instTypeList.Items {
+		instTypeRef := &instTypeList.Items[idx]
+		flavourId, ok := instTypeRef.Labels[flavour.K8sFlavourIdLabel]
+		if !ok {
+			return nil, fmt.Errorf("failed to get flavour id from the k8s VirtualMachineInstanceType resource")
+		}
+		var instPref *v1beta1.VirtualMachinePreference
+		preferenceLoop:
+		for pIdx := range instPrefList.Items {
+			instPrefRef := &instPrefList.Items[pIdx]
+			prefFlavourId, ok := instPrefRef.Labels[flavour.K8sFlavourIdLabel]
+			if !ok {
+				// VirtualMachinePreference has no FlavourID label. Might be exception situation.
+				continue preferenceLoop
+			}
+			if flavourId == prefFlavourId {
+				instPref = instPrefRef
+				break preferenceLoop
+			}
+		}
+		// instPref can be nil
+		nfvFlavour, err := nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId, instTypeRef, instPref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert VirtualMachineInstanceType and VirtualMachinePreferences to the NfvFlavour: %w", err)
+		}
+		res = append(res, nfvFlavour)
+	}
+	return res, nil
 }
 
-func (m *manager) DeleteFlavour(*nfv.Identifier) error {
+func (m *manager) DeleteFlavour(ctx context.Context, id *nfv.Identifier) error {
 
 	return common.NotImplementedErr
 }

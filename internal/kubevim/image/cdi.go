@@ -178,6 +178,16 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Volume Import Source: %w", common.NotFoundErr)
 }
 
+func (c CdiController) ListVolumeImportSources(ctx context.Context) ([]v1beta1.VolumeImportSource, error) {
+	visList, err := c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).List(ctx, v1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", common.K8sManagedByLabel, common.KubeNfvName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list k8s VolumeImportSource resources: %w", err)
+	}
+	return visList.Items, nil
+}
+
 type CreateDvOpt func(*createDvOpts)
 type createDvOpts struct {
 	Name                string

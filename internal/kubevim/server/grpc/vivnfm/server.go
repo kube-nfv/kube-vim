@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -28,7 +27,7 @@ type ViVnfmServer struct {
 //      * Convert well known errors to the gRPC errors
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequest) (*nfv.QueryImagesResponse, error) {
-	res, err := s.ImageMgr.GetImages()
+	res, err := s.ImageMgr.GetImages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query images: %w", err)
 	}
@@ -63,17 +62,17 @@ func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.Create
 
 // TODO: Change this to use Filter instead of identifier
 func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryComputeFlavourRequest) (*nfv.QueryComputeFlavourResponse, error) {
-	if req.QueryComputeFlavourFilter == nil {
-		return nil, fmt.Errorf("filter can't be empty: %w", common.UnsupportedErr)
+	res, err := s.FlavourMgr.GetFlavours(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get flavours: %w", err)
 	}
-	res, err := s.FlavourMgr.GetFlavour(ctx, &nfv.Identifier{
-		Value: req.QueryComputeFlavourFilter.Value,
-	})
+	filtered, err := filter.FilterList(res, req.QueryComputeFlavourFilter.Value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter queried flavours: %w", err)
+	}
 	return &nfv.QueryComputeFlavourResponse{
-		Flavours: []*nfv.VirtualComputeFlavour{
-			res,
-		},
-	}, err
+		Flavours: filtered,
+	}, nil
 }
 
 func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.DeleteComputeFlavourRequest) (*nfv.DeleteComputeFlavourResponse, error) {
