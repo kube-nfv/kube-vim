@@ -97,7 +97,7 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 		if err != nil {
 			return nil, err
 		}
-		for idx, _ := range dvList.Items {
+		for idx := range dvList.Items {
 			dvRef := &dvList.Items[idx]
 			if string(dvRef.GetUID()) == cfg.UID {
 				return dvRef, nil
@@ -108,7 +108,7 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 		if err != nil {
 			return nil, err
 		}
-		for idx, _ := range dvList.Items {
+		for idx := range dvList.Items {
 			dvRef := &dvList.Items[idx]
 			sourceTypeStr, ok := dvRef.Labels[K8sSourceLabel]
 			if !ok {
@@ -144,7 +144,7 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 		if err != nil {
 			return nil, err
 		}
-		for idx, _ := range visList.Items {
+		for idx := range visList.Items {
 			visRef := &visList.Items[idx]
 			if string(visRef.GetUID()) == cfg.UID {
 				return visRef, nil
@@ -155,7 +155,7 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 		if err != nil {
 			return nil, err
 		}
-		for idx, _ := range visList.Items {
+		for idx := range visList.Items {
 			visRef := &visList.Items[idx]
 			sourceTypeStr, ok := visRef.Labels[K8sSourceLabel]
 			if !ok {
@@ -282,13 +282,17 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 
 // Create Virtual Import Source from spec.
 func (c CdiController) CreateVolumeImportSource(ctx context.Context, source *v1beta1.ImportSourceType) (*v1beta1.VolumeImportSource, error) {
-	name, err := formatVisNameFromSource(source)
+	name, err := formatVisNameFromSourceType(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to format Virtual Import Source name from source: %w", err)
+		return nil, fmt.Errorf("failed to format Virtual Import Source name from the source: %w", err)
 	}
-	sourceType, err := formatSourceNameFromVisSource(source)
+	sourceType, err := formatSourceNameFromSourceType(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to identify source type from Virtual Import Source: %w", err)
+		return nil, fmt.Errorf("failed to identify source type from the Virtual Import Source: %w", err)
+	}
+	sourceUrl, err := formatSourceUrlFromSourceType(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to identify source url from the Virtual Import Source: %w", err)
 	}
 	return c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).Create(ctx, &v1beta1.VolumeImportSource{
 		ObjectMeta: v1.ObjectMeta{
@@ -296,6 +300,10 @@ func (c CdiController) CreateVolumeImportSource(ctx context.Context, source *v1b
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
 				K8sSourceLabel:           string(sourceType),
+				K8sIsUploadLabel:         "false",
+			},
+			Annotations: map[string]string{
+				K8sSourceUrlAnnotation: sourceUrl,
 			},
 		},
 		Spec: v1beta1.VolumeImportSourceSpec{
@@ -323,7 +331,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType,
 	return "", fmt.Errorf("unsupported source: %w", common.NotImplementedErr)
 }
 
-func formatSourceNameFromVisSource(source *v1beta1.ImportSourceType) (sourceType, error) {
+func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (sourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil
@@ -342,7 +350,7 @@ func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
 	}
 }
 
-func formatVisNameFromSource(source *v1beta1.ImportSourceType) (string, error) {
+func formatVisNameFromSourceType(source *v1beta1.ImportSourceType) (string, error) {
 	switch {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
@@ -366,4 +374,13 @@ func formatDvNameFromHttpSource(httpSource *v1beta1.DataVolumeSourceHTTP) (strin
 		leafName = leafName[:253]
 	}
 	return leafName, nil
+}
+
+func formatSourceUrlFromSourceType(source *v1beta1.ImportSourceType) (string, error) {
+	switch {
+	case source.HTTP != nil:
+		return source.HTTP.URL, nil
+	default:
+		return "", fmt.Errorf("can't format source URL from the specified source: %w", common.UnsupportedErr)
+	}
 }

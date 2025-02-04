@@ -101,7 +101,7 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 			return nil, fmt.Errorf("failed to get list of the kubeovn vpcs to identify vpc with id \"%s\": %w", cfg.Uid.Value, err)
 		}
 		uid := misc.IdentifierToUID(cfg.Uid)
-		for idx, _ := range vpcList.Items {
+		for idx := range vpcList.Items {
 			vpcRef := &vpcList.Items[idx]
 			if vpcRef.GetUID() == uid {
 				vpc = vpcRef
@@ -238,7 +238,7 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 			return nil, fmt.Errorf("failed to list a kubeovn subnets: %w", err)
 		}
 		uid := misc.IdentifierToUID(cfg.Uid)
-		for idx, _ := range subnetList.Items {
+		for idx := range subnetList.Items {
 			subnetRef := &subnetList.Items[idx]
 			if subnetRef.GetUID() == uid {
 				return nfvNetworkSubnetFromKubeovnSubnet(subnetRef)

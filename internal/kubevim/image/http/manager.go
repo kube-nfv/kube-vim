@@ -73,12 +73,12 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s Vir resource: %w", err)
+		return nil, fmt.Errorf("failed to create k8s VolumeImportSource resource: %w", err)
 	}
 	return softwareImageInfoFromVolumeImportSource(vis)
 }
 
-func (m *manager) GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImages() ([]*nfv.SoftwareImageInformation, error) {
 
 	return nil, common.NotImplementedErr
 }
@@ -121,27 +121,22 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 	}
 }
 
-func getHttpSourceUrlFromVis(vis *v1beta1.VolumeImportSource) (src string, err error) {
-	if httpSource := vis.Spec.Source.HTTP; httpSource == nil {
-		err = fmt.Errorf("Volume Import Source missed http section")
-	} else {
-		src = httpSource.URL
-	}
-	return
-}
-
-// TODO(dmalovan): Add metadata labels with sourceType and source as well info is image already downloaded or not.
 func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*nfv.SoftwareImageInformation, error) {
-	meta := &nfv.Metadata{
-		Fields: map[string]string{},
+	if !misc.IsObjectInstantiated(vis) {
+		return nil, fmt.Errorf("volume import source object is not instantiated in k8s")
 	}
-	meta.Fields[image.K8sSourceLabel] = string(image.HTTP)
-	srcUrl, err := getHttpSourceUrlFromVis(vis)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Http source url from Volume Import Source: %w", err)
+	if !misc.IsObjectManagedByKubeNfv(vis) {
+		return nil, fmt.Errorf("volume import source object is not managed by the kube-vim")
 	}
-	meta.Fields[image.K8sSourceUrlLabel] = srcUrl
-
+	if source, ok := vis.Labels[image.K8sSourceLabel]; !ok || (source != string(image.HTTP) && source != string(image.HTTPS)) {
+		return nil, fmt.Errorf("http image manager can't convert image with \"%s\" source", source)
+	}
+	metadata := &nfv.Metadata{
+		Fields: vis.Labels,
+	}
+	for k, v := range vis.Annotations {
+		metadata.Fields[k] = v
+	}
 	return &nfv.SoftwareImageInformation{
 		SoftwareImageId: &nfv.Identifier{
 			Value: string(vis.GetUID()),
@@ -149,6 +144,6 @@ func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*
 		Name: vis.Name,
 		// Temportary solution to allocated 1 Gi to the image
 		Size:     resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
-		Metadata: meta,
+		Metadata: metadata,
 	}, nil
 }

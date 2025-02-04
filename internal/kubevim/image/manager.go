@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	K8sSourceLabel    = "image.kubevim.kubenfv.io/source"
-	K8sSourceUrlLabel = "image.kubevim.kubenfv.io/source-url"
+	K8sSourceLabel = "image.kubevim.kubenfv.io/source"
 	K8sIsUploadLabel  = "image.kubevim.kubenfv.io/uploaded"
+
+	K8sSourceUrlAnnotation = "image.kubevim.kubenfv.io/source-url"
 )
 
 type Manager interface {
 	GetImage(context.Context, *nfv.Identifier) (*nfv.SoftwareImageInformation, error)
-	GetImages(*nfv.Filter) ([]*nfv.SoftwareImageInformation, error)
+	GetImages() ([]*nfv.SoftwareImageInformation, error)
 }
 
 type sourceType string

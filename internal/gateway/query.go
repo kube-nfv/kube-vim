@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"net/url"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -32,7 +33,8 @@ func populateQueryFilter(target proto.Message, filter string) {
 			// If the proto Message field is same as a nfv.Filter
 			if field.Message() == (&nfv.Filter{}).ProtoReflect().Descriptor() {
 				setFilter := &nfv.Filter{
-					Value: filter,
+					// Note: according to the ETSI GS NFA-SOL 013 5.2 specification filter should begin with "filter="
+					Value: fmt.Sprintf("filter=%s", filter),
 				}
 
 				md.Set(field, protoreflect.ValueOfMessage(setFilter.ProtoReflect()))

@@ -56,7 +56,7 @@ func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.Softwa
 	return nil, fmt.Errorf("image with id \"%s\" not found", id.Value)
 }
 
-func (m *manager) GetImages(filter *nfv.Filter) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImages() ([]*nfv.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	files, err := os.ReadDir(m.location)

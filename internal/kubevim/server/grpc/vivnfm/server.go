@@ -10,6 +10,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
+	filter "github.com/kube-nfv/query-filter"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,10 +28,17 @@ type ViVnfmServer struct {
 //      * Convert well known errors to the gRPC errors
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequest) (*nfv.QueryImagesResponse, error) {
-	res, err := s.ImageMgr.GetImages(req.ImageQueryFilter)
+	res, err := s.ImageMgr.GetImages()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query images: %w", err)
+	}
+	filtered, err := filter.FilterList(res, req.ImageQueryFilter.Value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter queried images: %w", err)
+	}
 	return &nfv.QueryImagesResponse{
-		SoftwareImagesInformation: res,
-	}, err
+		SoftwareImagesInformation: filtered,
+	}, nil
 }
 
 func (s *ViVnfmServer) QueryImage(ctx context.Context, req *nfv.QueryImageRequest) (*nfv.QueryImageResponse, error) {
