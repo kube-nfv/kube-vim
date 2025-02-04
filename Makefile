@@ -297,7 +297,7 @@ kind-delete-cloud-provider:
 	done
 
 .PHONY: kind-prepare-dev
-kind-prepare-dev: ## Prepare development evironment for kube-vim operation
+kind-prepare-dev: csi-snapshotter csi-host-path ## Prepare development evironment for kube-vim operation
 	kubectl create -f $(CSI_SNAPSHOTTER_CRS_DIR)
 	bash $(CSI_HOSTPATH_DRIVER_INSTALL)
 	kubectl create -f dist/manifests/dev/csi-storageclass.yaml
