@@ -78,7 +78,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	return softwareImageInfoFromVolumeImportSource(vis)
 }
 
-func (m *manager) GetImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
 	images, err := m.cdiCtrl.ListVolumeImportSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get images: %w", err)

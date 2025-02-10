@@ -27,7 +27,7 @@ type ViVnfmServer struct {
 //      * Convert well known errors to the gRPC errors
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequest) (*nfv.QueryImagesResponse, error) {
-	res, err := s.ImageMgr.GetImages(ctx)
+	res, err := s.ImageMgr.ListImages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query images: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return nil, status.Error(codes.InvalidArgument, "networkResourceName can't be empty")
 	}
 	switch *req.NetworkResourceType {
-	case nfv.AllocateNetworkRequest_NETWORK:
+	case nfv.NetworkResourceType_NETWORK:
 		if req.TypeNetworkData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field typeNetworkData can't be empty with Network resource type")
 		}
@@ -98,7 +98,7 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return &nfv.AllocateNetworkResponse{
 			NetworkData: net,
 		}, err
-	case nfv.AllocateNetworkRequest_SUBNET:
+	case nfv.NetworkResourceType_SUBNET:
 		if req.TypeSubnetData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field TypeSubnetData can't be empty with Subnet resource type")
 		}
@@ -111,7 +111,37 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 	}
 }
 func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req *nfv.QueryNetworkRequest) (*nfv.QueryNetworkResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QueryVirtualisedNetworkResource not implemented")
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "queryNetworkRequest can't be empty")
+	}
+	switch req.NetworkResourceType {
+	case nfv.NetworkResourceType_NETWORK:
+		netLst, err := s.NetworkMgr.ListNetworks(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list networks: %w", err)
+		}
+		filtered, err := filter.FilterList(netLst, req.QueryNetworkFilter.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to filter networks: %w", err)
+		}
+		return &nfv.QueryNetworkResponse{
+			QueryNetworkResult: filtered,
+		}, nil
+	case nfv.NetworkResourceType_SUBNET:
+		subLst, err := s.NetworkMgr.ListSubnets(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list subnets: %w", err)
+		}
+		filtered, err := filter.FilterList(subLst, req.QueryNetworkFilter.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fileter subnets: %w", err)
+		}
+		return &nfv.QueryNetworkResponse{
+			QuerySubnetResult: filtered,
+		}, nil
+	default:
+		return nil, status.Errorf(codes.Unimplemented, "unsupported NetworkResourceType: %s", req.NetworkResourceType.String())
+	}
 }
 
 func (s *ViVnfmServer) TerminateVirtualisedNetworkResource(ctx context.Context, req *nfv.TerminateNetworkRequest) (*nfv.TerminateNetworkResponse, error) {

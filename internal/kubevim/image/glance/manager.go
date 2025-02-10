@@ -64,7 +64,7 @@ func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.Softwa
 	return imgNfv, nil
 }
 
-func (m *manager) GetImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	pager := images.List(m.glanceServiceClient, images.ListOpts{})

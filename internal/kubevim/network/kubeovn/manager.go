@@ -140,6 +140,11 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 	}, nil
 }
 
+func (m *manager) ListNetworks(ctx context.Context) ([]*nfv.VirtualNetwork, error) {
+
+	return nil, nil
+}
+
 // Delete the network and all aquired resource (subnets, NetworkAttachmentDefinitions, etc.)
 // It will delete the network ONLY if it was created by the kube-vim.
 func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkOpt) error {
@@ -247,6 +252,25 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 		return nil, fmt.Errorf("kubeovn subnet with id \"%s\" not found: %w", cfg.Uid.GetValue(), common.NotFoundErr)
 	}
 	return nil, fmt.Errorf("either subnet name or uid should be specified to get kubeovn subnet: %w", common.InvalidArgumentErr)
+}
+
+func (m *manager) ListSubnets(ctx context.Context) ([]*nfv.NetworkSubnet, error) {
+	subnetList, err := m.kubeOvnClient.KubeovnV1().Subnets().List(ctx, v1.ListOptions{
+		LabelSelector: common.K8sManagedByLabel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list kubeivn subnets: %w", err)
+	}
+	res := make([]*nfv.NetworkSubnet, 0, len(subnetList.Items))
+	for idx := range subnetList.Items {
+		subnetRef := &subnetList.Items[idx]
+		nfvSubnet, err := nfvNetworkSubnetFromKubeovnSubnet(subnetRef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert kubeovn subnet with name \"%s\" and id \"%s\" to the nfv.NetworkSubnet: %w", subnetRef.GetName(), subnetRef.GetUID(), err)
+		}
+		res = append(res, nfvSubnet)
+	}
+	return res, nil
 }
 
 func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt) error {

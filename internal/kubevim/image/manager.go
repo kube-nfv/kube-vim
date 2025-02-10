@@ -17,7 +17,7 @@ const (
 
 type Manager interface {
 	GetImage(context.Context, *nfv.Identifier) (*nfv.SoftwareImageInformation, error)
-	GetImages(context.Context) ([]*nfv.SoftwareImageInformation, error)
+	ListImages(context.Context) ([]*nfv.SoftwareImageInformation, error)
 }
 
 type sourceType string

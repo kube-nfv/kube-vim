@@ -9,9 +9,9 @@ require (
 	github.com/gophercloud/gophercloud v1.14.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
-	github.com/kube-nfv/kube-vim-api v0.0.4-alpha.2
+	github.com/kube-nfv/kube-vim-api v0.0.4-alpha.3
 	github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2
-	github.com/kube-nfv/query-filter v0.0.1-alpha1
+	github.com/kube-nfv/query-filter v0.0.1-alpha2
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.69.2
