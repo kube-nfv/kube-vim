@@ -14,3 +14,20 @@ spec:
   selector:
     app: kube-vim
   type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kube-vim
+  name: kube-vim-gateway
+  namespace: kube-nfv
+spec:
+  ports:
+  - port: 51155
+    protocol: TCP
+    targetPort: 51155
+    nodePort: 30081
+  selector:
+    app: kube-vim
+  type: NodePort

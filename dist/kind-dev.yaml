@@ -37,3 +37,7 @@ nodes:
       hostPort: 30080
       listenAddress: "0.0.0.0"
       protocol: TCP
+    - containerPort: 30081
+      hostPort: 30081
+      listenAddress: "0.0.0.0"
+      protocol: TCP

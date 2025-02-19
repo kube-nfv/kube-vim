@@ -66,7 +66,11 @@ func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryCo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flavours: %w", err)
 	}
-	filtered, err := filter.FilterList(res, req.QueryComputeFlavourFilter.Value)
+	filterVal := ""
+	if req.QueryComputeFlavourFilter != nil {
+		filterVal = req.QueryComputeFlavourFilter.Value
+	}
+	filtered, err := filter.FilterList(res, filterVal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter queried flavours: %w", err)
 	}
