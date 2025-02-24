@@ -128,12 +128,14 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 
 	runStrategy := kubevirtv1.RunStrategyAlways
 
-	vm := &kubevirtv1.VirtualMachine{
+	vmSpec := &kubevirtv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
 			Name: vmName,
 			Labels: map[string]string{
 				kubevirtv1.VirtualMachineLabel: vmName,
 				common.K8sManagedByLabel:       common.KubeNfvName,
+				flavour.K8sFlavourIdLabel:      req.ComputeFlavourId.GetValue(),
+				image.K8sImageIdLabel:          req.VcImageId.GetValue(),
 			},
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
@@ -144,6 +146,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: v1.ObjectMeta{
 					Labels: map[string]string{
+						common.K8sManagedByLabel: common.KubeNfvName,
 						kubevirtv1.VirtualMachineLabel: vmName,
 					},
 				},
@@ -185,9 +188,30 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 			},
 		},
 	}
-	_, err = m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vm, v1.CreateOptions{})
+	vmInst, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vmSpec, v1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubevirt VirtualMachine: %w", err)
+	}
+	flavId, err := getFlavourFromInstanceSpec(vmInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get flavor from the instantiated kubevirt vm: %w", err)
+	}
+	imgId, err := getImageIdFromInstnceSpec(vmInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image id from the instantiated kubevirt vm: %w", err)
+	}
+	return &nfv.VirtualCompute{
+		ComputeId: misc.UIDToIdentifier(vmInst.UID),
+		ComputeName: &vmInst.Name,
+		FlavourId: flavId,
+		VcImageId: imgId,
+		Metadata: &nfv.Metadata{},
+	}, err
+}
 
-	return &nfv.VirtualCompute{}, err
+func (m *manager) QueryComputeResource(context.Context) ([]*nfv.VirtualCompute, error) {
+
+	return nil, nil
 }
 
 func initVmInstanceTypeMatcher(instanceTypeName string) (*kubevirtv1.InstancetypeMatcher, error) {
@@ -311,4 +335,26 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkData *n
 func initVirtualMachineInstance(name string) (*kubevirtv1.VirtualMachineInstanceTemplateSpec, error) {
 
 	return nil, nil
+}
+
+
+func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
+	flavId, ok := vmSpec.Labels[flavour.K8sFlavourIdLabel]
+	if !ok {
+		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv flavour id label")
+	}
+	return &nfv.Identifier{
+		Value: flavId,
+	}, nil
+}
+
+func getImageIdFromInstnceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
+	imgId, ok := vmSpec.Labels[image.K8sImageIdLabel]
+	if !ok {
+		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv image id label")
+	}
+	return &nfv.Identifier{
+		Value: imgId,
+	}, nil
+
 }

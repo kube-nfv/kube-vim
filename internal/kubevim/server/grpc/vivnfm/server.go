@@ -46,11 +46,16 @@ func (s *ViVnfmServer) QueryImage(ctx context.Context, req *nfv.QueryImageReques
 		SoftwareImageInformation: res,
 	}, err
 }
+
 func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, req *nfv.AllocateComputeRequest) (*nfv.AllocateComputeResponse, error) {
 	res, err := s.ComputeMgr.AllocateComputeResource(ctx, req)
 	return &nfv.AllocateComputeResponse{
 		ComputeData: res,
 	}, err
+}
+
+func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context,req *nfv.QueryComputeRequest) (*nfv.QueryComputeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryVirtualisedComputeResource not implemented")
 }
 
 func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.CreateComputeFlavourRequest) (*nfv.CreateComputeFlavourResponse, error) {

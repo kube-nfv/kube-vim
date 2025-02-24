@@ -8,4 +8,5 @@ import (
 
 type Manager interface {
 	AllocateComputeResource(context.Context, *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error)
+	QueryComputeResource(context.Context) ([]*nfv.VirtualCompute, error)
 }
