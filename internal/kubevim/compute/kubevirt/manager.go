@@ -107,7 +107,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image with id \"%s\": %w", req.GetVcImageId(), err)
 	}
-	dv, err := initImageDataVolume(imgInfo)
+	dv, err := initImageDataVolume(imgInfo, req.GetComputeName())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize kubevirt data volume: %w", err)
 	}
@@ -234,16 +234,15 @@ func initVmPreferenceMatcher(preferenceName string) (*kubevirtv1.PreferenceMatch
 	}, nil
 }
 
-func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation) (*kubevirtv1.DataVolumeTemplateSpec, error) {
+func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
 	if imageInfo == nil {
 		return nil, fmt.Errorf("nfv software image info can't be empty")
 	}
 	if imageInfo.Name == "" {
 		return nil, fmt.Errorf("nfv software image info name can't be empty")
 	}
-	// TODO(dmalovan): If more than one VM going to be created from the same Volume Import Source it might leads
-	// to the dv naming conflicts. Make name depends on image name (probably hash or uid)
-	dvName := imageInfo.Name + "-dv"
+	// Note(dmalovan): vmName/imageName pair should be unique
+	dvName := fmt.Sprintf("%s-%s-dv", vmName, imageInfo.Name)
 	if imageInfo.Size == nil || imageInfo.GetSize().Equal(*resource.NewQuantity(0, resource.BinarySI)) {
 		return nil, fmt.Errorf("nfv software image size can't be 0")
 	}
