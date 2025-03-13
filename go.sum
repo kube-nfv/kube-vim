@@ -162,6 +162,12 @@ github.com/kube-nfv/kube-vim-api v0.0.4-alpha.3 h1:mbLumaBHZkuV0kMDiZYC6lHWVGXvd
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.3/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.4 h1:zaUpfB7LCgiwRV6Q0Dbu/J98qG+DP420ojTsbqlzguQ=
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.4/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.5 h1:rCA4e7b5Y6Wjv4RJhdPweGhH8n+p9ldqFSiizj7PR2Y=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.5/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.6 h1:buSM4BkUDmj9wsS8aXToy+8w0ipHUEjKUZ1+ZtU9v3Q=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.6/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.7 h1:c0DOAqHYUB3IVk8Sr1ZrZp2R4aNnW74BpxesD1sjPv0=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.7/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2 h1:03fNpa4ZRm4aRZAaLugSUN92RWdQSeG9UtgjGhuAmNA=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2/go.mod h1:3C5sIEmwrUi/1CYd2UUmQlr9mO+uY3rzdesSl4kFqSQ=
 github.com/kube-nfv/query-filter v0.0.1-alpha1 h1:4F3w2SyYQiiP+BBxPoeEZf2GHFRCEMxjwYat87aLcyc=

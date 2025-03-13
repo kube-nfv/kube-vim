@@ -146,7 +146,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: v1.ObjectMeta{
 					Labels: map[string]string{
-						common.K8sManagedByLabel: common.KubeNfvName,
+						common.K8sManagedByLabel:       common.KubeNfvName,
 						kubevirtv1.VirtualMachineLabel: vmName,
 					},
 				},
@@ -201,11 +201,11 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 		return nil, fmt.Errorf("failed to get image id from the instantiated kubevirt vm: %w", err)
 	}
 	return &nfv.VirtualCompute{
-		ComputeId: misc.UIDToIdentifier(vmInst.UID),
+		ComputeId:   misc.UIDToIdentifier(vmInst.UID),
 		ComputeName: &vmInst.Name,
-		FlavourId: flavId,
-		VcImageId: imgId,
-		Metadata: &nfv.Metadata{},
+		FlavourId:   flavId,
+		VcImageId:   imgId,
+		Metadata:    &nfv.Metadata{},
 	}, err
 }
 
@@ -335,7 +335,6 @@ func initVirtualMachineInstance(name string) (*kubevirtv1.VirtualMachineInstance
 
 	return nil, nil
 }
-
 
 func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
 	flavId, ok := vmSpec.Labels[flavour.K8sFlavourIdLabel]

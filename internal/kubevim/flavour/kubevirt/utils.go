@@ -36,7 +36,7 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	if nfvFlavour.VirtualMemory.VirtualMemSize == 0 {
 		return nil, nil, fmt.Errorf("virtual memory size can't be 0")
 	}
-	memQ := *resource.NewQuantity(int64(nfvFlavour.VirtualMemory.VirtualMemSize) * 1024 * 1024, resource.BinarySI)
+	memQ := *resource.NewQuantity(int64(nfvFlavour.VirtualMemory.VirtualMemSize)*1024*1024, resource.BinarySI)
 
 	vmInstTypeSpec.Memory = v1beta1.MemoryInstancetype{
 		Guest: memQ,

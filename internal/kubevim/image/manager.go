@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	K8sImageIdLabel = "image.kubevim.kubenfv.io/id"
-	K8sSourceLabel = "image.kubevim.kubenfv.io/source"
-	K8sIsUploadLabel  = "image.kubevim.kubenfv.io/uploaded"
+	K8sImageIdLabel  = "image.kubevim.kubenfv.io/id"
+	K8sSourceLabel   = "image.kubevim.kubenfv.io/source"
+	K8sIsUploadLabel = "image.kubevim.kubenfv.io/uploaded"
 
 	K8sSourceUrlAnnotation = "image.kubevim.kubenfv.io/source-url"
 )

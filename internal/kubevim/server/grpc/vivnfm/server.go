@@ -54,7 +54,7 @@ func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, r
 	}, err
 }
 
-func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context,req *nfv.QueryComputeRequest) (*nfv.QueryComputeResponse, error) {
+func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context, req *nfv.QueryComputeRequest) (*nfv.QueryComputeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryVirtualisedComputeResource not implemented")
 }
 

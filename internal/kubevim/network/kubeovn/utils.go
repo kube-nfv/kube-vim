@@ -31,7 +31,10 @@ func kubeovnVpcFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (
 	return res, nil
 }
 
-func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc) (*nfv.VirtualNetwork, error) {
+func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfv.Identifier) (*nfv.VirtualNetwork, error) {
+	if vpc == nil {
+		return nil, fmt.Errorf("vpc can't be nil")
+	}
 	uid := vpc.GetUID()
 	if len(uid) == 0 {
 		return nil, fmt.Errorf("UID for kube-ovn vpc can't be empty")
@@ -40,14 +43,96 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc) (*nfv.VirtualNetwork, error) {
 	if len(name) == 0 {
 		return nil, fmt.Errorf("Name for kube-ovn vpc can't be empty")
 	}
+	if !misc.IsObjectInstantiated(vpc) {
+		return nil, &common.K8sObjectNotInstantiatedErr{ObjectType: vpc.Kind}
+	}
+	if !misc.IsObjectManagedByKubeNfv(vpc) {
+		return nil, &common.K8sObjectNotManagedByKubeNfvErr{
+			ObjectType: vpc.Kind,
+			ObjectName: vpc.Name,
+			ObjectId:   string(vpc.GetUID()),
+		}
+	}
 	return &nfv.VirtualNetwork{
 		NetworkResourceId:   misc.UIDToIdentifier(uid),
 		NetworkResourceName: &name,
+		SubnetId:            subnetIds,
 		Bandwidth:           0,
-		NetworkType:         "flat",
+		NetworkType:         nfv.NetworkType_OVERLAY,
 		IsShared:            false,
 		OperationalState:    nfv.OperationalState_ENABLED,
 	}, nil
+}
+
+func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfv.Identifier) (*nfv.VirtualNetwork, error) {
+	if vlan == nil {
+		return nil, fmt.Errorf("vlan can't be nil")
+	}
+	uid := vlan.GetUID()
+	if len(uid) == 0 {
+		return nil, fmt.Errorf("UID for kube-ovn vlan can't be empty")
+	}
+	name := vlan.GetName()
+	if len(name) == 0 {
+		return nil, fmt.Errorf("Name for kube-ovn vlan can't be empty")
+	}
+	if !misc.IsObjectInstantiated(vlan) {
+		return nil, &common.K8sObjectNotInstantiatedErr{ObjectType: vlan.Kind}
+	}
+	if !misc.IsObjectManagedByKubeNfv(vlan) {
+		return nil, &common.K8sObjectNotManagedByKubeNfvErr{
+			ObjectType: vlan.Kind,
+			ObjectName: vlan.Name,
+			ObjectId:   string(vlan.GetUID()),
+		}
+	}
+	segmentationId := uint64(vlan.Spec.ID)
+
+	return &nfv.VirtualNetwork{
+		NetworkResourceId:   misc.UIDToIdentifier(uid),
+		NetworkResourceName: &name,
+		SubnetId:            subnetIds,
+		Bandwidth:           0,
+		NetworkType:         nfv.NetworkType_UNDERLAY,
+		IsShared:            false,
+		ProviderNetwork:     &vlan.Spec.Provider,
+		SegmentationId:      &segmentationId,
+		OperationalState:    nfv.OperationalState_ENABLED,
+	}, nil
+
+}
+
+func kubeovnVlanFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (*kubeovnv1.Vlan, error) {
+	if len(name) == 0 {
+		return nil, fmt.Errorf("name can't be empty")
+	}
+	if nfvNet == nil {
+		return nil, fmt.Errorf("network data can't be nil")
+	}
+	if nfvNet.GetNetworkType() != nfv.NetworkType_UNDERLAY {
+		return nil, fmt.Errorf("vlan can be constructed only for underlay networks")
+	}
+	if nfvNet.ProviderNetwork == nil || *nfvNet.ProviderNetwork == "" {
+		return nil, fmt.Errorf("providerNetwork can't be empty for underlay networks")
+	}
+	vlanId := 0
+	if nfvNet.SegmentationId != nil {
+		vlanId = int(*nfvNet.SegmentationId)
+	}
+
+	res := &kubeovnv1.Vlan{
+		ObjectMeta: v1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				common.K8sManagedByLabel: common.KubeNfvName,
+			},
+		},
+		Spec: kubeovnv1.VlanSpec{
+			ID:       vlanId,
+			Provider: *nfvNet.ProviderNetwork,
+		},
+	}
+	return res, nil
 }
 
 // Returns kubeovn IP version string representation of the nfv.IPVersion enum or
@@ -152,10 +237,14 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
 		return nil, fmt.Errorf("subnet can't be nil")
 	}
 	if !misc.IsObjectInstantiated(kubeovnSub) {
-		return nil, fmt.Errorf("subnet is not from Kubernetes (likely created manually)")
+		return nil, &common.K8sObjectNotInstantiatedErr{ObjectType: kubeovnSub.Kind}
 	}
 	if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
-		return nil, fmt.Errorf("subnet \"%s\" with uid \"%s\" is not managed by the kube-nfv", kubeovnSub.GetName(), kubeovnSub.GetUID())
+		return nil, &common.K8sObjectNotManagedByKubeNfvErr{
+			ObjectType: kubeovnSub.Kind,
+			ObjectName: kubeovnSub.Name,
+			ObjectId:   string(kubeovnSub.GetUID()),
+		}
 	}
 
 	var optNetworkId *nfv.Identifier

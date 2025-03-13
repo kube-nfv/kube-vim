@@ -90,7 +90,7 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert convert volumeImportSource to the imageInfo: %w", err)
 		}
-		res =append(res, imgInfo)
+		res = append(res, imgInfo)
 	}
 	return res, nil
 }

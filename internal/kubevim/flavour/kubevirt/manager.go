@@ -137,7 +137,7 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 			return nil, fmt.Errorf("failed to get flavour id from the k8s VirtualMachineInstanceType resource")
 		}
 		var instPref *v1beta1.VirtualMachinePreference
-		preferenceLoop:
+	preferenceLoop:
 		for pIdx := range instPrefList.Items {
 			instPrefRef := &instPrefList.Items[pIdx]
 			prefFlavourId, ok := instPrefRef.Labels[flavour.K8sFlavourIdLabel]
