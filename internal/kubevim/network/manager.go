@@ -9,6 +9,7 @@ import (
 const (
 	K8sNetworkNameLabel         = "network.kubevim.kubenfv.io/network-name"
 	K8sNetworkIdLabel           = "network.kubevim.kubenfv.io/network-id"
+	K8sNetworkType              = "network.kubevim.kubenfv.io/netowrk-type"
 	K8sSubnetNameLabel          = "network.kubevim.kubenfv.io/subnet-name"
 	K8sSubnetIdLabel            = "network.kubevim.kubenfv.io/subnet-id"
 	K8sSubnetNetAttachNameLabel = "network.kubevim.kubenfv.io/subnet-netattach-name"

@@ -22,6 +22,8 @@ rules:
   - vpcs/status
   - subnets
   - subnets/status
+  - vlans
+  - vlans/status
   verbs:
   - "*"
 ---

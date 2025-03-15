@@ -267,7 +267,7 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 // Creates the kubeovn subnet from the specified nfv.NetworkSubnetData.
 // If the subnet creation (or convertion) fails all resources (eg. Subnet, multus netowrkAttachmentDefinitions are cleared)
 func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv.NetworkSubnetData) (*nfv.NetworkSubnet, error) {
-	var vpc *nfv.VirtualNetwork
+	var vnet *nfv.VirtualNetwork
 	if netId := subnetData.NetworkId; netId != nil && netId.Value != "" {
 		opts := []network.GetNetworkOpt{}
 		if misc.IsUUID(netId.Value) {
@@ -276,7 +276,7 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv
 			opts = append(opts, network.GetNetworkByName(netId.Value))
 		}
 		var err error
-		vpc, err = m.GetNetwork(ctx, opts...)
+		vnet, err = m.GetNetwork(ctx, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get vpc specified by id \"%s\": %w", netId.Value, err)
 		}
@@ -285,10 +285,17 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubeovn subnet from specified NetworkSubnetData: %w", err)
 	}
-	if vpc != nil && vpc.NetworkResourceName != nil {
-		subnet.Spec.Vpc = *vpc.NetworkResourceName
-		subnet.Labels[network.K8sNetworkNameLabel] = *vpc.NetworkResourceName
-		subnet.Labels[network.K8sNetworkIdLabel] = vpc.NetworkResourceId.Value
+
+	if vnet != nil && vnet.NetworkResourceName != nil {
+		if vnet.NetworkType == nfv.NetworkType_OVERLAY {
+			subnet.Spec.Vpc = *vnet.NetworkResourceName
+		}
+		if vnet.NetworkType == nfv.NetworkType_UNDERLAY {
+			subnet.Spec.Vlan = *vnet.NetworkResourceName
+		}
+		subnet.Labels[network.K8sNetworkNameLabel] = *vnet.NetworkResourceName
+		subnet.Labels[network.K8sNetworkIdLabel] = vnet.NetworkResourceId.Value
+		subnet.Labels[network.K8sNetworkType]  = vnet.NetworkType.String()
 	}
 	netAttachName := formatNetAttachName(subnet.GetName())
 	_, err = m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Create(
@@ -360,7 +367,7 @@ func (m *manager) ListSubnets(ctx context.Context) ([]*nfv.NetworkSubnet, error)
 		LabelSelector: common.K8sManagedByLabel,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list kubeivn subnets: %w", err)
+		return nil, fmt.Errorf("failed to list kubeovn subnets: %w", err)
 	}
 	res := make([]*nfv.NetworkSubnet, 0, len(subnetList.Items))
 	for idx := range subnetList.Items {
