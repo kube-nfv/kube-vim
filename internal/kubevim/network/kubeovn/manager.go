@@ -295,7 +295,7 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv
 		}
 		subnet.Labels[network.K8sNetworkNameLabel] = *vnet.NetworkResourceName
 		subnet.Labels[network.K8sNetworkIdLabel] = vnet.NetworkResourceId.Value
-		subnet.Labels[network.K8sNetworkType]  = vnet.NetworkType.String()
+		subnet.Labels[network.K8sNetworkTypeLabel] = vnet.NetworkType.String()
 	}
 	netAttachName := formatNetAttachName(subnet.GetName())
 	_, err = m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Create(

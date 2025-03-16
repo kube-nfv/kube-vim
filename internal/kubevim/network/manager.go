@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 )
@@ -9,7 +10,7 @@ import (
 const (
 	K8sNetworkNameLabel         = "network.kubevim.kubenfv.io/network-name"
 	K8sNetworkIdLabel           = "network.kubevim.kubenfv.io/network-id"
-	K8sNetworkType              = "network.kubevim.kubenfv.io/netowrk-type"
+	K8sNetworkTypeLabel         = "network.kubevim.kubenfv.io/netowrk-type"
 	K8sSubnetNameLabel          = "network.kubevim.kubenfv.io/subnet-name"
 	K8sSubnetIdLabel            = "network.kubevim.kubenfv.io/subnet-id"
 	K8sSubnetNetAttachNameLabel = "network.kubevim.kubenfv.io/subnet-netattach-name"
@@ -25,6 +26,14 @@ type Manager interface {
 	GetSubnet(context.Context, ...GetSubnetOpt) (*nfv.NetworkSubnet, error)
 	ListSubnets(context.Context) ([]*nfv.NetworkSubnet, error)
 	DeleteSubnet(context.Context, ...GetSubnetOpt) error
+}
+
+func NetworkTypeStrToNfvType(networkTypeStr string) (*nfv.NetworkType, error) {
+	typeVal, ok := nfv.NetworkResourceType_value[networkTypeStr]
+	if !ok {
+		return nil, fmt.Errorf("invalid networkType \"%s\"", networkTypeStr)
+	}
+	return (*nfv.NetworkType)(&typeVal), nil
 }
 
 type GetNetworkOpt func(*getNetworkOpts)
