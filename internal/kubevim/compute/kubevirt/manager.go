@@ -415,6 +415,7 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 	if netIpam != nil && netIpam.SubnetId != nil {
 		return getSubnetIpam(ctx, netIpam.SubnetId, netManager, netIPAMs)
 	}
+	// TODO: Support the case when subnetId not specified. It should reference to the first subnet wihin the network.
 	return nil, fmt.Errorf("IPAM with only network reference not supported yet: %w", common.NotImplementedErr)
 }
 
