@@ -364,7 +364,7 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 
 func (m *manager) ListSubnets(ctx context.Context) ([]*nfv.NetworkSubnet, error) {
 	subnetList, err := m.kubeOvnClient.KubeovnV1().Subnets().List(ctx, v1.ListOptions{
-		LabelSelector: common.K8sManagedByLabel,
+		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list kubeovn subnets: %w", err)

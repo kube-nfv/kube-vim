@@ -27,6 +27,7 @@ LOCALBIN ?= $(shell pwd)/bin
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
+ARCH ?= $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 
 .PHONY: help
 help: ## Display this help.
@@ -86,11 +87,11 @@ docker-build: docker-kubevim-build docker-gateway-build ## Build kubevim related
 
 .PHONY: docker-kubevim-build
 docker-kubevim-build: ## Build kubevim docker image.
-	$(CONTAINER_TOOL) build -t $(KUBEVIM_IMG) -f dist/Dockerfile.$(KUBEVIM) .
+	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) -t $(KUBEVIM_IMG) -f dist/Dockerfile.$(KUBEVIM) .
 
 .PHONY: docker-gateway-build
 docker-gateway-build: ## Build kubevim gateway docker image.
-	$(CONTAINER_TOOL) build -t $(KUBEVIM_GATEWAY_IMG) -f dist/Dockerfile.$(KUBEVIM_GATEWAY) .
+	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) -t $(KUBEVIM_GATEWAY_IMG) -f dist/Dockerfile.$(KUBEVIM_GATEWAY) .
 
 .PHONY: build-dist-manifests
 build-dist-manifests:
