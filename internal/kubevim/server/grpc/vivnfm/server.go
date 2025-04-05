@@ -31,7 +31,7 @@ func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequ
 	if err != nil {
 		return nil, fmt.Errorf("failed to query images: %w", err)
 	}
-	filtered, err := filter.FilterList(res, req.ImageQueryFilter.Value)
+	filtered, err := filter.FilterList(res, req.ImageQueryFilter.GetValue())
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter queried images: %w", err)
 	}
@@ -71,11 +71,7 @@ func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryCo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flavours: %w", err)
 	}
-	filterVal := ""
-	if req.QueryComputeFlavourFilter != nil {
-		filterVal = req.QueryComputeFlavourFilter.Value
-	}
-	filtered, err := filter.FilterList(res, filterVal)
+	filtered, err := filter.FilterList(res, req.QueryComputeFlavourFilter.GetValue())
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter queried flavours: %w", err)
 	}
@@ -129,7 +125,7 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 		if err != nil {
 			return nil, fmt.Errorf("failed to list networks: %w", err)
 		}
-		filtered, err := filter.FilterList(netLst, req.QueryNetworkFilter.Value)
+		filtered, err := filter.FilterList(netLst, req.QueryNetworkFilter.GetValue())
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter networks: %w", err)
 		}
@@ -141,7 +137,7 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 		if err != nil {
 			return nil, fmt.Errorf("failed to list subnets: %w", err)
 		}
-		filtered, err := filter.FilterList(subLst, req.QueryNetworkFilter.Value)
+		filtered, err := filter.FilterList(subLst, req.QueryNetworkFilter.GetValue())
 		if err != nil {
 			return nil, fmt.Errorf("failed to fileter subnets: %w", err)
 		}
