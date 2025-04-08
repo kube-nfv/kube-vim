@@ -3,6 +3,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kube-nfv
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -189,8 +191,6 @@ spec:
         - name: kube-vim-config
           mountPath: /etc/kube-vim
           readOnly: true
-        - name: images
-          mountPath: /mnt/images
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -211,5 +211,3 @@ spec:
       - name: kube-vim-gateway-config
         configMap:
           name: kube-vim-gateway-config
-      - name: images
-        emptyDir:
