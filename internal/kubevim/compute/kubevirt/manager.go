@@ -245,6 +245,8 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string)
 			Name: dvName,
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
+			},
+			Annotations: map[string]string{
 				// Explicitly set the label to use the pvc population by the DV.
 				"cdi.kubevirt.io/storage.usePopulator": "true",
 			},
