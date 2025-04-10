@@ -236,8 +236,22 @@ func (m *manager) getUnderlayNetwork(ctx context.Context, opts ...network.GetNet
 }
 
 func (m *manager) ListNetworks(ctx context.Context) ([]*nfv.VirtualNetwork, error) {
-
-	return nil, nil
+	netList, err := m.kubeOvnClient.KubeovnV1().Vpcs().List(ctx, v1.ListOptions{
+		LabelSelector: common.ManagedByKubeNfvSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list kubeovn vpcs: %w", err)
+	}
+	res := make([]*nfv.VirtualNetwork, 0, len(netList.Items))
+	for _, vpc := range netList.Items {
+		netName := vpc.Name
+		net, err := m.GetNetwork(ctx, network.GetNetworkByName(netName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubeovn network with name \"%s\": %e", netName, err)
+		}
+		res = append(res, net)
+	}
+	return res, nil
 }
 
 // Delete the network and all aquired resource (subnets, NetworkAttachmentDefinitions, etc.)
