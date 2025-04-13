@@ -170,6 +170,8 @@ github.com/kube-nfv/kube-vim-api v0.0.4-alpha.7 h1:c0DOAqHYUB3IVk8Sr1ZrZp2R4aNnW
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.7/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.8 h1:eXku10xaeU3upByyJRRv2kQST4ERZBLaHLSTNcC3VXQ=
 github.com/kube-nfv/kube-vim-api v0.0.4-alpha.8/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.9 h1:vv1A5+80JNS8Tj/3F4CH6BkVfQ1OomeAcTta60cn9U8=
+github.com/kube-nfv/kube-vim-api v0.0.4-alpha.9/go.mod h1:vdYJJI7h9y60ClrvCsKHODU7T24cYTALIk3m94LimAU=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2 h1:03fNpa4ZRm4aRZAaLugSUN92RWdQSeG9UtgjGhuAmNA=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v0.0.2/go.mod h1:3C5sIEmwrUi/1CYd2UUmQlr9mO+uY3rzdesSl4kFqSQ=
 github.com/kube-nfv/query-filter v0.0.1-alpha1 h1:4F3w2SyYQiiP+BBxPoeEZf2GHFRCEMxjwYat87aLcyc=

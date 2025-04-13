@@ -81,20 +81,20 @@ func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryCo
 }
 
 func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.DeleteComputeFlavourRequest) (*nfv.DeleteComputeFlavourResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteComputeFlavour not implemented")
+	if err := s.FlavourMgr.DeleteFlavour(ctx, req.ComputeFlavourId); err != nil {
+		return nil, fmt.Errorf("failed to delete flavour with id \"%s\": %w", req.ComputeFlavourId.Value, err)
+	}
+	return &nfv.DeleteComputeFlavourResponse{}, nil
 }
 
 func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, req *nfv.AllocateNetworkRequest) (*nfv.AllocateNetworkResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "allocateNetworkRequest can't be empty")
 	}
-	if req.NetworkResourceType == nil {
-		return nil, status.Error(codes.InvalidArgument, "networkResourceType can't be empty")
-	}
 	if req.NetworkResourceName == nil || *req.NetworkResourceName == "" {
 		return nil, status.Error(codes.InvalidArgument, "networkResourceName can't be empty")
 	}
-	switch *req.NetworkResourceType {
+	switch req.NetworkResourceType {
 	case nfv.NetworkResourceType_NETWORK:
 		if req.TypeNetworkData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field typeNetworkData can't be empty with Network resource type")

@@ -5,6 +5,7 @@ import (
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"github.com/kube-nfv/kube-vim/internal/config"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -38,4 +39,8 @@ func IsObjectManagedByKubeNfv(obj metav1.Object) bool {
 func DumpObjectAsJSON(obj runtime.Object, out io.Writer) error {
 	encoder := json.NewSerializer(json.DefaultMetaFactory, nil, nil, false)
 	return encoder.Encode(obj, out)
+}
+
+func ConvertK8sTimeToProtoTimestamp(t metav1.Time) *timestamppb.Timestamp {
+	return timestamppb.New(t.Time)
 }
