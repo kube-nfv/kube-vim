@@ -1,6 +1,7 @@
 package kubevirt
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,12 +42,20 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	vmInstTypeSpec.Memory = v1beta1.MemoryInstancetype{
 		Guest: memQ,
 	}
+	// Temporary solution is to store serialized flavour volumes in the VirtualMachineInstancetype resource anno
+	volumesJson, err := json.Marshal(nfvFlavour.StorageAttributes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal flavour storage attributes: %w", err)
+	}
 	return &v1beta1.VirtualMachineInstancetype{
 			ObjectMeta: v1.ObjectMeta{
 				Name: flavourNameFromId(flavorId),
 				Labels: map[string]string{
 					common.K8sManagedByLabel:  common.KubeNfvName,
 					flavour.K8sFlavourIdLabel: flavorId,
+				},
+				Annotations: map[string]string{
+					flavour.K8sVolumesAnnotation: string(volumesJson),
 				},
 			},
 			Spec: vmInstTypeSpec,
@@ -72,11 +81,21 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		return nil, fmt.Errorf("virtualmachineinstancetype \"%s\" with uid \"%s\" or virtualmachinepreference \"%s\" with uid \"%s\" is not managed by the kube-nfv", instType.GetName(), instType.GetUID(), pref.GetName(), pref.GetUID())
 	}
 	virtualMem := &nfv.VirtualMemoryData{
+		// Translate memory to the MiB
 		VirtualMemSize: float32(instType.Spec.Memory.Guest.Value()) / (1024 * 1024),
 	}
 
 	virtualCpu := &nfv.VirtualCpuData{
 		NumVirtualCpu: instType.Spec.CPU.Guest,
+	}
+
+	var storageAttributes []*nfv.VirtualStorageData
+	if val, ok := instType.Annotations[flavour.K8sVolumesAnnotation]; ok {
+		if err := json.Unmarshal([]byte(val), &storageAttributes); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal volumes from the virtualmachineinstancetype \"%s\" annotation \"%s\": %w", instType.Name, flavour.K8sVolumesAnnotation, err)
+		}
+	} else {
+		return nil, fmt.Errorf("kubevirt virtualmachineinstancetype with name \"%s\" missing \"%s\" annotation", instType.Name, flavour.K8sVolumesAnnotation)
 	}
 
 	isPublic := false
@@ -94,6 +113,7 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		IsPublic:      &isPublic,
 		VirtualMemory: virtualMem,
 		VirtualCpu:    virtualCpu,
+		StorageAttributes: storageAttributes,
 		Metadata: &nfv.Metadata{
 			Fields: metadata,
 		},
