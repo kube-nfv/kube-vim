@@ -154,22 +154,22 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 
 func (s *ViVnfmServer) TerminateVirtualisedNetworkResource(ctx context.Context, req *nfv.TerminateNetworkRequest) (*nfv.TerminateNetworkResponse, error) {
 	err := s.NetworkMgr.DeleteNetwork(ctx, network.GetNetworkByUid(req.NetworkResourceId))
+	if err == nil {
+		return &nfv.TerminateNetworkResponse{
+			NetworkResourceId: req.NetworkResourceId,
+		}, nil
+	}
 	if !errors.Is(err, common.NotFoundErr) && !k8s_errors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to delete network with id \"%s\": %w", req.NetworkResourceId.GetValue(), err)
 	}
+	err = s.NetworkMgr.DeleteSubnet(ctx, network.GetSubnetByUid(req.NetworkResourceId))
 	if err == nil {
 		return &nfv.TerminateNetworkResponse{
 			NetworkResourceId: req.NetworkResourceId,
 		}, nil
 	}
-	err = s.NetworkMgr.DeleteSubnet(ctx, network.GetSubnetByUid(req.NetworkResourceId))
 	if errors.Is(err, common.NotFoundErr) || k8s_errors.IsNotFound(err) {
 		return nil, fmt.Errorf("network resource with id \"%s\" not match either network nor subnet: %w", req.NetworkResourceId.GetValue(), err)
-	}
-	if err == nil {
-		return &nfv.TerminateNetworkResponse{
-			NetworkResourceId: req.NetworkResourceId,
-		}, nil
 	} else {
 		return nil, fmt.Errorf("failed to delete subent with id \"%s\": %w", req.NetworkResourceId.GetValue(), err)
 	}

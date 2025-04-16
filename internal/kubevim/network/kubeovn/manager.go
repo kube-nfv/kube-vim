@@ -242,9 +242,23 @@ func (m *manager) ListNetworks(ctx context.Context) ([]*nfv.VirtualNetwork, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to list kubeovn vpcs: %w", err)
 	}
-	res := make([]*nfv.VirtualNetwork, 0, len(netList.Items))
+	vlanList, err := m.kubeOvnClient.KubeovnV1().Vlans().List(ctx, v1.ListOptions{
+		LabelSelector: common.ManagedByKubeNfvSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list kubeovn vlans: %w", err)
+	}
+	res := make([]*nfv.VirtualNetwork, 0, len(netList.Items) + len(vlanList.Items))
 	for _, vpc := range netList.Items {
 		netName := vpc.Name
+		net, err := m.GetNetwork(ctx, network.GetNetworkByName(netName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubeovn network with name \"%s\": %e", netName, err)
+		}
+		res = append(res, net)
+	}
+	for _, vlan := range vlanList.Items {
+		netName := vlan.Name
 		net, err := m.GetNetwork(ctx, network.GetNetworkByName(netName))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get kubeovn network with name \"%s\": %e", netName, err)
@@ -274,8 +288,10 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 		if err = m.kubeOvnClient.KubeovnV1().Vlans().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("failed to delete kubeovn vlan with name \"%s\" and id \"%s\": %w", *net.NetworkResourceName, *&net.NetworkResourceId.Value, err)
 		}
+	} else {
+		return fmt.Errorf("network has unidentified network type \"%s\"", net.NetworkType)
 	}
-	return fmt.Errorf("network has unidentified network type \"%s\"", net.NetworkType)
+	return nil
 }
 
 // Creates the kubeovn subnet from the specified nfv.NetworkSubnetData.
