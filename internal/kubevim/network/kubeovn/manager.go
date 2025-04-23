@@ -388,8 +388,21 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 			}
 		}
 		return nil, fmt.Errorf("kubeovn subnet with id \"%s\" not found: %w", cfg.Uid.GetValue(), common.NotFoundErr)
+	} else if cfg.NetAttachName != "" {
+		netAttach, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Get(ctx, cfg.NetAttachName, v1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get network attachment definition with name \"%s\": %w", cfg.NetAttachName, err)
+		}
+		if !misc.IsObjectManagedByKubeNfv(netAttach) {
+			return nil, fmt.Errorf("network attachment definition \"%s\" was not created by the kube-vim", cfg.NetAttachName)
+		}
+		subnetName, ok := netAttach.Labels[network.K8sSubnetNameLabel]
+		if !ok {
+			return nil, fmt.Errorf("network attachment definition \"%s\" missing \"%s\" label", cfg.NetAttachName, network.K8sSubnetNameLabel)
+		}
+		return m.GetSubnet(ctx, network.GetSubnetByName(subnetName))
 	}
-	return nil, fmt.Errorf("either subnet name or uid should be specified to get kubeovn subnet: %w", common.InvalidArgumentErr)
+	return nil, fmt.Errorf("either subnet name or uid or net attach name should be specified to get kubeovn subnet: %w", common.InvalidArgumentErr)
 }
 
 func (m *manager) ListSubnets(ctx context.Context) ([]*nfv.NetworkSubnet, error) {

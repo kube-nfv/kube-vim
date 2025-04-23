@@ -58,7 +58,17 @@ func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, r
 }
 
 func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context, req *nfv.QueryComputeRequest) (*nfv.QueryComputeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QueryVirtualisedComputeResource not implemented")
+	res, err := s.ComputeMgr.ListComputeResources(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query compute resources: %w", err)
+	}
+	filtered, err := filter.FilterList(res, req.QueryComputeFilter.GetValue())
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter queried compute resources: %w", err)
+	}
+	return &nfv.QueryComputeResponse{
+		QueryResult: filtered,
+	}, nil
 }
 
 func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.CreateComputeFlavourRequest) (*nfv.CreateComputeFlavourResponse, error) {

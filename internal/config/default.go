@@ -3,10 +3,11 @@ package common
 import "fmt"
 
 var (
-	K8sManagedByLabel       = "app.kubernetes.io/managed-by"
-	KubeNfvName             = "kube-nfv"
-	KubeNfvDefaultNamespace = "kube-nfv"
-	MgmtNetworkName         = "mgmt-net"
+	K8sManagedByLabel        = "app.kubernetes.io/managed-by"
+	K8sDescriptionAnnotation = "kubernetes.io/description"
+	KubeNfvName              = "kube-nfv"
+	KubeNfvDefaultNamespace  = "kube-nfv"
+	MgmtNetworkName          = "mgmt-net"
 
 	ManagedByKubeNfvSelector = fmt.Sprintf("%s=%s", K8sManagedByLabel, KubeNfvName)
 )

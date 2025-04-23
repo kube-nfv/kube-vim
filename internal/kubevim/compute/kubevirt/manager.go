@@ -3,18 +3,23 @@ package kubevirt
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	corev1 "k8s.io/api/core/v1"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/rest"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -31,6 +36,24 @@ const (
 
 	KubevirtVmMgmtNetworkName    = "default"
 	KubevirtVmMgmtRootVolumeName = "root-volume"
+
+	// Kubevirt related metadata labels that is used in nfv.VirtualCompute.Metadata fields
+	// In general labels should not be used in k8s object (only in nfv.VirtualCompute.Metadata fields)
+	KubevirtVmStatusCreated     = "status.vm.kubevirt.io/created"
+	KubevirtVmStatusReady       = "status.vm.kubevirt.io/ready"
+	KubevirtVmStatusConditions  = "status.vm.kubevirt.io/conditions"
+	KubevirtVmPrintableStatus   = "status.vm.kubevirt.io/printable-status"
+	KubevirtVmRunStategy        = "status.vm.kubevirt.io/run-strategy"
+
+	KubevirtVmiStatusPhase      = "status.vmi.kubevirt.io/phase"
+	KubevirtVmiStatusReason     = "status.vmi.kubevirt.io/reason"
+
+	KubevirtVmNetworkManagement = "network.vm.kubevirt.io/management"
+)
+
+const (
+	vmiCreationTimeout = time.Second * 2
+	vmStatusCreatedTimeout = time.Second * 3
 )
 
 // kubevirt manager for allocation and management of the compute resources.
@@ -181,30 +204,90 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 			},
 		},
 	}
-	vmInst, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vmSpec, v1.CreateOptions{})
+	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vmSpec, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubevirt VirtualMachine: %w", err)
 	}
-	flavId, err := getFlavourFromInstanceSpec(vmInst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get flavor from the instantiated kubevirt vm: %w", err)
+	if err = waitVmiCreatedField(ctx, m.kubevirtClient, vm.Name, *m.cfg.Namespace); err != nil {
+		return nil, fmt.Errorf("failed to create vmi for vm: %w", err)
 	}
-	imgId, err := getImageIdFromInstnceSpec(vmInst)
+	vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vmName, v1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image id from the instantiated kubevirt vm: %w", err)
+		return nil, fmt.Errorf("failed to get vm instance \"%s\": %w", vmName, err)
 	}
-	return &nfv.VirtualCompute{
-		ComputeId:   misc.UIDToIdentifier(vmInst.UID),
-		ComputeName: &vmInst.Name,
-		FlavourId:   flavId,
-		VcImageId:   imgId,
-		Metadata:    &nfv.Metadata{},
-	}, err
+	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert kubevirt vm to the nfv virtualCompute: %w", err)
+	}
+	return virtualCompute, nil
 }
 
-func (m *manager) QueryComputeResource(context.Context) ([]*nfv.VirtualCompute, error) {
+func (m *manager) ListComputeResources(ctx context.Context) ([]*nfv.VirtualCompute, error) {
+	vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+		LabelSelector: common.ManagedByKubeNfvSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list kubevirt vms: %w", err)
+	}
+	res := make([]*nfv.VirtualCompute, 0, len(vmList.Items))
+	for _, vm := range vmList.Items {
+		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", vm.Name, err)
+		}
+		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", vm.Name, err)
+		}
+		res = append(res, vComp)
+	}
+	return res, nil
+}
 
-	return nil, nil
+func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) (*nfv.VirtualCompute, error) {
+	cfg := compute.ApplyGetComputeOpts(opts...)
+	if cfg.Name != "" {
+		vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubevirt vm with name \"%s\": %w", cfg.Name, err)
+		}
+		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", cfg.Name, err)
+		}
+		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", cfg.Name, err)
+		}
+		return vComp, nil
+	} else if cfg.Uid != nil && cfg.Uid.Value != "" {
+		vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+			LabelSelector: common.ManagedByKubeNfvSelector,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list kubevirt vms: %w", err)
+		}
+		for _, vm := range vmList.Items {
+			if vm.UID != misc.IdentifierToUID(cfg.Uid) {
+				continue
+			}
+			vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", vm.Name, err)
+			}
+			vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", vm.Name, err)
+			}
+			return vComp, nil
+		}
+		return nil, fmt.Errorf("vm with id \"%s\" not found: %w", cfg.Uid.Value, common.NotFoundErr)
+	}
+	return nil, fmt.Errorf("either compute name or uid should be specified to get kubevirt vm: %w", common.InvalidArgumentErr)
+}
+
+func (m *manager) DeleteComputeResource(ctx context.Context, id *nfv.Identifier) error {
+	return nil
 }
 
 func initVmInstanceTypeMatcher(instanceTypeName string) (*kubevirtv1.InstancetypeMatcher, error) {
@@ -445,9 +528,15 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 	if !ok {
 		return nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
 	}
-
+	// If multiple interfaces use the same subnet it will cause a problem if interface named the same as a subnet name.
+	// Generate the unique UID for each network interface and combine it with a subnet-name
+	ifaceUid, err := uuid.NewRandom()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate UUID for interface in subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
+	}
+	ifaceName := fmt.Sprintf("%s-%s", subnetName, ifaceUid)
 	return &kubevirtv1.Network{
-			Name: subnetName,
+			Name: ifaceName,
 			NetworkSource: kubevirtv1.NetworkSource{
 				Multus: &kubevirtv1.MultusNetwork{
 					//Note(dmalovan): Ignore the namespace for the networkAttachmentDefinition name since it will use VMI namesapce
@@ -455,30 +544,77 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 				},
 			},
 		}, &kubevirtv1.Interface{
-			Name: subnetName,
+			Name: ifaceName,
 			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 				Bridge: &kubevirtv1.InterfaceBridge{},
 			},
 		}, nil
 }
 
-func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
-	flavId, ok := vmSpec.Labels[flavour.K8sFlavourIdLabel]
-	if !ok {
-		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv flavour id label")
+// Waits for the k8s vm object status.created field equal to True.
+// If VM object already exists and has a status.created: true, the function will
+// returns immediately.
+func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName string, namespace string) error {
+	vm, err := client.KubevirtV1().VirtualMachines(namespace).Get(ctx, vmName, v1.GetOptions{})
+	if err != nil && !k8s_errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get k8s kubevirt vm \"%s\": %w", vmName, err)
 	}
-	return &nfv.Identifier{
-		Value: flavId,
-	}, nil
+	// vm exists and vmi already created.
+	if err == nil && vm.Status.Created {
+		return nil
+	}
+
+	vmSelector := fields.OneTermEqualSelector("metadata.name", vmName).String()
+	watcher, err := client.KubevirtV1().VirtualMachines(namespace).Watch(ctx, v1.ListOptions{
+		FieldSelector: vmSelector,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to watch virtualmachine with name \"%s\": %w", vmName, err)
+	}
+	defer watcher.Stop()
+	watchCtx, cancel := context.WithTimeout(ctx, vmStatusCreatedTimeout)
+	defer cancel()
+	for {
+		select {
+		case event := <-watcher.ResultChan():
+			vm, ok := event.Object.(*kubevirtv1.VirtualMachine)
+			if !ok || vm.Name != vmName {
+				continue
+			}
+			if vm.Status.Created {
+				return nil
+			}
+		case <-watchCtx.Done():
+			return fmt.Errorf("vm \"%s\" status.created is not true after \"%s\"", vmName, vmStatusCreatedTimeout)
+		}
+	}
 }
 
-func getImageIdFromInstnceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
-	imgId, ok := vmSpec.Labels[image.K8sImageIdLabel]
-	if !ok {
-		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv image id label")
-	}
-	return &nfv.Identifier{
-		Value: imgId,
-	}, nil
 
+func waitVmiObjectCreated(ctx context.Context, client *kubevirt.Clientset, vmName string, namesapce string) (*kubevirtv1.VirtualMachineInstance, error) {
+	fieldSelector := fields.OneTermEqualSelector("metadata.name", vmName).String()
+	watcher, err := client.KubevirtV1().VirtualMachineInstances(namesapce).Watch(ctx, v1.ListOptions{
+		FieldSelector: fieldSelector,
+		Watch: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to watch virtualmachineinstance with name \"%s\": %w", vmName, err)
+	}
+	defer watcher.Stop()
+	watchCtx, cancel := context.WithTimeout(ctx, vmiCreationTimeout)
+	defer cancel()
+	for {
+		select {
+		case event := <-watcher.ResultChan():
+			vmi, ok := event.Object.(*kubevirtv1.VirtualMachineInstance)
+			if !ok {
+				continue
+			}
+			if vmi.Name == vmName {
+				return vmi, nil
+			}
+		case <-watchCtx.Done():
+			return nil, fmt.Errorf("no vmi creation after \"%v\"", vmiCreationTimeout)
+		}
+	}
 }

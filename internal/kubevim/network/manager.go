@@ -60,6 +60,7 @@ type GetSubnetOpt func(*getSubnetOpts)
 type getSubnetOpts struct {
 	Name string
 	Uid  *nfv.Identifier
+	NetAttachName string
 }
 
 func GetSubnetByName(name string) GetSubnetOpt {
@@ -68,6 +69,10 @@ func GetSubnetByName(name string) GetSubnetOpt {
 func GetSubnetByUid(uid *nfv.Identifier) GetSubnetOpt {
 	return func(gso *getSubnetOpts) { gso.Uid = uid }
 }
+func GetSubnetByNetAttachName(netAttachName string) GetSubnetOpt {
+	return func(gso *getSubnetOpts) { gso.NetAttachName = netAttachName }
+}
+
 func ApplyGetSubnetOpts(gso ...GetSubnetOpt) *getSubnetOpts {
 	res := &getSubnetOpts{}
 	for _, opt := range gso {
