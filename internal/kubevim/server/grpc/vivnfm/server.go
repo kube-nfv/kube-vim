@@ -71,6 +71,16 @@ func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context, req 
 	}, nil
 }
 
+func (s *ViVnfmServer) TerminateVirtualisedComputeResource(ctx context.Context, req *nfv.TerminateComputeRequest) (*nfv.TerminateComputeResponse, error) {
+	err := s.ComputeMgr.DeleteComputeResource(ctx, compute.GetComputeByUid(req.GetComputeId()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete virtualised compute resource with id \"%s\": %w", req.ComputeId.GetValue(), err)
+	}
+	return &nfv.TerminateComputeResponse{
+		ComputeId: req.ComputeId,
+	}, nil
+}
+
 func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.CreateComputeFlavourRequest) (*nfv.CreateComputeFlavourResponse, error) {
 	res, err := s.FlavourMgr.CreateFlavour(ctx, req.Flavour)
 	return &nfv.CreateComputeFlavourResponse{

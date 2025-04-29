@@ -10,7 +10,7 @@ type Manager interface {
 	AllocateComputeResource(context.Context, *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error)
 	GetComputeResource(context.Context, ...GetComputeOpt) (*nfv.VirtualCompute, error)
 	ListComputeResources(context.Context) ([]*nfv.VirtualCompute, error)
-	DeleteComputeResource(context.Context, *nfv.Identifier) error
+	DeleteComputeResource(context.Context, ...GetComputeOpt) error
 }
 
 type GetComputeOpt func (*getComputeOpts)

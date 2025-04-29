@@ -286,7 +286,14 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 	return nil, fmt.Errorf("either compute name or uid should be specified to get kubevirt vm: %w", common.InvalidArgumentErr)
 }
 
-func (m *manager) DeleteComputeResource(ctx context.Context, id *nfv.Identifier) error {
+func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) error {
+	vm, err := m.GetComputeResource(ctx, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to get vm: %w", err)
+	}
+	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("failed to delete compute resource with name \"%s\" and uid \"%s\": %w", vm.GetComputeName(), vm.ComputeId.Value, err)
+	}
 	return nil
 }
 
