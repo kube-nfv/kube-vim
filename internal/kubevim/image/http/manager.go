@@ -153,7 +153,7 @@ func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*
 		SoftwareImageId: &nfv.Identifier{
 			Value: string(vis.GetUID()),
 		},
-		Name: vis.Name,
+		Name:      vis.Name,
 		CreatedAt: misc.ConvertK8sTimeToProtoTimestamp(vis.CreationTimestamp),
 		UpdatedAt: misc.ConvertK8sTimeToProtoTimestamp(vis.CreationTimestamp),
 		// Temportary solution to allocated 1 Gi to the image

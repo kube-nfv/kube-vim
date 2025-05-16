@@ -110,9 +110,9 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		FlavourId: &nfv.Identifier{
 			Value: flavourId,
 		},
-		IsPublic:      &isPublic,
-		VirtualMemory: virtualMem,
-		VirtualCpu:    virtualCpu,
+		IsPublic:          &isPublic,
+		VirtualMemory:     virtualMem,
+		VirtualCpu:        virtualCpu,
 		StorageAttributes: storageAttributes,
 		Metadata: &nfv.Metadata{
 			Fields: metadata,

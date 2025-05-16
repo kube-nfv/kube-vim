@@ -12,9 +12,9 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	filter "github.com/kube-nfv/query-filter"
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ViVnfmServer struct {

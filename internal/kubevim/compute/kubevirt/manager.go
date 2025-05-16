@@ -39,21 +39,25 @@ const (
 
 	// Kubevirt related metadata labels that is used in nfv.VirtualCompute.Metadata fields
 	// In general labels should not be used in k8s object (only in nfv.VirtualCompute.Metadata fields)
-	KubevirtVmStatusCreated     = "status.vm.kubevirt.io/created"
-	KubevirtVmStatusReady       = "status.vm.kubevirt.io/ready"
-	KubevirtVmStatusConditions  = "status.vm.kubevirt.io/conditions"
-	KubevirtVmPrintableStatus   = "status.vm.kubevirt.io/printable-status"
-	KubevirtVmRunStategy        = "status.vm.kubevirt.io/run-strategy"
+	KubevirtVmStatusCreated    = "status.vm.kubevirt.io/created"
+	KubevirtVmStatusReady      = "status.vm.kubevirt.io/ready"
+	KubevirtVmStatusConditions = "status.vm.kubevirt.io/conditions"
+	KubevirtVmPrintableStatus  = "status.vm.kubevirt.io/printable-status"
+	KubevirtVmRunStategy       = "status.vm.kubevirt.io/run-strategy"
 
-	KubevirtVmiStatusPhase      = "status.vmi.kubevirt.io/phase"
-	KubevirtVmiStatusReason     = "status.vmi.kubevirt.io/reason"
+	KubevirtVmiStatusPhase  = "status.vmi.kubevirt.io/phase"
+	KubevirtVmiStatusReason = "status.vmi.kubevirt.io/reason"
 
 	KubevirtVmNetworkManagement = "network.vm.kubevirt.io/management"
 )
 
 const (
-	vmiCreationTimeout = time.Second * 2
+	vmiCreationTimeout     = time.Second * 2
 	vmStatusCreatedTimeout = time.Second * 3
+)
+
+var (
+	ipamConfigurationMissingErr = fmt.Errorf("IPAM configuration should have either subnetId or staticIp configured")
 )
 
 // kubevirt manager for allocation and management of the compute resources.
@@ -383,7 +387,11 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 	})
 	// There are might be few different network types that should be handeled.
 	// 1. Overlay network
-	//    a. Must have an subnetId (which is used to identify the IPAM). IPAM might be empty -> dynamic IPAM allocation (eg.DHCP)
+	//    a. Have an subnetId (which is used to identify the IPAM). IPAM might be empty -> dynamic IPAM allocation (eg.DHCP)
+	//    b. Only networkId. Try to find IPAM with networkId.
+	//       - If found and IPAM has an static IP, try to find the subnet where port should belong to which include that static IP
+	//       - If not found and NetworkInterfaceData has an compute.kubevim.kubenfv.io/network.subnet.assignment=random
+	//           in metadata return the IPAM with a first subnet with dynamic IP.
 	// 2. Underlay network
 	//    a. Might have an subnetId. In that case IPAM identified using subnetId.
 	//    b. Only networkId. Try to find IPAM with networkId.
@@ -425,32 +433,30 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 				return nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the subnet \"%s\": %w", subnetIdVal, err)
 			}
 			// If VirtualNetworkInterfaceData has an subnetId, networkId will just ignored since subnetId contains enough info.
-		} else if hasNetworkId {
+		} else if hasNetworkId /* no subnetId */ {
 			netInst, err := netManager.GetNetwork(ctx, network.GetNetworkByUid(netData.NetworkId))
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get network with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
 			}
+
+			var ipam *nfv.VirtualNetworkInterfaceIPAM
 			if netInst.NetworkType == nfv.NetworkType_UNDERLAY {
-				ipam, err := getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam)
-				if err != nil {
-					return nil, nil, fmt.Errorf(
-						"failed to get IPAM for the network specified by the networkId \"%s\": %w",
-						netData.NetworkId.Value,
-						err,
-					)
-				}
-				net, iface, err = initNetwork(ctx, netManager, ipam)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the network \"%s\": %w", netData.NetworkId.Value, err)
-				}
+				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
 			} else if netInst.NetworkType == nfv.NetworkType_OVERLAY && !hasSubnetId {
-				// SubnetID Must be specified for the OVERLAY network type
+				ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]
+				randomSubnet := ok && ann == "random"
+				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, randomSubnet)
+			}
+			if err != nil {
 				return nil, nil, fmt.Errorf(
-					"failed to create vm interface from network with id \"%s\""+
-						"The network referenced in the VirtualNetworkInterfaceData is \"overlay\""+
-						"but request lack of the subnetId, which is required for the \"overlay\" networks",
+					"failed to get IPAM for the network specified by the networkId \"%s\": %w",
 					netData.NetworkId.Value,
+					err,
 				)
+			}
+			net, iface, err = initNetwork(ctx, netManager, ipam)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the network \"%s\": %w", netData.NetworkId.Value, err)
 			}
 		}
 		networks = append(networks, *net)
@@ -459,6 +465,9 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 	return networks, interfaces, nil
 }
 
+// Returns the IP address/Mac address that should be allocated for given subnet.
+// If IPAM not configured: returns random allocatable IP/MAC
+// If IPAM is configured and IP is not randomly allocatable, checks if the address belongs to the subnet.
 func getSubnetIpam(ctx context.Context, subnetId *nfv.Identifier, netManager network.Manager, netIPAMs []*nfv.VirtualNetworkInterfaceIPAM) (*nfv.VirtualNetworkInterfaceIPAM, error) {
 	var netIpam *nfv.VirtualNetworkInterfaceIPAM = nil
 	for _, ipam := range netIPAMs {
@@ -480,25 +489,27 @@ func getSubnetIpam(ctx context.Context, subnetId *nfv.Identifier, netManager net
 		return netIpam, nil
 	}
 	// Check if the static IP Address belongs to the subnet referenced by the subnetId.
-	_, err := netManager.GetSubnet(ctx, network.GetSubnetByUid(subnetId))
+	sub, err := netManager.GetSubnet(ctx, network.GetSubnetByUid(subnetId))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subnet specified by the id \"%s\": %w", subnetId.Value, err)
 	}
-	// TODO:
-	return nil, fmt.Errorf("Static IP not yet implemented for VirtualNetworkInterfaceIPAM: %w", common.NotImplementedErr)
+	if sub.Cidr == nil {
+		return nil, fmt.Errorf("subnet \"%s\" cidr can't be nil", sub.ResourceId.Value)
+	}
+	if !network.IpBelongsToCidr(netIpam.IpAddress, sub.Cidr) {
+		return nil, fmt.Errorf("ip address \"%s\" not in the subnet cidr \"%s\"", netIpam.IpAddress.Ip, sub.Cidr.Cidr)
+	}
+	return netIpam, nil
 }
 
 // Find the correct IPAM for the network indentified by the networkId (without subnetId).
-//   - If IPAM exists for the network.
-//   - if subnetId exists in IPAM
-//   - if IP address is static, check if it is related to the subnet. If not returs the error
-//   - if IP address is dynamic just return the IPAM
-//   - if subnetId does not exists in IPAM.
-//   - if IP address is static, try to find the subnet which IP address belongs to. If not found returns the error.
-//   - if IP address is dynamic, return the dynamic IPAM for the first subnet in the network referenced by the networkId.
-//   - If IPAM does not exists for the network.
-//   - return the dynamic IPAM (no IP, no MAC) for the first subnet in the network referenced by the networkId.
-func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager network.Manager, netIPAMs []*nfv.VirtualNetworkInterfaceIPAM) (*nfv.VirtualNetworkInterfaceIPAM, error) {
+//  1. If IPAM exists for the network.
+//     a. if subnetId exists in IPAM: Find the IPAM from the subnetID.
+//     b. IPAM config has an static IP: Try to find the subnetID from VPC which is holds the IP.
+//     Returns if "returnIfNoIpam" flag is set
+//  2. If IPAM does't exists for the network.
+//     Return the first subnet in VPC with dynamic IP/MAC IPAM.
+func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager network.Manager, netIPAMs []*nfv.VirtualNetworkInterfaceIPAM, returnIfNoIpam bool) (*nfv.VirtualNetworkInterfaceIPAM, error) {
 	var netIpam *nfv.VirtualNetworkInterfaceIPAM = nil
 	for _, ipam := range netIPAMs {
 		if ipam.NetworkId != nil && ipam.NetworkId.Value == networkId.Value {
@@ -509,10 +520,40 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 	if netIpam != nil && netIpam.SubnetId != nil {
 		return getSubnetIpam(ctx, netIpam.SubnetId, netManager, netIPAMs)
 	}
-	// TODO: Support the case when subnetId not specified. It should reference to the first subnet wihin the network.
-	return nil, fmt.Errorf("IPAM with only network reference not supported yet: %w", common.NotImplementedErr)
+	if netIpam != nil && netIpam.IpAddress != nil {
+		sub, err := netManager.GetSubnet(ctx, network.GetSubnetByNetworkIP(networkId, netIpam.IpAddress))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subnet with networkId \"%s\" and Ip \"%s\": %w", networkId.Value, netIpam.IpAddress.Ip, err)
+		}
+		netIpam.SubnetId.Value = sub.ResourceId.Value
+		return getSubnetIpam(ctx, sub.ResourceId, netManager, netIPAMs)
+	}
+	if returnIfNoIpam {
+		return nil, ipamConfigurationMissingErr
+	}
+	net, err := netManager.GetNetwork(ctx, network.GetNetworkByUid(networkId))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network with id \"%s\": %w", networkId.Value, err)
+	}
+	if len(net.SubnetId) == 0 {
+		return nil, fmt.Errorf("network with id \"%s\" doesn't have subnets", networkId.Value)
+	}
+	fstSubId := net.SubnetId[0]
+
+	if netIpam != nil {
+		netIpam.SubnetId.Value = fstSubId.Value
+	} else {
+		netIPAMs = append(netIPAMs, &nfv.VirtualNetworkInterfaceIPAM{
+			NetworkId:  networkId,
+			SubnetId:   fstSubId,
+			IpAddress:  nil, // dynamic ip
+			MacAddress: nil, // dynamic mac
+		})
+	}
+	return getSubnetIpam(ctx, fstSubId, netManager, netIPAMs)
 }
 
+// Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
 func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *nfv.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, error) {
 	if networkIpam.SubnetId == nil || networkIpam.SubnetId.Value == "" {
 		return nil, nil, fmt.Errorf("network ipam should have an subnetId reference")
@@ -597,12 +638,11 @@ func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName
 	}
 }
 
-
 func waitVmiObjectCreated(ctx context.Context, client *kubevirt.Clientset, vmName string, namesapce string) (*kubevirtv1.VirtualMachineInstance, error) {
 	fieldSelector := fields.OneTermEqualSelector("metadata.name", vmName).String()
 	watcher, err := client.KubevirtV1().VirtualMachineInstances(namesapce).Watch(ctx, v1.ListOptions{
 		FieldSelector: fieldSelector,
-		Watch: true,
+		Watch:         true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to watch virtualmachineinstance with name \"%s\": %w", vmName, err)

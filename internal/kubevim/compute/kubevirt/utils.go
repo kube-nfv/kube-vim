@@ -14,7 +14,6 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-
 func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) (*nfv.VirtualCompute, error) {
 	if vmi == nil || vm == nil {
 		return nil, fmt.Errorf("virtualMachine or virtualMachineInstance can't be nil")
@@ -53,7 +52,7 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 				Value: name,
 			},
 			OperationalState: nfv.OperationalState_ENABLED,
-			OwnerId: computeId,
+			OwnerId:          computeId,
 			MacAddress: &nfv.MacAddress{
 				Mac: iface.MAC,
 			},
@@ -113,17 +112,17 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 	}
 
 	return &nfv.VirtualCompute{
-		ComputeId:   computeId,
-		ComputeName: &vm.Name,
-		FlavourId:   flavId,
-		VcImageId:   imgId,
+		ComputeId:               computeId,
+		ComputeName:             &vm.Name,
+		FlavourId:               flavId,
+		VcImageId:               imgId,
 		VirtualNetworkInterface: netIfaces,
 		HostId: &nfv.Identifier{
 			Value: vmi.Status.NodeName,
 		},
 		OperationalState: operState,
-		RunningState: runningState,
-		Metadata:    &nfv.Metadata{
+		RunningState:     runningState,
+		Metadata: &nfv.Metadata{
 			Fields: mdFields,
 		},
 	}, nil

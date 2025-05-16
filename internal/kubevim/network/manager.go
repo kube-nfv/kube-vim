@@ -58,9 +58,11 @@ func ApplyGetNetworkOpts(gno ...GetNetworkOpt) *getNetworkOpts {
 
 type GetSubnetOpt func(*getSubnetOpts)
 type getSubnetOpts struct {
-	Name string
-	Uid  *nfv.Identifier
+	Name          string
+	Uid           *nfv.Identifier
 	NetAttachName string
+	NetId         *nfv.Identifier
+	IPAddress     *nfv.IPAddress
 }
 
 func GetSubnetByName(name string) GetSubnetOpt {
@@ -71,6 +73,14 @@ func GetSubnetByUid(uid *nfv.Identifier) GetSubnetOpt {
 }
 func GetSubnetByNetAttachName(netAttachName string) GetSubnetOpt {
 	return func(gso *getSubnetOpts) { gso.NetAttachName = netAttachName }
+}
+
+// Returns the subnet from VPC ID and IP address which should belongs to the subnet
+func GetSubnetByNetworkIP(netId *nfv.Identifier, ip *nfv.IPAddress) GetSubnetOpt {
+	return func(gso *getSubnetOpts) {
+		gso.NetId = netId
+		gso.IPAddress = ip
+	}
 }
 
 func ApplyGetSubnetOpts(gso ...GetSubnetOpt) *getSubnetOpts {
