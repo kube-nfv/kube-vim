@@ -139,7 +139,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 		return nil, fmt.Errorf("failed to initialize kubevirt data volume: %w", err)
 	}
 
-	networks, interfaces, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
+	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize kubevirt networks: %w", err)
 	}
@@ -154,6 +154,11 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	}
 
 	runStrategy := kubevirtv1.RunStrategyAlways
+
+	vmAnnotations := make(map[string]string)
+	for k, v := range netAnnotations {
+		vmAnnotations[k] = v
+	}
 
 	vmSpec := &kubevirtv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
@@ -176,6 +181,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 						common.K8sManagedByLabel:       common.KubeNfvName,
 						kubevirtv1.VirtualMachineLabel: vmName,
 					},
+					Annotations: vmAnnotations,
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
@@ -369,9 +375,10 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string)
 
 // Note(dmalovan): Need to think if the VM need pod network by default, or it should be configured.
 // For now pod network configured with a "masquarade" interface.
-func initNetworks(ctx context.Context, netManager network.Manager, networksData []*nfv.VirtualNetworkInterfaceData, networkIpam []*nfv.VirtualNetworkInterfaceIPAM) ([]kubevirtv1.Network, []kubevirtv1.Interface, error) {
+func initNetworks(ctx context.Context, netManager network.Manager, networksData []*nfv.VirtualNetworkInterfaceData, networkIpam []*nfv.VirtualNetworkInterfaceIPAM) ([]kubevirtv1.Network, []kubevirtv1.Interface, map[string]string, error) {
 	networks := make([]kubevirtv1.Network, 0, len(networksData)+1 /*+ podNetwork*/)
 	interfaces := make([]kubevirtv1.Interface, 0, len(networksData)+1 /*+ podNetwork*/)
+	annotations := make(map[string]string)
 	// Add pod network
 	networks = append(networks, kubevirtv1.Network{
 		Name: KubevirtVmMgmtNetworkName,
@@ -401,7 +408,7 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 		hasNetworkId := netData.NetworkId != nil && netData.NetworkId.Value != ""
 		hasSubnetId := netData.SubnetId != nil && netData.SubnetId.Value != ""
 		if !hasNetworkId && !hasSubnetId {
-			return nil, nil, fmt.Errorf(
+			return nil, nil, nil, fmt.Errorf(
 				"Failed to create vm interface with index \"%d\"."+
 					"either networkId or subnetId should be defined to identify the VirtualNetworkInterfaceData related network",
 				netIdx,
@@ -409,34 +416,35 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 		}
 		var net *kubevirtv1.Network
 		var iface *kubevirtv1.Interface
+		ann := make(map[string]string)
 		if hasSubnetId {
 			subnetIdVal := netData.SubnetId.GetValue()
 			subInst, err := netManager.GetSubnet(ctx, network.GetSubnetByUid(netData.SubnetId))
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get subnet with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("failed to get subnet with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", subnetIdVal, err)
 			}
 			// Check if the subnet belongs to the same network if both are specified.
 			if hasNetworkId {
 				if subInst.NetworkId == nil {
-					return nil, nil, fmt.Errorf("subnet with id \"%s\" has no networkId but it is specified in the request as a \"%s\"", subnetIdVal, netData.NetworkId.Value)
+					return nil, nil, nil, fmt.Errorf("subnet with id \"%s\" has no networkId but it is specified in the request as a \"%s\"", subnetIdVal, netData.NetworkId.Value)
 				}
 				if subInst.NetworkId.Value != netData.NetworkId.Value {
-					return nil, nil, fmt.Errorf("subnet with id \"%s\" reference to the network with id \"%s\" but another network with id \"%s\" is specified in the request", subnetIdVal, subInst.NetworkId.Value, netData.NetworkId.Value)
+					return nil, nil, nil, fmt.Errorf("subnet with id \"%s\" reference to the network with id \"%s\" but another network with id \"%s\" is specified in the request", subnetIdVal, subInst.NetworkId.Value, netData.NetworkId.Value)
 				}
 			}
 			ipam, err := getSubnetIpam(ctx, netData.SubnetId, netManager, networkIpam)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get ipam for the subnet with is \"%s\": %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("failed to get ipam for the subnet with is \"%s\": %w", subnetIdVal, err)
 			}
-			net, iface, err = initNetwork(ctx, netManager, ipam)
+			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the subnet \"%s\": %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the subnet \"%s\": %w", subnetIdVal, err)
 			}
 			// If VirtualNetworkInterfaceData has an subnetId, networkId will just ignored since subnetId contains enough info.
 		} else if hasNetworkId /* no subnetId */ {
 			netInst, err := netManager.GetNetwork(ctx, network.GetNetworkByUid(netData.NetworkId))
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get network with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
+				return nil, nil, nil, fmt.Errorf("failed to get network with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
 			}
 
 			var ipam *nfv.VirtualNetworkInterfaceIPAM
@@ -448,21 +456,24 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, randomSubnet)
 			}
 			if err != nil {
-				return nil, nil, fmt.Errorf(
+				return nil, nil, nil, fmt.Errorf(
 					"failed to get IPAM for the network specified by the networkId \"%s\": %w",
 					netData.NetworkId.Value,
 					err,
 				)
 			}
-			net, iface, err = initNetwork(ctx, netManager, ipam)
+			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the network \"%s\": %w", netData.NetworkId.Value, err)
+				return nil, nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the network \"%s\": %w", netData.NetworkId.Value, err)
 			}
 		}
 		networks = append(networks, *net)
 		interfaces = append(interfaces, *iface)
+		for k, v := range ann {
+			annotations[k] = v
+		}
 	}
-	return networks, interfaces, nil
+	return networks, interfaces, annotations, nil
 }
 
 // Returns the IP address/Mac address that should be allocated for given subnet.
@@ -554,9 +565,9 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 }
 
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
-func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *nfv.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, error) {
+func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *nfv.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, map[string]string, error) {
 	if networkIpam.SubnetId == nil || networkIpam.SubnetId.Value == "" {
-		return nil, nil, fmt.Errorf("network ipam should have an subnetId reference")
+		return nil, nil, nil, fmt.Errorf("network ipam should have an subnetId reference")
 	}
 	getSubnetOpts := make([]network.GetSubnetOpt, 0)
 	if misc.IsUUID(networkIpam.SubnetId.Value) {
@@ -566,22 +577,30 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 	}
 	subnet, err := netManager.GetSubnet(ctx, getSubnetOpts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
+		return nil, nil, nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
 	}
 	netAttachName, ok := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
 	if !ok {
-		return nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
+		return nil, nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
 	}
 	subnetName, ok := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
 	if !ok {
-		return nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
+		return nil, nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
 	}
 	// If multiple interfaces use the same subnet it will cause a problem if interface named the same as a subnet name.
 	// Generate the unique UID for each network interface and combine it with a subnet-name
 	ifaceUid, err := uuid.NewRandom()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate UUID for interface in subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
+		return nil, nil, nil, fmt.Errorf("failed to generate UUID for interface in subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
 	}
+	ann := make(map[string]string)
+	if networkIpam.IpAddress != nil && networkIpam.IpAddress.Ip != "" {
+		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/ip_address", netAttachName, common.KubeNfvDefaultNamespace)] = networkIpam.IpAddress.Ip
+	}
+	if networkIpam.MacAddress != nil && networkIpam.MacAddress.Mac != "" {
+		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/mac_address", netAttachName, common.KubeNfvDefaultNamespace)] = networkIpam.MacAddress.Mac
+	}
+
 	ifaceName := fmt.Sprintf("%s-%s", subnetName, ifaceUid)
 	return &kubevirtv1.Network{
 			Name: ifaceName,
@@ -596,7 +615,7 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 				Bridge: &kubevirtv1.InterfaceBridge{},
 			},
-		}, nil
+		}, ann, nil
 }
 
 // Waits for the k8s vm object status.created field equal to True.
