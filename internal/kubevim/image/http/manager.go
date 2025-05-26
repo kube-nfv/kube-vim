@@ -156,8 +156,8 @@ func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*
 		Name:      vis.Name,
 		CreatedAt: misc.ConvertK8sTimeToProtoTimestamp(vis.CreationTimestamp),
 		UpdatedAt: misc.ConvertK8sTimeToProtoTimestamp(vis.CreationTimestamp),
-		// Temportary solution to allocated 1 Gi to the image
-		Size:     resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+		// Temportary solution to allocated 5 Gi to the image
+		Size:     resource.NewQuantity(5*1024*1024*1024, resource.BinarySI),
 		Metadata: metadata,
 	}, nil
 }

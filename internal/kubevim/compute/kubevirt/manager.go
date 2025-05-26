@@ -138,6 +138,36 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize kubevirt data volume: %w", err)
 	}
+	volumes := []kubevirtv1.Volume{
+		{
+			Name: KubevirtVmMgmtRootVolumeName,
+			VolumeSource: kubevirtv1.VolumeSource{
+				DataVolume: &kubevirtv1.DataVolumeSource{
+					Name: dv.Name,
+				},
+			},
+		},
+	}
+	disks := []kubevirtv1.Disk{
+		{
+			Name: KubevirtVmMgmtRootVolumeName,
+			DiskDevice: kubevirtv1.DiskDevice{
+				Disk: &kubevirtv1.DiskTarget{
+					Bus: "virtio",
+				},
+			},
+		},
+	}
+
+
+	if req.UserData != nil {
+		volume, disk, err := initUserDataVolume(req.GetUserData())
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize vm userdata volume: %w", err)
+		}
+		volumes = append(volumes, *volume)
+		disks   = append(disks, *disk)
+	}
 
 	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
 	if err != nil {
@@ -186,30 +216,12 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
-							Disks: []kubevirtv1.Disk{
-								{
-									Name: KubevirtVmMgmtRootVolumeName,
-									DiskDevice: kubevirtv1.DiskDevice{
-										Disk: &kubevirtv1.DiskTarget{
-											Bus: "virtio",
-										},
-									},
-								},
-							},
+							Disks: disks,
 							Interfaces: interfaces,
 						},
 					},
 					Networks: networks,
-					Volumes: []kubevirtv1.Volume{
-						{
-							Name: KubevirtVmMgmtRootVolumeName,
-							VolumeSource: kubevirtv1.VolumeSource{
-								DataVolume: &kubevirtv1.DataVolumeSource{
-									Name: dv.Name,
-								},
-							},
-						},
-					},
+					Volumes: volumes,
 				},
 			},
 		},
@@ -371,6 +383,51 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string)
 			},
 		},
 	}, nil
+}
+
+func initUserDataVolume(userData *nfv.UserData) (*kubevirtv1.Volume, *kubevirtv1.Disk, error) {
+	if userData.Content == "" {
+		return nil, nil, fmt.Errorf("userData content can't be empty")
+	}
+	volumeName := "cloudinitdisk"
+	var volumeSource kubevirtv1.VolumeSource
+
+	switch *userData.Method {
+	case nfv.UserData_CONFIG_DRIVE_PLAINTEXT,
+		nfv.UserData_CONFIG_DRIVE_MIME_MULTIPART:
+		// Use cloudInitConfigDrive for both plaintext and multipart
+		// TODO: Build MIME multipart config if needed with CertificateData.
+		volumeSource = kubevirtv1.VolumeSource{
+			CloudInitConfigDrive: &kubevirtv1.CloudInitConfigDriveSource{
+				UserData: userData.Content,
+			},
+		}
+	case nfv.UserData_NO_CLOUD:
+		volumeSource = kubevirtv1.VolumeSource{
+			CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
+				UserData: userData.Content,
+			},
+		}
+	case nfv.UserData_METADATA_SERVICE:
+		return nil, nil, fmt.Errorf("metadata service method not supported in KubeVirt natively")
+	default:
+		return nil, nil, fmt.Errorf("unsupported userData method: %v", userData.Method)
+	}
+
+	volume := &kubevirtv1.Volume{
+		Name:         volumeName,
+		VolumeSource: volumeSource,
+	}
+
+	disk := &kubevirtv1.Disk{
+		Name: volumeName,
+		DiskDevice: kubevirtv1.DiskDevice{
+			Disk: &kubevirtv1.DiskTarget{
+				Bus: "virtio",
+			},
+		},
+	}
+	return volume, disk, nil
 }
 
 // Note(dmalovan): Need to think if the VM need pod network by default, or it should be configured.
