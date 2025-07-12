@@ -389,6 +389,9 @@ func initUserDataVolume(userData *nfv.UserData) (*kubevirtv1.Volume, *kubevirtv1
 	if userData.Content == "" {
 		return nil, nil, fmt.Errorf("userData content can't be empty")
 	}
+	if userData.Method == nil {
+		return nil, nil, fmt.Errorf("userData method can't be empty")
+	}
 	volumeName := "cloudinitdisk"
 	var volumeSource kubevirtv1.VolumeSource
 
@@ -507,10 +510,14 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			var ipam *nfv.VirtualNetworkInterfaceIPAM
 			if netInst.NetworkType == nfv.NetworkType_UNDERLAY {
 				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
-			} else if netInst.NetworkType == nfv.NetworkType_OVERLAY && !hasSubnetId {
-				ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]
-				randomSubnet := ok && ann == "random"
-				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, randomSubnet)
+			} else if netInst.NetworkType == nfv.NetworkType_OVERLAY {
+				returnOnMiss := true
+				if netData.Metadata != nil {
+					ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]
+					allocateRandom := ok && ann == "random"
+					returnOnMiss = !allocateRandom
+				}
+				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, returnOnMiss)
 			}
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf(
@@ -609,7 +616,7 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 	fstSubId := net.SubnetId[0]
 
 	if netIpam != nil {
-		netIpam.SubnetId.Value = fstSubId.Value
+		netIpam.SubnetId = fstSubId
 	} else {
 		netIPAMs = append(netIPAMs, &nfv.VirtualNetworkInterfaceIPAM{
 			NetworkId:  networkId,
