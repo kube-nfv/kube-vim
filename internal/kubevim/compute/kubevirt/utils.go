@@ -122,6 +122,8 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 		},
 		OperationalState: operState,
 		RunningState:     runningState,
+		VirtualCpu: &nfv.VirtualCpu{},
+		VirtualMemory: &nfv.VirtualMemory{},
 		Metadata: &nfv.Metadata{
 			Fields: mdFields,
 		},
