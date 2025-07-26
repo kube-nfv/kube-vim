@@ -47,25 +47,34 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal flavour storage attributes: %w", err)
 	}
+
+	labels := map[string]string{
+		common.K8sManagedByLabel:  common.KubeNfvName,
+		flavour.K8sFlavourIdLabel: flavorId,
+	}
+	ann := map[string]string {
+		flavour.K8sVolumesAnnotation: string(volumesJson),
+	}
+
+	if nfvFlavour.Metadata != nil {
+		// Maybe some annotations needs to be present in labels
+		for k, v := range nfvFlavour.Metadata.Fields {
+			ann[k] = v
+		}
+	}
+
 	return &v1beta1.VirtualMachineInstancetype{
 			ObjectMeta: v1.ObjectMeta{
 				Name: flavourNameFromId(flavorId),
-				Labels: map[string]string{
-					common.K8sManagedByLabel:  common.KubeNfvName,
-					flavour.K8sFlavourIdLabel: flavorId,
-				},
-				Annotations: map[string]string{
-					flavour.K8sVolumesAnnotation: string(volumesJson),
-				},
+				Labels: labels,
+				Annotations: ann,
 			},
 			Spec: vmInstTypeSpec,
 		}, &v1beta1.VirtualMachinePreference{
 			ObjectMeta: v1.ObjectMeta{
 				Name: flavourPreferenceNameFromId(flavorId),
-				Labels: map[string]string{
-					common.K8sManagedByLabel:  common.KubeNfvName,
-					flavour.K8sFlavourIdLabel: flavorId,
-				},
+				Labels: labels,
+				Annotations: ann,
 			},
 		}, nil
 }
@@ -106,6 +115,10 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		KubevirtPreferenceIdAnnotation:    string(pref.GetUID()),
 		flavour.K8sFlavourSourceLabel:     KubevirtFlavourSource,
 	}
+	if val, ok := instType.Annotations[flavour.K8sFlavourAttNameAnnotation]; ok {
+		metadata[flavour.K8sFlavourAttNameAnnotation] = val
+	}
+
 	return &nfv.VirtualComputeFlavour{
 		FlavourId: &nfv.Identifier{
 			Value: flavourId,
