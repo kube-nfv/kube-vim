@@ -38,52 +38,31 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 	mdFields[KubevirtVmStatusReady] = strconv.FormatBool(vm.Status.Ready)
 	mdFields[KubevirtVmPrintableStatus] = string(vm.Status.PrintableStatus)
 	mdFields[KubevirtVmRunStategy] = string(vm.Status.RunStrategy)
-
 	mdFields[KubevirtVmiStatusPhase] = string(vmi.Status.Phase)
 	if vmi.Status.Reason != "" {
 		mdFields[KubevirtVmiStatusReason] = vmi.Status.Reason
 	}
 
 	netIfaces := make([]*nfv.VirtualNetworkInterface, 0, len(vmi.Status.Interfaces))
-	for _, iface := range vmi.Status.Interfaces {
-		name := iface.Name
+	for _, netSpec := range vmi.Spec.Networks {
+		name := netSpec.Name
 		netIfRes := &nfv.VirtualNetworkInterface{
 			ResourceId: &nfv.Identifier{
 				Value: name,
 			},
 			OperationalState: nfv.OperationalState_ENABLED,
 			OwnerId:          computeId,
-			MacAddress: &nfv.MacAddress{
-				Mac: iface.MAC,
-			},
 		}
 		netMdFields := make(map[string]string)
-		ips := make([]*nfv.IPAddress, 0, len(iface.IPs))
-		for _, ip := range iface.IPs {
-			ips = append(ips, &nfv.IPAddress{
-				Ip: ip,
-			})
-		}
-		netIfRes.IpAddress = ips
-		netSpec, err := getNetworkFromVm(name, vm)
+		ifaceSpec, err := getInterfaceFromVmi(name, vmi)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get network \"%s\" from vm \"%s\": %w", name, vm.Name, err)
+			return nil, fmt.Errorf("failed to get interface from \"%s\" vmi: %w", vm.Name, err)
 		}
-		ifaceSpec, err := getInterfaceFromVm(name, vm)
+		vNicType, err := ifaceBindingMethodToNfv(ifaceSpec.InterfaceBindingMethod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get interface with network \"%s\" from vm \"%s\": %w", name, vm.Name, err)
+			return nil, fmt.Errorf("failed to get virtual nic type for vmi \"%s\" interface \"%s\": %w", vm.Name, name, err)
 		}
-		switch {
-		case ifaceSpec.InterfaceBindingMethod.Bridge != nil:
-			netIfRes.TypeVirtualNic = nfv.TypeVirtualNic_BRIDGE
-		case ifaceSpec.InterfaceBindingMethod.Masquerade != nil:
-			netIfRes.TypeVirtualNic = nfv.TypeVirtualNic_BRIDGE
-		case ifaceSpec.InterfaceBindingMethod.SRIOV != nil:
-			netIfRes.TypeVirtualNic = nfv.TypeVirtualNic_SRIOV
-		default:
-			return nil, fmt.Errorf("unknown interface binding method for vm \"%s\" network \"%s\"", vm.Name, name)
-		}
-
+		netIfRes.TypeVirtualNic = vNicType
 		if netSpec.NetworkSource.Pod != nil {
 			netMdFields[KubevirtVmNetworkManagement] = "true"
 		} else if netSpec.NetworkSource.Multus != nil {
@@ -103,6 +82,22 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 			netIfRes.Bandwidth = 0
 		} else {
 			return nil, fmt.Errorf("network \"%s\" should be either multus or pod", name)
+		}
+		ifaceStatus, err := getInterfaceStatusFromVmi(name, vmi)
+		if err == nil && ifaceStatus != nil {
+			ips := make([]*nfv.IPAddress, 0, len(ifaceStatus.IPs))
+			for _, ip := range ifaceStatus.IPs {
+				ips = append(ips, &nfv.IPAddress{
+					Ip: ip,
+				})
+			}
+			netIfRes.IpAddress = ips
+			netIfRes.MacAddress = &nfv.MacAddress{
+				Mac: ifaceStatus.MAC,
+			}
+			netMdFields[KubevirtInterfaceReady] = "true"
+		} else {
+			netMdFields[KubevirtInterfaceReady] = "false"
 		}
 
 		netIfRes.Metadata = &nfv.Metadata{
@@ -209,29 +204,66 @@ func getNetworkFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubev
 	}
 }
 
+
 // Returns the kubevirt interface with specified network name from the kubevirt domain spec or nil if not found.
-func getInterfaceFromVmDomain(netName string, domSpec *kubevirtv1.DomainSpec) (*kubevirtv1.Interface, error) {
+func getInterfaceFromDomainSpec(ifaceName string, domSpec *kubevirtv1.DomainSpec) (*kubevirtv1.Interface, error) {
 	if domSpec == nil {
 		return nil, fmt.Errorf("domain spec is empty")
 	}
 	for _, iface := range domSpec.Devices.Interfaces {
-		if iface.Name == netName {
+		if iface.Name == ifaceName {
 			return &iface, nil
 		}
 	}
-	return nil, fmt.Errorf("interface with network \"%s\" not found in domain spec: %w", netName, common.NotFoundErr)
+	return nil, fmt.Errorf("interface with name \"%s\" not found in domain spec: %w", ifaceName, common.NotFoundErr)
 }
 
-func getInterfaceFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Interface, error) {
+func getInterfaceFromVm(ifaceName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Interface, error) {
 	if vmSpec == nil {
 		return nil, fmt.Errorf("vm is empty")
 	}
 	if vmSpec.Spec.Template == nil {
 		return nil, fmt.Errorf("vm template is empty")
 	}
-	if iface, err := getInterfaceFromVmDomain(netName, &vmSpec.Spec.Template.Spec.Domain); err != nil {
+	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmSpec.Spec.Template.Spec.Domain); err != nil {
 		return nil, fmt.Errorf("failed to get iface from vm \"%s\" vmi template domain spec: %w", vmSpec.Name, err)
 	} else {
 		return iface, nil
+	}
+}
+
+func getInterfaceFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.Interface, error) {
+	if vmi == nil {
+		return nil, fmt.Errorf("vmi is empty")
+	}
+	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmi.Spec.Domain); err != nil {
+		return nil, fmt.Errorf("failed to get iface \"%s\" from vmi spec: %w", ifaceName, err)
+	} else {
+		return iface, nil
+	}
+}
+
+func getInterfaceStatusFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstanceNetworkInterface, error) {
+	if vmi == nil {
+		return nil, fmt.Errorf("vmi is empty")
+	}
+	for _, iface := range vmi.Status.Interfaces {
+		if iface.Name == ifaceName {
+			return &iface, nil
+		}
+	}
+	return nil, fmt.Errorf("iface \"%s\" not found in vmi status: %w", ifaceName, common.NotFoundErr)
+}
+
+func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfv.TypeVirtualNic, error) {
+	switch {
+	case method.Bridge != nil:
+		return nfv.TypeVirtualNic_BRIDGE, nil
+	case method.Masquerade != nil:
+		return nfv.TypeVirtualNic_BRIDGE, nil
+	case method.SRIOV != nil:
+		return nfv.TypeVirtualNic_SRIOV, nil
+	default:
+		return nfv.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method")
 	}
 }

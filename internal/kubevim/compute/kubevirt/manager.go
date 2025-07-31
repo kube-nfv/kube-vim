@@ -49,6 +49,8 @@ const (
 	KubevirtVmiStatusReason = "status.vmi.kubevirt.io/reason"
 
 	KubevirtVmNetworkManagement = "network.vm.kubevirt.io/management"
+
+	KubevirtInterfaceReady     = "interface.vm.kubevirt.io/ready"
 )
 
 const (
