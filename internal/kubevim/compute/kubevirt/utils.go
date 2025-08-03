@@ -97,6 +97,9 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 			}
 			netMdFields[KubevirtInterfaceReady] = "true"
 		} else {
+			netIfRes.MacAddress = &nfv.MacAddress{
+				Mac: "initializing",
+			}
 			netMdFields[KubevirtInterfaceReady] = "false"
 		}
 
