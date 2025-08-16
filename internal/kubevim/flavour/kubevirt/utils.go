@@ -7,6 +7,7 @@ import (
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"github.com/kube-nfv/kube-vim/internal/config"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -17,17 +18,17 @@ import (
 
 func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *nfv.VirtualComputeFlavour) (*v1beta1.VirtualMachineInstancetype, *v1beta1.VirtualMachinePreference, error) {
 	if nfvFlavour == nil {
-		return nil, nil, fmt.Errorf("flavour can't be empty")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "flavour", Reason: "cannot be empty"}
 	}
 	if nfvFlavour.VirtualCpu == nil {
-		return nil, nil, fmt.Errorf("virtual cpu can't be empty")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual cpu", Reason: "cannot be empty"}
 	}
 	if nfvFlavour.VirtualMemory == nil {
-		return nil, nil, fmt.Errorf("virtual memory can't be empty")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual memory", Reason: "cannot be empty"}
 	}
 
 	if nfvFlavour.VirtualCpu.NumVirtualCpu == 0 {
-		return nil, nil, fmt.Errorf("virtualCpu.NumVirtualCpu can't be 0")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual CPU count", Reason: "cannot be 0"}
 	}
 	vmInstTypeSpec := v1beta1.VirtualMachineInstancetypeSpec{}
 	// TODO: Add CPUPinning, NUMA, etc.
@@ -35,7 +36,7 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 		Guest: nfvFlavour.VirtualCpu.NumVirtualCpu,
 	}
 	if nfvFlavour.VirtualMemory.VirtualMemSize == 0 {
-		return nil, nil, fmt.Errorf("virtual memory size can't be 0")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual memory size", Reason: "cannot be 0"}
 	}
 	memQ := *resource.NewQuantity(int64(nfvFlavour.VirtualMemory.VirtualMemSize)*1024*1024, resource.BinarySI)
 
@@ -45,14 +46,14 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	// Temporary solution is to store serialized flavour volumes in the VirtualMachineInstancetype resource anno
 	volumesJson, err := json.Marshal(nfvFlavour.StorageAttributes)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal flavour storage attributes: %w", err)
+		return nil, nil, fmt.Errorf("marshal storage attributes: %w", err)
 	}
 
 	labels := map[string]string{
 		common.K8sManagedByLabel:  common.KubeNfvName,
 		flavour.K8sFlavourIdLabel: flavorId,
 	}
-	ann := map[string]string {
+	ann := map[string]string{
 		flavour.K8sVolumesAnnotation: string(volumesJson),
 	}
 
@@ -80,14 +81,20 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 }
 
 func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v1beta1.VirtualMachineInstancetype, pref *v1beta1.VirtualMachinePreference) (*nfv.VirtualComputeFlavour, error) {
-	if instType == nil || pref == nil {
-		return nil, fmt.Errorf("VirtualMachineInstancetype or VirtualMachinePreference can't be nil")
+	if instType == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "VirtualMachineInstancetype", Reason: "cannot be nil"}
 	}
-	if !misc.IsObjectInstantiated(instType) || !misc.IsObjectInstantiated(pref) {
-		return nil, fmt.Errorf("virtualmachineinstancetype or virtualmachinepreference is not from Kubernetes (likely created manually)")
+	if !misc.IsObjectInstantiated(instType) {
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype"}
 	}
-	if !misc.IsObjectManagedByKubeNfv(instType) || !misc.IsObjectManagedByKubeNfv(pref) {
-		return nil, fmt.Errorf("virtualmachineinstancetype \"%s\" with uid \"%s\" or virtualmachinepreference \"%s\" with uid \"%s\" is not managed by the kube-nfv", instType.GetName(), instType.GetUID(), pref.GetName(), pref.GetUID())
+	if pref != nil && !misc.IsObjectInstantiated(pref) {
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachinePreference"}
+	}
+	if !misc.IsObjectManagedByKubeNfv(instType) {
+		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachineInstancetype", ObjectName: instType.GetName(), ObjectId: string(instType.GetUID())}
+	}
+	if pref != nil && !misc.IsObjectManagedByKubeNfv(pref) {
+		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachinePreference", ObjectName: pref.GetName(), ObjectId: string(pref.GetUID())}
 	}
 	virtualMem := &nfv.VirtualMemoryData{
 		// Translate memory to the MiB
@@ -101,19 +108,21 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 	var storageAttributes []*nfv.VirtualStorageData
 	if val, ok := instType.Annotations[flavour.K8sVolumesAnnotation]; ok {
 		if err := json.Unmarshal([]byte(val), &storageAttributes); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal volumes from the virtualmachineinstancetype \"%s\" annotation \"%s\": %w", instType.Name, flavour.K8sVolumesAnnotation, err)
+			return nil, fmt.Errorf("unmarshal storage attributes from %s: %w", instType.Name, err)
 		}
 	} else {
-		return nil, fmt.Errorf("kubevirt virtualmachineinstancetype with name \"%s\" missing \"%s\" annotation", instType.Name, flavour.K8sVolumesAnnotation)
+		return nil, fmt.Errorf("VirtualMachineInstancetype %s missing storage attributes annotation", instType.Name)
 	}
 
 	isPublic := false
 	metadata := map[string]string{
 		kubevirtv1.InstancetypeAnnotation: instType.GetName(),
 		KubevirtInstanceTypeIdAnnotation:  string(instType.GetUID()),
-		kubevirtv1.PreferenceAnnotation:   pref.GetName(),
-		KubevirtPreferenceIdAnnotation:    string(pref.GetUID()),
 		flavour.K8sFlavourSourceLabel:     KubevirtFlavourSource,
+	}
+	if pref != nil {
+		metadata[kubevirtv1.PreferenceAnnotation] = pref.GetName()
+		metadata[KubevirtPreferenceIdAnnotation] = string(pref.GetUID())
 	}
 	if val, ok := instType.Annotations[flavour.K8sFlavourAttNameAnnotation]; ok {
 		metadata[flavour.K8sFlavourAttNameAnnotation] = val
@@ -144,11 +153,11 @@ func flavourPreferenceNameFromId(id string) string {
 func idFromFlavourName(flavourName string) (string, error) {
 	const prefix = "flavour-"
 	if !strings.HasPrefix(flavourName, prefix) {
-		return "", fmt.Errorf("invalid flavour name \"%s\" format", flavourName)
+		return "", &apperrors.ErrInvalidArgument{Field: "flavour name", Reason: fmt.Sprintf("invalid format: %s", flavourName)}
 	}
 	id := strings.TrimPrefix(flavourName, prefix)
 	if id == "" {
-		return "", fmt.Errorf("empty id for flavour name \"%s\"", flavourName)
+		return "", &apperrors.ErrInvalidArgument{Field: "flavour id", Reason: "empty id in name"}
 	}
 	return id, nil
 }
