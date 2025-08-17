@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	common "github.com/kube-nfv/kube-vim/internal/config"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/misc"
@@ -46,7 +46,7 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	// Temporary solution is to store serialized flavour volumes in the VirtualMachineInstancetype resource anno
 	volumesJson, err := json.Marshal(nfvFlavour.StorageAttributes)
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshal storage attributes: %w", err)
+		return nil, nil, fmt.Errorf("marshal storage attributes for flavour '%s': %w", flavorId, err)
 	}
 
 	labels := map[string]string{
@@ -108,10 +108,10 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 	var storageAttributes []*nfv.VirtualStorageData
 	if val, ok := instType.Annotations[flavour.K8sVolumesAnnotation]; ok {
 		if err := json.Unmarshal([]byte(val), &storageAttributes); err != nil {
-			return nil, fmt.Errorf("unmarshal storage attributes from %s: %w", instType.Name, err)
+			return nil, fmt.Errorf("unmarshal storage attributes from instancetype '%s' (id: %s): %w", instType.Name, instType.GetUID(), err)
 		}
 	} else {
-		return nil, fmt.Errorf("VirtualMachineInstancetype %s missing storage attributes annotation", instType.Name)
+		return nil, fmt.Errorf("VirtualMachineInstancetype '%s' (id: %s) missing storage attributes annotation", instType.Name, instType.GetUID())
 	}
 
 	isPublic := false

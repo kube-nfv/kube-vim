@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -69,12 +69,12 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 
 	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).Create(createCtx, instType, v1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("create VirtualMachineInstancetype %s: %w", instType.Name, err)
+		return nil, fmt.Errorf("create VirtualMachineInstancetype '%s' for flavour '%s': %w", instType.Name, flavourId, err)
 	}
 
 	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).Create(createCtx, instPref, v1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("create VirtualMachinePreference %s: %w", instPref.Name, err)
+		return nil, fmt.Errorf("create VirtualMachinePreference '%s' for flavour '%s': %w", instPref.Name, flavourId, err)
 	}
 
 	return &nfv.Identifier{
@@ -97,7 +97,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 		return nil, &apperrors.ErrNotFound{Entity: "flavour", Identifier: id.GetValue()}
 	}
 	if len(instTypeList.Items) > 1 {
-		return nil, fmt.Errorf("multiple flavours found with id %s", id.GetValue())
+		return nil, &apperrors.ErrInvalidArgument{Field: "flavour id", Reason: fmt.Sprintf("multiple flavours found with id '%s'", id.GetValue())}
 	}
 	instType := &instTypeList.Items[0]
 	if !misc.IsObjectManagedByKubeNfv(instType) {
@@ -117,7 +117,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 	}
 	nfvFlavour, err := nfvFlavourFromKubeVirtInstanceTypePreferences(id.GetValue(), instType, instPref)
 	if err != nil {
-		return nil, fmt.Errorf("convert kubevirt resources to flavour %s: %w", id.GetValue(), err)
+		return nil, fmt.Errorf("convert kubevirt resources to flavour '%s' (instancetype: %s): %w", id.GetValue(), instType.Name, err)
 	}
 	return nfvFlavour, nil
 }
@@ -142,7 +142,7 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 		instTypeRef := &instTypeList.Items[idx]
 		flavourId, ok := instTypeRef.Labels[flavour.K8sFlavourIdLabel]
 		if !ok {
-			return nil, fmt.Errorf("VirtualMachineInstancetype %s missing flavour id label", instTypeRef.Name)
+			return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("VirtualMachineInstancetype '%s'", instTypeRef.Name), Reason: "missing flavour id label"}
 		}
 		var instPref *v1beta1.VirtualMachinePreference
 	preferenceLoop:
@@ -161,7 +161,7 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 		// instPref can be nil
 		nfvFlavour, err := nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId, instTypeRef, instPref)
 		if err != nil {
-			return nil, fmt.Errorf("convert kubevirt resources to flavour %s: %w", flavourId, err)
+			return nil, fmt.Errorf("convert kubevirt resources to flavour '%s' (instancetype: %s): %w", flavourId, instTypeRef.Name, err)
 		}
 		res = append(res, nfvFlavour)
 	}
@@ -171,15 +171,15 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 func (m *manager) DeleteFlavour(ctx context.Context, id *nfv.Identifier) error {
 	_, err := m.GetFlavour(ctx, id)
 	if err != nil {
-		return fmt.Errorf("verify flavour %s exists: %w", id.Value, err)
+		return fmt.Errorf("verify flavour '%s' exists: %w", id.Value, err)
 	}
 	instTypeName := flavourNameFromId(id.Value)
 	if err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).Delete(ctx, instTypeName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete VirtualMachineInstancetype %s: %w", instTypeName, err)
+		return fmt.Errorf("delete VirtualMachineInstancetype '%s' for flavour '%s': %w", instTypeName, id.Value, err)
 	}
 	instPrefName := flavourPreferenceNameFromId(id.Value)
 	if err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).Delete(ctx, instPrefName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete VirtualMachinePreference %s: %w", instPrefName, err)
+		return fmt.Errorf("delete VirtualMachinePreference '%s' for flavour '%s': %w", instPrefName, id.Value, err)
 	}
 	return nil
 }

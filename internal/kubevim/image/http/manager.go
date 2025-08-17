@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,7 +19,8 @@ import (
 )
 
 var (
-	contentLengthMissingErr = fmt.Errorf("Content-Length header is missing")
+	// Untyped errors for simple cases
+	ErrContentLengthMissing = errors.New("Content-Length header is missing")
 )
 
 // http image manager provides the ability to download software image from the
@@ -44,7 +45,7 @@ func NewHttpImageManager(cdiCtrl *image.CdiController, cfg *config.HttpImageConf
 //	Add ability to works with different storage clases (as well as WaitForFirstConsumer mode)
 func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
 	if imageId == nil || imageId.GetValue() == "" {
-		return nil, fmt.Errorf("specified image id can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "image id", Reason: "cannot be empty"}
 	}
 	isSource := false
 	getDvOpts := []image.GetDvOrVisOpt{}
@@ -60,12 +61,13 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	if err == nil {
 		return softwareImageInfoFromVolumeImportSource(vis)
 	}
-	if !k8s_errors.IsNotFound(err) && !errors.Is(err, common.NotFoundErr) {
-		return nil, fmt.Errorf("can't get k8s Data Volume specified by the imageId \"%s\": %w", imageId.GetValue(), err)
+	var notFoundErr *apperrors.ErrNotFound
+	if !k8s_errors.IsNotFound(err) && !errors.As(err, &notFoundErr) {
+		return nil, fmt.Errorf("get k8s data volume for image '%s': %w", imageId.GetValue(), err)
 	}
 	// Data volume not found and need to be created.
 	if !isSource {
-		return nil, fmt.Errorf("initial image placement should be done using image source as imageId: %w", common.UnsupportedErr)
+		return nil, fmt.Errorf("initial image placement requires source URL as imageId: %w", apperrors.ErrUnsupported)
 	}
 	vis, err = m.cdiCtrl.CreateVolumeImportSource(ctx, &v1beta1.ImportSourceType{
 		HTTP: &v1beta1.DataVolumeSourceHTTP{
@@ -73,7 +75,7 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s VolumeImportSource resource: %w", err)
+		return nil, fmt.Errorf("create k8s VolumeImportSource resource: %w", err)
 	}
 	return softwareImageInfoFromVolumeImportSource(vis)
 }
@@ -81,14 +83,14 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
 	images, err := m.cdiCtrl.ListVolumeImportSources(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get images: %w", err)
+		return nil, fmt.Errorf("list volume import sources: %w", err)
 	}
 	res := make([]*nfv.SoftwareImageInformation, 0, len(images))
 	for idx := range images {
 		imgRef := &images[idx]
 		imgInfo, err := softwareImageInfoFromVolumeImportSource(imgRef)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert convert volumeImportSource to the imageInfo: %w", err)
+			return nil, fmt.Errorf("convert volume import source to image info: %w", err)
 		}
 		res = append(res, imgInfo)
 	}
@@ -97,7 +99,7 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 
 func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*location*/) error {
 
-	return common.NotImplementedErr
+	return apperrors.ErrNotImplemented
 }
 
 // TODO: HTTP HEAD returns actual image size, while PVC need to be created with virtual.
@@ -106,19 +108,19 @@ func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*locatio
 func tryCalculeteContentLength(url string) (int64, error) {
 	resp, err := http.Head(url)
 	if err != nil {
-		return 0, fmt.Errorf("failed to make HEAD request to the \"%s\"", url)
+		return 0, fmt.Errorf("make HEAD request to '%s': %w", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("http request failed with status: %s", resp.Status)
+		return 0, fmt.Errorf("http request to '%s' failed with status: %s", url, resp.Status)
 	}
 	contentLength := resp.Header.Get("Content-Length")
 	if contentLength == "" {
-		return 0, contentLengthMissingErr
+		return 0, ErrContentLengthMissing
 	}
 	size, err := strconv.ParseInt(contentLength, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse Content-Length header: %w", err)
+		return 0, fmt.Errorf("parse Content-Length header for '%s': %w", url, err)
 	}
 	return size, nil
 }
@@ -135,13 +137,13 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 
 func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*nfv.SoftwareImageInformation, error) {
 	if !misc.IsObjectInstantiated(vis) {
-		return nil, fmt.Errorf("volume import source object is not instantiated in k8s")
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VolumeImportSource"}
 	}
 	if !misc.IsObjectManagedByKubeNfv(vis) {
-		return nil, fmt.Errorf("volume import source object is not managed by the kube-vim")
+		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VolumeImportSource", ObjectName: vis.Name, ObjectId: string(vis.GetUID())}
 	}
 	if source, ok := vis.Labels[image.K8sSourceLabel]; !ok || (source != string(image.HTTP) && source != string(image.HTTPS)) {
-		return nil, fmt.Errorf("http image manager can't convert image with \"%s\" source", source)
+		return nil, fmt.Errorf("http image manager cannot convert image with '%s' source: %w", source, apperrors.ErrUnsupported)
 	}
 	metadata := &nfv.Metadata{
 		Fields: vis.Labels,

@@ -10,6 +10,7 @@ import (
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/gateway"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -24,10 +25,10 @@ type kubeVimGateway struct {
 
 func NewKubeVimGateway(cfg *config.Config, logger *zap.Logger) (*kubeVimGateway, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "config", Reason: "cannot be nil"}
 	}
 	if logger == nil {
-		return nil, fmt.Errorf("logger is uninitialized")
+		return nil, &apperrors.ErrInvalidArgument{Field: "logger", Reason: "cannot be nil"}
 	}
 	return &kubeVimGateway{
 		logger: logger,
@@ -42,12 +43,12 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	if *g.cfg.Kubevim.Tls.InsecureSkipVerify {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
-		return fmt.Errorf("kubevim secure connection is not supported yet: %w", common.UnsupportedErr)
+		return fmt.Errorf("kubevim secure connection not supported yet: %w", apperrors.ErrUnsupported)
 	}
 	// TODO: Add backoff if needed
 	conn, err := grpc.NewClient(connAddr, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to establish connection with kubevim server: %w", err)
+		return fmt.Errorf("establish connection with kubevim server '%s': %w", connAddr, err)
 	}
 	defer conn.Close()
 	g.logger.Info("successfully connected to the kubevim gRPC endpoint", zap.String("Endpoint", connAddr))
@@ -56,7 +57,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 		runtime.SetQueryParameterParser(&queryParameterParser{}),
 	)
 	if err = nfv.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
-		return fmt.Errorf("failed to register viVnfm gateway handler: %w", err)
+		return fmt.Errorf("register viVnfm gateway handler: %w", err)
 	}
 	servAddr := fmt.Sprintf(":%d", *g.cfg.Service.Server.Port)
 	server := &http.Server{
@@ -69,12 +70,12 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	go func() {
 		if common.IsServerTlsConfigured(g.cfg.Service.Server.Tls) {
 			if err := server.ListenAndServeTLS(*g.cfg.Service.Server.Tls.Cert, *g.cfg.Service.Server.Tls.Key); err != nil {
-				errCh <- fmt.Errorf("failed to start TLS kube-vim Gateway server: %w", err)
+				errCh <- fmt.Errorf("start TLS kube-vim Gateway server on '%s': %w", servAddr, err)
 			}
 		} else {
 			g.logger.Warn("No TLS configuration specified. Kubevim Gateway server will launch unsecure!")
 			if err := server.ListenAndServe(); err != nil {
-				errCh <- fmt.Errorf("failed to start kube-vim Gateway server: %w", err)
+				errCh <- fmt.Errorf("start kube-vim Gateway server on '%s': %w", servAddr, err)
 			}
 		}
 	}()
@@ -89,7 +90,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 	if err = server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("failed to gracefully shutdown kubevim gateway server: %w", err)
+		return fmt.Errorf("gracefully shutdown kubevim gateway server: %w", err)
 	}
 	g.logger.Info("kubevim gateway server shutdown completed")
 	return nil

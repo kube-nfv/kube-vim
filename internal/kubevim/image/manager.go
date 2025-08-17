@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
 const (
@@ -36,6 +36,6 @@ func SourceTypeFromString(sourceTypeStr string) (sourceType, error) {
 	case string(HTTP):
 		return HTTP, nil
 	default:
-		return Unknown, fmt.Errorf("unknown source type \"%s\": %w", sourceTypeStr, common.UnsupportedErr)
+		return Unknown, fmt.Errorf("unknown source type '%s': %w", sourceTypeStr, apperrors.ErrUnsupported)
 	}
 }

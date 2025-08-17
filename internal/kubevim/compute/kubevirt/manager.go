@@ -7,8 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
@@ -58,9 +59,7 @@ const (
 	vmStatusCreatedTimeout = time.Second * 3
 )
 
-var (
-	ipamConfigurationMissingErr = fmt.Errorf("IPAM configuration should have either subnetId or staticIp configured")
-)
+// ipamConfigurationMissingErr moved to errors.go as ErrIPAMConfigurationMissing
 
 // kubevirt manager for allocation and management of the compute resources.
 type manager struct {
@@ -81,7 +80,7 @@ func NewComputeManager(
 	networkManager network.Manager) (*manager, error) {
 	c, err := kubevirt.NewForConfig(k8sConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kube-virt k8s client: %w", err)
+		return nil, fmt.Errorf("create kubevirt k8s client: %w", err)
 	}
 	return &manager{
 		kubevirtClient: c,
@@ -94,51 +93,51 @@ func NewComputeManager(
 
 func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error) {
 	if req == nil {
-		return nil, fmt.Errorf("request can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "request", Reason: "cannot be empty"}
 	}
 
 	// Get request related compute flavour
 	if req.ComputeFlavourId == nil || req.ComputeFlavourId.GetValue() == "" {
-		return nil, fmt.Errorf("computeFlavourId can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "compute flavour id", Reason: "cannot be empty"}
 	}
 	flav, err := m.flavourManager.GetFlavour(ctx, req.ComputeFlavourId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrive flavour with id \"%s\": %w", req.ComputeFlavourId.GetValue(), err)
+		return nil, fmt.Errorf("retrieve flavour '%s': %w", req.ComputeFlavourId.GetValue(), err)
 	}
 	if flav.Metadata == nil {
-		return nil, fmt.Errorf("flavour metadata can't be nil: %w", common.UnsupportedErr)
+		return nil, fmt.Errorf("flavour metadata cannot be nil: %w", apperrors.ErrUnsupported)
 	}
 
 	// TODO(dmalovan): Add the ability to works with different flavours providers/managers (eg. get flavours directly from the openstack nova)
 	if flavourSource, ok := flav.Metadata.Fields[flavour.K8sFlavourSourceLabel]; !ok || flavourSource != kubevirt_flavour.KubevirtFlavourSource {
-		return nil, fmt.Errorf("kubevirt compute manager can only works with kubevirt flavour manager: %w", common.UnsupportedErr)
+		return nil, fmt.Errorf("kubevirt compute manager can only work with kubevirt flavour manager: %w", apperrors.ErrUnsupported)
 	}
 	vmInstanceTypeName, ok := flav.Metadata.Fields[kubevirtv1.InstancetypeAnnotation]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.InstancetypeAnnotation, common.InvalidArgumentErr)
+		return nil, &apperrors.ErrInvalidArgument{Field: "flavour metadata", Reason: fmt.Sprintf("missing '%s' annotation", kubevirtv1.InstancetypeAnnotation)}
 	}
 	instanceTypeMatcher, err := initVmInstanceTypeMatcher(vmInstanceTypeName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize kubevirt instance type matcher \"%s\": %w", vmInstanceTypeName, err)
+		return nil, fmt.Errorf("initialize kubevirt instance type matcher '%s': %w", vmInstanceTypeName, err)
 	}
 	vmPreferenceName, ok := flav.Metadata.Fields[kubevirtv1.PreferenceAnnotation]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt flavour metadata missed \"%s\" annotation: %w", kubevirtv1.PreferenceAnnotation, common.InvalidArgumentErr)
+		return nil, &apperrors.ErrInvalidArgument{Field: "flavour metadata", Reason: fmt.Sprintf("missing '%s' annotation", kubevirtv1.PreferenceAnnotation)}
 	}
 	// Note(dmalovan): preference matcher can be nil if some errors are returned. (eg. missed preference name in meta)
 	preferenceMatcher, _ := initVmPreferenceMatcher(vmPreferenceName)
 
 	// Get the Request related image and place it
 	if req.VcImageId == nil || req.VcImageId.GetValue() == "" {
-		return nil, fmt.Errorf("vcImageId can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "vc image id", Reason: "cannot be empty"}
 	}
 	imgInfo, err := m.imageManager.GetImage(ctx, req.GetVcImageId())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image with id \"%s\": %w", req.GetVcImageId(), err)
+		return nil, fmt.Errorf("get image '%s': %w", req.GetVcImageId(), err)
 	}
 	dv, err := initImageDataVolume(imgInfo, req.GetComputeName())
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize kubevirt data volume: %w", err)
+		return nil, fmt.Errorf("initialize kubevirt data volume: %w", err)
 	}
 	volumes := []kubevirtv1.Volume{
 		{
@@ -165,7 +164,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	if req.UserData != nil {
 		volume, disk, err := initUserDataVolume(req.GetUserData())
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize vm userdata volume: %w", err)
+			return nil, fmt.Errorf("initialize vm userdata volume: %w", err)
 		}
 		volumes = append(volumes, *volume)
 		disks   = append(disks, *disk)
@@ -173,7 +172,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 
 	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize kubevirt networks: %w", err)
+		return nil, fmt.Errorf("initialize kubevirt networks: %w", err)
 	}
 
 	var vmName string
@@ -230,18 +229,18 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *nfv.Allocate
 	}
 	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vmSpec, v1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kubevirt VirtualMachine: %w", err)
+		return nil, fmt.Errorf("create kubevirt VirtualMachine '%s': %w", vmName, err)
 	}
 	if err = waitVmiCreatedField(ctx, m.kubevirtClient, vm.Name, *m.cfg.Namespace); err != nil {
-		return nil, fmt.Errorf("failed to create vmi for vm: %w", err)
+		return nil, fmt.Errorf("create VMI for VM '%s' (uid: %s): %w", vmName, vm.UID, err)
 	}
 	vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vmName, v1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vm instance \"%s\": %w", vmName, err)
+		return nil, fmt.Errorf("get VM instance '%s' (uid: %s): %w", vmName, vm.UID, err)
 	}
 	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert kubevirt vm to the nfv virtualCompute: %w", err)
+		return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vmName, vm.UID, err)
 	}
 	return virtualCompute, nil
 }
@@ -251,17 +250,17 @@ func (m *manager) ListComputeResources(ctx context.Context) ([]*nfv.VirtualCompu
 		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list kubevirt vms: %w", err)
+		return nil, fmt.Errorf("list kubevirt VirtualMachines: %w", err)
 	}
 	res := make([]*nfv.VirtualCompute, 0, len(vmList.Items))
 	for _, vm := range vmList.Items {
 		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", vm.Name, err)
+			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 		}
 		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", vm.Name, err)
+			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
 		}
 		res = append(res, vComp)
 	}
@@ -273,15 +272,15 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 	if cfg.Name != "" {
 		vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get kubevirt vm with name \"%s\": %w", cfg.Name, err)
+			return nil, fmt.Errorf("get kubevirt VirtualMachine '%s': %w", cfg.Name, err)
 		}
 		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", cfg.Name, err)
+			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", cfg.Name, vm.UID, err)
 		}
 		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", cfg.Name, err)
+			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", cfg.Name, vm.UID, err)
 		}
 		return vComp, nil
 	} else if cfg.Uid != nil && cfg.Uid.Value != "" {
@@ -289,7 +288,7 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 			LabelSelector: common.ManagedByKubeNfvSelector,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list kubevirt vms: %w", err)
+			return nil, fmt.Errorf("list kubevirt VirtualMachines: %w", err)
 		}
 		for _, vm := range vmList.Items {
 			if vm.UID != misc.IdentifierToUID(cfg.Uid) {
@@ -297,33 +296,33 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 			}
 			vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
 			if err != nil {
-				return nil, fmt.Errorf("failed to get kubevirt vmi with name \"%s\": %w", vm.Name, err)
+				return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 			}
 			vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert kubevirt vmi and vm with name \"%s\" to nfv VirtualCompute: %w", vm.Name, err)
+				return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
 			}
 			return vComp, nil
 		}
-		return nil, fmt.Errorf("vm with id \"%s\" not found: %w", cfg.Uid.Value, common.NotFoundErr)
+		return nil, &apperrors.ErrNotFound{Entity: "virtual machine", Identifier: cfg.Uid.Value}
 	}
-	return nil, fmt.Errorf("either compute name or uid should be specified to get kubevirt vm: %w", common.InvalidArgumentErr)
+	return nil, &apperrors.ErrInvalidArgument{Field: "compute lookup", Reason: "either name or uid must be specified"}
 }
 
 func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) error {
 	vm, err := m.GetComputeResource(ctx, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to get vm: %w", err)
+		return fmt.Errorf("get virtual machine for deletion: %w", err)
 	}
 	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("failed to delete compute resource with name \"%s\" and uid \"%s\": %w", vm.GetComputeName(), vm.ComputeId.Value, err)
+		return fmt.Errorf("delete kubevirt VirtualMachine '%s' (id: %s): %w", vm.GetComputeName(), vm.ComputeId.Value, err)
 	}
 	return nil
 }
 
 func initVmInstanceTypeMatcher(instanceTypeName string) (*kubevirtv1.InstancetypeMatcher, error) {
 	if instanceTypeName == "" {
-		return nil, fmt.Errorf("instanceType name can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "instanceType name", Reason: "cannot be empty"}
 	}
 	return &kubevirtv1.InstancetypeMatcher{
 		Kind: KubevirtVirtualMachineInstanceTypeKind,
@@ -333,7 +332,7 @@ func initVmInstanceTypeMatcher(instanceTypeName string) (*kubevirtv1.Instancetyp
 
 func initVmPreferenceMatcher(preferenceName string) (*kubevirtv1.PreferenceMatcher, error) {
 	if preferenceName == "" {
-		return nil, fmt.Errorf("preference name can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "preference name", Reason: "cannot be empty"}
 	}
 	return &kubevirtv1.PreferenceMatcher{
 		Kind: KubevirtVirtualMachinePreferenceKind,
@@ -343,15 +342,15 @@ func initVmPreferenceMatcher(preferenceName string) (*kubevirtv1.PreferenceMatch
 
 func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
 	if imageInfo == nil {
-		return nil, fmt.Errorf("nfv software image info can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "software image info", Reason: "cannot be nil"}
 	}
 	if imageInfo.Name == "" {
-		return nil, fmt.Errorf("nfv software image info name can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "software image name", Reason: "cannot be empty"}
 	}
 	// Note(dmalovan): vmName/imageName pair should be unique
 	dvName := fmt.Sprintf("%s-%s-dv", vmName, imageInfo.Name)
 	if imageInfo.Size == nil || imageInfo.GetSize().Equal(*resource.NewQuantity(0, resource.BinarySI)) {
-		return nil, fmt.Errorf("nfv software image size can't be 0")
+		return nil, &apperrors.ErrInvalidArgument{Field: "software image size", Reason: "cannot be zero"}
 	}
 
 	return &kubevirtv1.DataVolumeTemplateSpec{
@@ -389,10 +388,10 @@ func initImageDataVolume(imageInfo *nfv.SoftwareImageInformation, vmName string)
 
 func initUserDataVolume(userData *nfv.UserData) (*kubevirtv1.Volume, *kubevirtv1.Disk, error) {
 	if userData.Content == "" {
-		return nil, nil, fmt.Errorf("userData content can't be empty")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "userData content", Reason: "cannot be empty"}
 	}
 	if userData.Method == nil {
-		return nil, nil, fmt.Errorf("userData method can't be empty")
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "userData method", Reason: "cannot be nil"}
 	}
 	volumeName := "cloudinitdisk"
 	var volumeSource kubevirtv1.VolumeSource
@@ -414,9 +413,9 @@ func initUserDataVolume(userData *nfv.UserData) (*kubevirtv1.Volume, *kubevirtv1
 			},
 		}
 	case nfv.UserData_METADATA_SERVICE:
-		return nil, nil, fmt.Errorf("metadata service method not supported in KubeVirt natively")
+		return nil, nil, fmt.Errorf("userData metadata service method not supported in KubeVirt natively: %w", apperrors.ErrUnsupported)
 	default:
-		return nil, nil, fmt.Errorf("unsupported userData method: %v", userData.Method)
+		return nil, nil, fmt.Errorf("unsupported userData method '%v': %w", userData.Method, apperrors.ErrUnsupported)
 	}
 
 	volume := &kubevirtv1.Volume{
@@ -470,11 +469,10 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 		hasNetworkId := netData.NetworkId != nil && netData.NetworkId.Value != ""
 		hasSubnetId := netData.SubnetId != nil && netData.SubnetId.Value != ""
 		if !hasNetworkId && !hasSubnetId {
-			return nil, nil, nil, fmt.Errorf(
-				"Failed to create vm interface with index \"%d\"."+
-					"either networkId or subnetId should be defined to identify the VirtualNetworkInterfaceData related network",
-				netIdx,
-			)
+			return nil, nil, nil, &apperrors.ErrInvalidArgument{
+				Field:  fmt.Sprintf("VM interface index %d", netIdx),
+				Reason: "either networkId or subnetId must be defined to identify the VirtualNetworkInterfaceData related network",
+			}
 		}
 		var net *kubevirtv1.Network
 		var iface *kubevirtv1.Interface
@@ -483,30 +481,30 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			subnetIdVal := netData.SubnetId.GetValue()
 			subInst, err := netManager.GetSubnet(ctx, network.GetSubnetByUid(netData.SubnetId))
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to get subnet with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("get subnet '%s' referenced in VirtualNetworkInterfaceData: %w", subnetIdVal, err)
 			}
 			// Check if the subnet belongs to the same network if both are specified.
 			if hasNetworkId {
 				if subInst.NetworkId == nil {
-					return nil, nil, nil, fmt.Errorf("subnet with id \"%s\" has no networkId but it is specified in the request as a \"%s\"", subnetIdVal, netData.NetworkId.Value)
+					return nil, nil, nil, fmt.Errorf("subnet '%s' has no networkId but it is specified in the request as '%s'", subnetIdVal, netData.NetworkId.Value)
 				}
 				if subInst.NetworkId.Value != netData.NetworkId.Value {
-					return nil, nil, nil, fmt.Errorf("subnet with id \"%s\" reference to the network with id \"%s\" but another network with id \"%s\" is specified in the request", subnetIdVal, subInst.NetworkId.Value, netData.NetworkId.Value)
+					return nil, nil, nil, fmt.Errorf("subnet '%s' references network '%s' but different network '%s' is specified in the request", subnetIdVal, subInst.NetworkId.Value, netData.NetworkId.Value)
 				}
 			}
 			ipam, err := getSubnetIpam(ctx, netData.SubnetId, netManager, networkIpam)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to get ipam for the subnet with is \"%s\": %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("get IPAM for subnet '%s': %w", subnetIdVal, err)
 			}
 			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the subnet \"%s\": %w", subnetIdVal, err)
+				return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for subnet '%s': %w", subnetIdVal, err)
 			}
 			// If VirtualNetworkInterfaceData has an subnetId, networkId will just ignored since subnetId contains enough info.
 		} else if hasNetworkId /* no subnetId */ {
 			netInst, err := netManager.GetNetwork(ctx, network.GetNetworkByUid(netData.NetworkId))
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to get network with id \"%s\" referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
+				return nil, nil, nil, fmt.Errorf("get network '%s' referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
 			}
 
 			var ipam *nfv.VirtualNetworkInterfaceIPAM
@@ -523,14 +521,14 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			}
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf(
-					"failed to get IPAM for the network specified by the networkId \"%s\": %w",
+					"get IPAM for network '%s': %w",
 					netData.NetworkId.Value,
 					err,
 				)
 			}
 			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to init kubevirt network and interface from the ipam referenced by the network \"%s\": %w", netData.NetworkId.Value, err)
+				return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for network '%s': %w", netData.NetworkId.Value, err)
 			}
 		}
 		networks = append(networks, *net)
@@ -568,13 +566,13 @@ func getSubnetIpam(ctx context.Context, subnetId *nfv.Identifier, netManager net
 	// Check if the static IP Address belongs to the subnet referenced by the subnetId.
 	sub, err := netManager.GetSubnet(ctx, network.GetSubnetByUid(subnetId))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subnet specified by the id \"%s\": %w", subnetId.Value, err)
+		return nil, fmt.Errorf("get subnet '%s': %w", subnetId.Value, err)
 	}
 	if sub.Cidr == nil {
-		return nil, fmt.Errorf("subnet \"%s\" cidr can't be nil", sub.ResourceId.Value)
+		return nil, &apperrors.ErrInvalidArgument{Field: "subnet CIDR", Reason: fmt.Sprintf("cannot be nil for subnet '%s'", sub.ResourceId.Value)}
 	}
 	if !network.IpBelongsToCidr(netIpam.IpAddress, sub.Cidr) {
-		return nil, fmt.Errorf("ip address \"%s\" not in the subnet cidr \"%s\"", netIpam.IpAddress.Ip, sub.Cidr.Cidr)
+		return nil, fmt.Errorf("IP address '%s' not in subnet CIDR '%s'", netIpam.IpAddress.Ip, sub.Cidr.Cidr)
 	}
 	return netIpam, nil
 }
@@ -600,20 +598,20 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 	if netIpam != nil && netIpam.IpAddress != nil {
 		sub, err := netManager.GetSubnet(ctx, network.GetSubnetByNetworkIP(networkId, netIpam.IpAddress))
 		if err != nil {
-			return nil, fmt.Errorf("failed to get subnet with networkId \"%s\" and Ip \"%s\": %w", networkId.Value, netIpam.IpAddress.Ip, err)
+			return nil, fmt.Errorf("get subnet with networkId '%s' and IP '%s': %w", networkId.Value, netIpam.IpAddress.Ip, err)
 		}
 		netIpam.SubnetId.Value = sub.ResourceId.Value
 		return getSubnetIpam(ctx, sub.ResourceId, netManager, netIPAMs)
 	}
 	if returnIfNoIpam {
-		return nil, ipamConfigurationMissingErr
+		return nil, ErrIPAMConfigurationMissing
 	}
 	net, err := netManager.GetNetwork(ctx, network.GetNetworkByUid(networkId))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get network with id \"%s\": %w", networkId.Value, err)
+		return nil, fmt.Errorf("get network '%s': %w", networkId.Value, err)
 	}
 	if len(net.SubnetId) == 0 {
-		return nil, fmt.Errorf("network with id \"%s\" doesn't have subnets", networkId.Value)
+		return nil, &apperrors.ErrInvalidArgument{Field: "network subnets", Reason: fmt.Sprintf("network '%s' has no subnets", networkId.Value)}
 	}
 	fstSubId := net.SubnetId[0]
 
@@ -633,7 +631,7 @@ func getNetworkIpam(ctx context.Context, networkId *nfv.Identifier, netManager n
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
 func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *nfv.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, map[string]string, error) {
 	if networkIpam.SubnetId == nil || networkIpam.SubnetId.Value == "" {
-		return nil, nil, nil, fmt.Errorf("network ipam should have an subnetId reference")
+		return nil, nil, nil, &apperrors.ErrInvalidArgument{Field: "network IPAM", Reason: "must have a subnetId reference"}
 	}
 	getSubnetOpts := make([]network.GetSubnetOpt, 0)
 	if misc.IsUUID(networkIpam.SubnetId.Value) {
@@ -643,21 +641,21 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 	}
 	subnet, err := netManager.GetSubnet(ctx, getSubnetOpts...)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
+		return nil, nil, nil, fmt.Errorf("get subnet '%s': %w", networkIpam.GetSubnetId().Value, err)
 	}
 	netAttachName, ok := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
+		return nil, nil, nil, fmt.Errorf("network subnet '%s' missing label '%s' to identify subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNetAttachNameLabel, apperrors.ErrUnsupported)
 	}
 	subnetName, ok := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("network subnet with id \"%s\" missing label \"%s\" to identify the subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, common.UnsupportedErr)
+		return nil, nil, nil, fmt.Errorf("network subnet '%s' missing label '%s' to identify subnet name: %w", networkIpam.GetSubnetId().Value, network.K8sSubnetNameLabel, apperrors.ErrUnsupported)
 	}
 	// If multiple interfaces use the same subnet it will cause a problem if interface named the same as a subnet name.
 	// Generate the unique UID for each network interface and combine it with a subnet-name
 	ifaceUid, err := uuid.NewRandom()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to generate UUID for interface in subnet with id \"%s\": %w", networkIpam.GetSubnetId().Value, err)
+		return nil, nil, nil, fmt.Errorf("generate UUID for interface in subnet '%s': %w", networkIpam.GetSubnetId().Value, err)
 	}
 	ann := make(map[string]string)
 	if networkIpam.IpAddress != nil && networkIpam.IpAddress.Ip != "" {
@@ -690,7 +688,7 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *n
 func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName string, namespace string) error {
 	vm, err := client.KubevirtV1().VirtualMachines(namespace).Get(ctx, vmName, v1.GetOptions{})
 	if err != nil && !k8s_errors.IsNotFound(err) {
-		return fmt.Errorf("failed to get k8s kubevirt vm \"%s\": %w", vmName, err)
+		return fmt.Errorf("get kubevirt VM '%s': %w", vmName, err)
 	}
 	// vm exists and vmi already created.
 	if err == nil && vm.Status.Created {
@@ -702,7 +700,7 @@ func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName
 		FieldSelector: vmSelector,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to watch virtualmachine with name \"%s\": %w", vmName, err)
+		return fmt.Errorf("watch VirtualMachine '%s': %w", vmName, err)
 	}
 	defer watcher.Stop()
 	watchCtx, cancel := context.WithTimeout(ctx, vmStatusCreatedTimeout)
@@ -718,7 +716,7 @@ func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName
 				return nil
 			}
 		case <-watchCtx.Done():
-			return fmt.Errorf("vm \"%s\" status.created is not true after \"%s\"", vmName, vmStatusCreatedTimeout)
+			return fmt.Errorf("VM '%s' status.created is not true after '%s'", vmName, vmStatusCreatedTimeout)
 		}
 	}
 }
@@ -730,7 +728,7 @@ func waitVmiObjectCreated(ctx context.Context, client *kubevirt.Clientset, vmNam
 		Watch:         true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to watch virtualmachineinstance with name \"%s\": %w", vmName, err)
+		return nil, fmt.Errorf("watch VirtualMachineInstance '%s': %w", vmName, err)
 	}
 	defer watcher.Stop()
 	watchCtx, cancel := context.WithTimeout(ctx, vmiCreationTimeout)
@@ -746,7 +744,7 @@ func waitVmiObjectCreated(ctx context.Context, client *kubevirt.Clientset, vmNam
 				return vmi, nil
 			}
 		case <-watchCtx.Done():
-			return nil, fmt.Errorf("no vmi creation after \"%v\"", vmiCreationTimeout)
+			return nil, fmt.Errorf("no VMI creation after '%v'", vmiCreationTimeout)
 		}
 	}
 }

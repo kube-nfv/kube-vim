@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	common "github.com/kube-nfv/kube-vim/internal/config"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
@@ -16,16 +16,16 @@ import (
 
 func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) (*nfv.VirtualCompute, error) {
 	if vmi == nil || vm == nil {
-		return nil, fmt.Errorf("virtualMachine or virtualMachineInstance can't be nil")
+		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt resources", Reason: "virtualMachine and virtualMachineInstance cannot be nil"}
 	}
 	computeId := misc.UIDToIdentifier(vm.UID)
 	flavId, err := getFlavourFromInstanceSpec(vm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get flavor from the instantiated kubevirt vm: %w", err)
+		return nil, fmt.Errorf("get flavour from kubevirt VM '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 	}
 	imgId, err := getImageIdFromInstnceSpec(vm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image id from the instantiated kubevirt vm: %w", err)
+		return nil, fmt.Errorf("get image id from kubevirt VM '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 	}
 	operState := nfv.OperationalState_ENABLED
 	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
@@ -56,11 +56,11 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 		netMdFields := make(map[string]string)
 		ifaceSpec, err := getInterfaceFromVmi(name, vmi)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get interface from \"%s\" vmi: %w", vm.Name, err)
+			return nil, fmt.Errorf("get interface from VMI '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 		}
 		vNicType, err := ifaceBindingMethodToNfv(ifaceSpec.InterfaceBindingMethod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get virtual nic type for vmi \"%s\" interface \"%s\": %w", vm.Name, name, err)
+			return nil, fmt.Errorf("get virtual NIC type for VMI '%s' (uid: %s) interface '%s': %w", vm.Name, vm.UID, name, err)
 		}
 		netIfRes.TypeVirtualNic = vNicType
 		if netSpec.NetworkSource.Pod != nil {
@@ -75,13 +75,13 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 			// TODO: Add logic to split the NetworkAttachmentDefinition from namespace (if it exists).
 			subnet, err := netMgr.GetSubnet(ctx, network.GetSubnetByNetAttachName(multusNet.NetworkName))
 			if err != nil {
-				return nil, fmt.Errorf("failed to get subnet from vm network \"%s\" network attachment defintion with name \"%s\": %w", name, multusNet.NetworkName, err)
+				return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
 			}
 			netIfRes.SubnetId = subnet.ResourceId
 			netIfRes.NetworkId = subnet.NetworkId
 			netIfRes.Bandwidth = 0
 		} else {
-			return nil, fmt.Errorf("network \"%s\" should be either multus or pod", name)
+			return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("network '%s'", name), Reason: "must be either multus or pod type"}
 		}
 		ifaceStatus, err := getInterfaceStatusFromVmi(name, vmi)
 		if err == nil && ifaceStatus != nil {
@@ -161,7 +161,7 @@ func getRunningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachi
 func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
 	flavId, ok := vmSpec.Labels[flavour.K8sFlavourIdLabel]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv flavour id label")
+		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt VirtualMachine spec", Reason: "missing kube-nfv flavour id label"}
 	}
 	return &nfv.Identifier{
 		Value: flavId,
@@ -171,7 +171,7 @@ func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identif
 func getImageIdFromInstnceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifier, error) {
 	imgId, ok := vmSpec.Labels[image.K8sImageIdLabel]
 	if !ok {
-		return nil, fmt.Errorf("kubevirt virtualMachine spec missing kube-nfv image id label")
+		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt VirtualMachine spec", Reason: "missing kube-nfv image id label"}
 	}
 	return &nfv.Identifier{
 		Value: imgId,
@@ -182,26 +182,26 @@ func getImageIdFromInstnceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfv.Identifi
 // Returns the kubevirt network with specified name from the kubevirt vmi spec or nil if not found.
 func getNetworkFromVmiSpec(netName string, vmiSpec *kubevirtv1.VirtualMachineInstanceSpec) (*kubevirtv1.Network, error) {
 	if vmiSpec == nil {
-		return nil, fmt.Errorf("vmi spec is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VMI spec", Reason: "cannot be empty"}
 	}
 	for _, net := range vmiSpec.Networks {
 		if net.Name == netName {
 			return &net, nil
 		}
 	}
-	return nil, fmt.Errorf("network \"%s\" not found in vmi spec: %w", netName, common.NotFoundErr)
+	return nil, &apperrors.ErrNotFound{Entity: "network", Identifier: netName}
 }
 
 // Returns the kubevirt network with specified name from the kubevirt vm or nil if not found.
 func getNetworkFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Network, error) {
 	if vmSpec == nil {
-		return nil, fmt.Errorf("vm is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VM", Reason: "cannot be empty"}
 	}
 	if vmSpec.Spec.Template == nil {
-		return nil, fmt.Errorf("vm template is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VM template", Reason: "cannot be empty"}
 	}
 	if net, err := getNetworkFromVmiSpec(netName, &vmSpec.Spec.Template.Spec); err != nil {
-		return nil, fmt.Errorf("failed to get network from vm \"%s\" vmi template: %w", vmSpec.Name, err)
+		return nil, fmt.Errorf("get network from VM '%s' VMI template: %w", vmSpec.Name, err)
 	} else {
 		return net, nil
 	}
@@ -211,25 +211,25 @@ func getNetworkFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubev
 // Returns the kubevirt interface with specified network name from the kubevirt domain spec or nil if not found.
 func getInterfaceFromDomainSpec(ifaceName string, domSpec *kubevirtv1.DomainSpec) (*kubevirtv1.Interface, error) {
 	if domSpec == nil {
-		return nil, fmt.Errorf("domain spec is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "domain spec", Reason: "cannot be empty"}
 	}
 	for _, iface := range domSpec.Devices.Interfaces {
 		if iface.Name == ifaceName {
 			return &iface, nil
 		}
 	}
-	return nil, fmt.Errorf("interface with name \"%s\" not found in domain spec: %w", ifaceName, common.NotFoundErr)
+	return nil, &apperrors.ErrNotFound{Entity: "interface", Identifier: ifaceName}
 }
 
 func getInterfaceFromVm(ifaceName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Interface, error) {
 	if vmSpec == nil {
-		return nil, fmt.Errorf("vm is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VM", Reason: "cannot be empty"}
 	}
 	if vmSpec.Spec.Template == nil {
-		return nil, fmt.Errorf("vm template is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VM template", Reason: "cannot be empty"}
 	}
 	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmSpec.Spec.Template.Spec.Domain); err != nil {
-		return nil, fmt.Errorf("failed to get iface from vm \"%s\" vmi template domain spec: %w", vmSpec.Name, err)
+		return nil, fmt.Errorf("get interface from VM '%s' VMI template domain spec: %w", vmSpec.Name, err)
 	} else {
 		return iface, nil
 	}
@@ -237,10 +237,10 @@ func getInterfaceFromVm(ifaceName string, vmSpec *kubevirtv1.VirtualMachine) (*k
 
 func getInterfaceFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.Interface, error) {
 	if vmi == nil {
-		return nil, fmt.Errorf("vmi is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VMI", Reason: "cannot be empty"}
 	}
 	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmi.Spec.Domain); err != nil {
-		return nil, fmt.Errorf("failed to get iface \"%s\" from vmi spec: %w", ifaceName, err)
+		return nil, fmt.Errorf("get interface '%s' from VMI spec: %w", ifaceName, err)
 	} else {
 		return iface, nil
 	}
@@ -248,14 +248,14 @@ func getInterfaceFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstanc
 
 func getInterfaceStatusFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstanceNetworkInterface, error) {
 	if vmi == nil {
-		return nil, fmt.Errorf("vmi is empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "VMI", Reason: "cannot be empty"}
 	}
 	for _, iface := range vmi.Status.Interfaces {
 		if iface.Name == ifaceName {
 			return &iface, nil
 		}
 	}
-	return nil, fmt.Errorf("iface \"%s\" not found in vmi status: %w", ifaceName, common.NotFoundErr)
+	return nil, &apperrors.ErrNotFound{Entity: "interface", Identifier: ifaceName}
 }
 
 func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfv.TypeVirtualNic, error) {
@@ -267,6 +267,6 @@ func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfv.Type
 	case method.SRIOV != nil:
 		return nfv.TypeVirtualNic_SRIOV, nil
 	default:
-		return nfv.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method")
+		return nfv.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
 	}
 }

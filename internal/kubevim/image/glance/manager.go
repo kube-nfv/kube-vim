@@ -13,6 +13,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
 
@@ -31,14 +32,14 @@ func NewGlanceImageManager(cfg *config.GlanceImageConfig) (*manager, error) {
 		// Password:         cfg.Identity.Password,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create client to the openstack Identity service: %w", err)
+		return nil, fmt.Errorf("create openstack identity client: %w", err)
 	}
 
 	glanceClient, err := openstack.NewImageServiceV2(client, gophercloud.EndpointOpts{
 		// Region: cfg.Region,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create Glance Image service client: %w", err)
+		return nil, fmt.Errorf("create glance image service client: %w", err)
 	}
 	return &manager{
 		glanceServiceClient: glanceClient,
@@ -50,16 +51,16 @@ func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.Softwa
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {
-		return nil, fmt.Errorf("Id should not be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "image id", Reason: "cannot be empty"}
 	}
 	getRes := images.Get(m.glanceServiceClient, id.Value)
 	img, err := getRes.Extract()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get image with id \"%s\" from glance image service: %w", id.Value, err)
+		return nil, fmt.Errorf("get image '%s' from glance service: %w", id.Value, err)
 	}
 	imgNfv, err := convertImage(img)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to convert image with id \"%s\" from glance image service to internal struct: %w", id.Value, err)
+		return nil, fmt.Errorf("convert glance image '%s' to internal struct: %w", id.Value, err)
 	}
 	return imgNfv, nil
 }
@@ -69,24 +70,24 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 	defer m.lock.Unlock()
 	pager := images.List(m.glanceServiceClient, images.ListOpts{})
 	if pager.Err != nil {
-		return nil, fmt.Errorf("Failed to get images from the glance server: %w", pager.Err)
+		return nil, fmt.Errorf("list images from glance server: %w", pager.Err)
 	}
 	imagesRes := make([]*nfv.SoftwareImageInformation, 0)
 	if err := pager.EachPage(func(p pagination.Page) (bool, error) {
 		imgs, err := images.ExtractImages(p)
 		if err != nil {
-			return false, fmt.Errorf("Failed to extract images from the glance list image response: %w", err)
+			return false, fmt.Errorf("extract images from glance list response: %w", err)
 		}
 		for _, img := range imgs {
 			nfvImg, err := convertImage(&img)
 			if err != nil {
-				return false, fmt.Errorf("Failed to convert image to the internal structure: %w", err)
+				return false, fmt.Errorf("convert glance image to internal structure: %w", err)
 			}
 			imagesRes = append(imagesRes, nfvImg)
 		}
 		return true, nil
 	}); err != nil {
-		return nil, fmt.Errorf("Failed to iterate over the images provided by glance image service: %w", err)
+		return nil, fmt.Errorf("iterate over glance images: %w", err)
 	}
 	return imagesRes, nil
 }
@@ -95,22 +96,22 @@ func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location 
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {
-		return fmt.Errorf("Id should not be empty")
+		return &apperrors.ErrInvalidArgument{Field: "image id", Reason: "cannot be empty"}
 	}
 	img, err := imagedata.Download(m.glanceServiceClient, id.Value).Extract()
 	if err != nil {
-		return fmt.Errorf("Failed to to download image with id \"%s\" from the glance service: %w", id, err)
+		return fmt.Errorf("download image '%s' from glance service: %w", id.Value, err)
 	}
 	defer img.Close()
 
 	file, err := os.OpenFile(location, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("Faile to open/create file %s to download image with id \"%s\" provided by the glance service: %w", id, location, err)
+		return fmt.Errorf("open/create file '%s' for image '%s': %w", location, id.Value, err)
 	}
 	defer file.Close()
 	_, err = io.Copy(file, img)
 	if err != nil {
-		return fmt.Errorf("Failed to read image data buffer for image with id \"%s\" to the file %s: %w", id, location, err)
+		return fmt.Errorf("copy image data for image '%s' to file '%s': %w", id.Value, location, err)
 	}
 	return nil
 }

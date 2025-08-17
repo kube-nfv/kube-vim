@@ -8,7 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kube-nfv/kube-vim/internal/config"
+	common "github.com/kube-nfv/kube-vim/internal/config"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,11 +18,6 @@ import (
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
-var (
-	ApplyOptionErr     = fmt.Errorf("failed to apply option")
-	DVAlreadyExistsErr = fmt.Errorf("Data Volume already exists")
-	DVNotFoundErr      = fmt.Errorf("Data Volume not found")
-)
 
 // kubevirt CDI (Contrinerized Data Imported) controller manage the lifecycle of the DVs(Data Volume)
 // Current implementation is stateless (no objects located in struct related to DV). But it is not
@@ -35,7 +31,7 @@ type CdiController struct {
 func NewCdiController(k8sConfig *rest.Config) (*CdiController, error) {
 	c, err := cdi.NewForConfig(k8sConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kubevirt cdi k8s client: %w", err)
+		return nil, fmt.Errorf("create kubevirt CDI k8s client: %w", err)
 	}
 	return &CdiController{
 		cdiClient: c,
@@ -47,7 +43,7 @@ func NewCdiController(k8sConfig *rest.Config) (*CdiController, error) {
 func NewNamespacedCdiController(k8sConfig *rest.Config, namespace string) (*CdiController, error) {
 	c, err := cdi.NewForConfig(k8sConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kubevirt cdi k8s client: %w", err)
+		return nil, fmt.Errorf("create kubevirt CDI k8s client: %w", err)
 	}
 	return &CdiController{
 		cdiClient: c,
@@ -128,7 +124,7 @@ func (c CdiController) GetDv(ctx context.Context, opts ...GetDvOrVisOpt) (*v1bet
 			}
 		}
 	}
-	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Data Volume: %w", common.NotFoundErr)
+	return nil, &apperrors.ErrInvalidArgument{Field: "data volume identifier", Reason: "either name, UID or source must be specified"}
 }
 
 func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvOrVisOpt) (*v1beta1.VolumeImportSource, error) {
@@ -175,7 +171,7 @@ func (c CdiController) GetVolumeImportSource(ctx context.Context, opts ...GetDvO
 			}
 		}
 	}
-	return nil, fmt.Errorf("Either Name, UID or Source should be specified to find Volume Import Source: %w", common.NotFoundErr)
+	return nil, &apperrors.ErrInvalidArgument{Field: "volume import source identifier", Reason: "either name, UID or source must be specified"}
 }
 
 func (c CdiController) ListVolumeImportSources(ctx context.Context) ([]v1beta1.VolumeImportSource, error) {
@@ -183,7 +179,7 @@ func (c CdiController) ListVolumeImportSources(ctx context.Context) ([]v1beta1.V
 		LabelSelector: fmt.Sprintf("%s=%s", common.K8sManagedByLabel, common.KubeNfvName),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list k8s VolumeImportSource resources: %w", err)
+		return nil, fmt.Errorf("list k8s VolumeImportSource resources: %w", err)
 	}
 	return visList.Items, nil
 }
@@ -247,7 +243,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 		var err error
 		cfg.Name, err = formatDVNameFromSource(source)
 		if err != nil {
-			return nil, fmt.Errorf("failed to format Data Voule name from source: %w", err)
+			return nil, fmt.Errorf("format Data Volume name from source: %w", err)
 		}
 	}
 	var storageClassName *string = nil
@@ -256,7 +252,7 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 	}
 	sourceType, err := formatSourceNameFromDvSource(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to identify source type from Data Volume Source: %w", err)
+		return nil, fmt.Errorf("identify source type from Data Volume source: %w", err)
 	}
 
 	// TODO: add storage class verification
@@ -294,15 +290,15 @@ func (c CdiController) CreateDv(ctx context.Context, source *v1beta1.DataVolumeS
 func (c CdiController) CreateVolumeImportSource(ctx context.Context, source *v1beta1.ImportSourceType) (*v1beta1.VolumeImportSource, error) {
 	name, err := formatVisNameFromSourceType(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to format Virtual Import Source name from the source: %w", err)
+		return nil, fmt.Errorf("format VolumeImportSource name from source: %w", err)
 	}
 	sourceType, err := formatSourceNameFromSourceType(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to identify source type from the Virtual Import Source: %w", err)
+		return nil, fmt.Errorf("identify source type from VolumeImportSource: %w", err)
 	}
 	sourceUrl, err := formatSourceUrlFromSourceType(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to identify source url from the Virtual Import Source: %w", err)
+		return nil, fmt.Errorf("identify source URL from VolumeImportSource: %w", err)
 	}
 	return c.cdiClient.CdiV1beta1().VolumeImportSources(c.namespace).Create(ctx, &v1beta1.VolumeImportSource{
 		ObjectMeta: v1.ObjectMeta{
@@ -338,7 +334,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType,
 		}
 		return HTTP, nil
 	}
-	return "", fmt.Errorf("unsupported source: %w", common.NotImplementedErr)
+	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }
 
 func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (sourceType, error) {
@@ -348,7 +344,7 @@ func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (sourceTyp
 		}
 		return HTTP, nil
 	}
-	return "", fmt.Errorf("unsupported source: %w", common.NotImplementedErr)
+	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }
 
 func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
@@ -356,7 +352,7 @@ func formatDVNameFromSource(source *v1beta1.DataVolumeSource) (string, error) {
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
 	default:
-		return "", fmt.Errorf("can't format name from the specified source: %w", common.UnsupportedErr)
+		return "", fmt.Errorf("cannot format name from specified source: %w", apperrors.ErrUnsupported)
 	}
 }
 
@@ -365,14 +361,14 @@ func formatVisNameFromSourceType(source *v1beta1.ImportSourceType) (string, erro
 	case source.HTTP != nil:
 		return formatDvNameFromHttpSource(source.HTTP)
 	default:
-		return "", fmt.Errorf("can't format name from the specified source: %w", common.UnsupportedErr)
+		return "", fmt.Errorf("cannot format name from specified source: %w", apperrors.ErrUnsupported)
 	}
 }
 
 func formatDvNameFromHttpSource(httpSource *v1beta1.DataVolumeSourceHTTP) (string, error) {
 	url, err := url.Parse(httpSource.URL)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse url \"%s\": %w", httpSource.URL, err)
+		return "", fmt.Errorf("parse URL '%s': %w", httpSource.URL, err)
 	}
 	fileName := path.Base(url.Path)
 	leafName := strings.TrimSuffix(fileName, path.Ext(fileName))
@@ -391,6 +387,6 @@ func formatSourceUrlFromSourceType(source *v1beta1.ImportSourceType) (string, er
 	case source.HTTP != nil:
 		return source.HTTP.URL, nil
 	default:
-		return "", fmt.Errorf("can't format source URL from the specified source: %w", common.UnsupportedErr)
+		return "", fmt.Errorf("cannot format source URL from specified source: %w", apperrors.ErrUnsupported)
 	}
 }
