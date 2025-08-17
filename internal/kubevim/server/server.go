@@ -9,6 +9,7 @@ import (
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -42,7 +43,12 @@ func NewNorthboundServer(
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
 		grpc.ConnectionTimeout(ConnectionTimeout),
-		grpc.UnaryInterceptor(
+		grpc.ChainUnaryInterceptor(
+			// Error conversion interceptor (first to convert errors)
+			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+				return errorConversionInterceptor(ctx, req, info, handler)
+			},
+			// Logging interceptor (second to log converted errors)
 			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 				return loggingInterceptor(ctx, req, info, handler, log)
 			},
@@ -51,7 +57,7 @@ func NewNorthboundServer(
 	if cfg.Tls != nil {
 		creds, err := credentials.NewServerTLSFromFile(*cfg.Tls.Cert, *cfg.Tls.Key)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize server TLS credentials from file: %w", err)
+			return nil, fmt.Errorf("initialize server TLS credentials from file: %w", err)
 		}
 		opts = append(opts, grpc.Creds(creds))
 	} else {
@@ -77,7 +83,7 @@ func (s *NorthboundServer) Start(ctx context.Context) error {
 	listenAddr := fmt.Sprintf(":%d", *s.cfg.Port)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("Failed to listend address %s: %w", listenAddr, err)
+		return fmt.Errorf("listen on address '%s': %w", listenAddr, err)
 	}
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -105,6 +111,20 @@ func (s *NorthboundServer) Start(ctx context.Context) error {
 	return err
 }
 
+// errorConversionInterceptor converts application errors to gRPC status errors
+func errorConversionInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+	resp, err = handler(ctx, req)
+	if err != nil {
+		// Convert application errors to gRPC status errors
+		if grpcErr := apperrors.ToGRPCError(err); grpcErr != nil {
+			return resp, grpcErr
+		}
+		// If no conversion was applied, return the original error
+		return resp, err
+	}
+	return resp, nil
+}
+
 func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler, log *zap.Logger) (resp any, err error) {
 	// Retrieve the client IP address
 	var clientIP string
@@ -119,7 +139,7 @@ func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo
 	duration := time.Since(start)
 	if err != nil {
 		log.Error(
-			"Failed to complete request",
+			"Request failed",
 			zap.String("Request", info.FullMethod),
 			zap.String("IP", clientIP),
 			zap.Duration("Duration", duration),

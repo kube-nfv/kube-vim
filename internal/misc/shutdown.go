@@ -12,7 +12,7 @@ func ShutdownHandler(log *zap.Logger, ctx context.Context, sigs chan os.Signal, 
 	// Wait for the context do be Done or for the signal to come in to shutdown.
 	select {
 	case <-ctx.Done():
-		log.Info("Stopping shutdownHandler...")
+		log.Info("stopping shutdownHandler...")
 	case <-sigs:
 		// Call cancel on the context to close everything down.
 		cancel()

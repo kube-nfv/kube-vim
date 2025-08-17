@@ -12,7 +12,7 @@ func InitLogger(logLevel LogLevel) (*zap.Logger, error) {
 	baseLoggerCfg.DisableStacktrace = true
 	level, err := zapcore.ParseLevel(string(logLevel))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse level \"%s\": %w", logLevel, err)
+		return nil, fmt.Errorf("parse log level '%s': %w", logLevel, err)
 	}
 	baseLoggerCfg.Level = zap.NewAtomicLevelAt(level)
 	return baseLoggerCfg.Build()

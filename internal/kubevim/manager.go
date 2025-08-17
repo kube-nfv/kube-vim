@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	kubevirt_compute "github.com/kube-nfv/kube-vim/internal/kubevim/compute/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -38,19 +39,19 @@ type kubevimManager struct {
 func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager, error) {
 	var err error
 	if cfg == nil {
-		return nil, fmt.Errorf("Config can't be empty")
+		return nil, &apperrors.ErrInvalidArgument{Field: "config", Reason: "cannot be nil"}
 	}
 
 	var k8sConfig *rest.Config
 	if cfg.K8s.Config != nil && *cfg.K8s.Config != "" {
 		k8sConfig, err = clientcmd.BuildConfigFromFlags("", *cfg.K8s.Config)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get k8s config from %s: %w", *cfg.K8s.Config, err)
+			return nil, fmt.Errorf("get k8s config from '%s': %w", *cfg.K8s.Config, err)
 		}
 	} else {
 		k8sConfig, err = rest.InClusterConfig()
 		if err != nil {
-			return nil, fmt.Errorf("faile to get k8s inClusterConfig: %w", err)
+			return nil, fmt.Errorf("get k8s inClusterConfig: %w", err)
 		}
 	}
 
@@ -58,19 +59,19 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 		logger: logger,
 	}
 	if err := mgr.initImageManager(k8sConfig, cfg.Image); err != nil {
-		return nil, fmt.Errorf("Failed to configure image manager: %w", err)
+		return nil, fmt.Errorf("configure image manager: %w", err)
 	}
 	if err := mgr.initNetworkManager(k8sConfig); err != nil {
-		return nil, fmt.Errorf("failed to initialize network manager: %w", err)
+		return nil, fmt.Errorf("initialize network manager: %w", err)
 	}
 	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
-		return nil, fmt.Errorf("failed to initialize flavour manager: %w", err)
+		return nil, fmt.Errorf("initialize flavour manager: %w", err)
 	}
 	if err := mgr.initComputeManager(k8sConfig, cfg.K8s); err != nil {
-		return nil, fmt.Errorf("failed to initialize compute manager: %w", err)
+		return nil, fmt.Errorf("initialize compute manager: %w", err)
 	}
 	if err := mgr.initNorthboundServer(cfg.Service.Server); err != nil {
-		return nil, fmt.Errorf("Failed to configure northbound server: %w", err)
+		return nil, fmt.Errorf("configure northbound server: %w", err)
 	}
 	return mgr, nil
 }
@@ -81,7 +82,7 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	defer cancel()
 	go func() {
 		if err := m.nbServer.Start(ctx); err != nil {
-			errCh <- fmt.Errorf("Failed to start Northbound server: %w", err)
+			errCh <- fmt.Errorf("start Northbound server: %w", err)
 		}
 	}()
 	go func() {
@@ -102,17 +103,17 @@ func (m *kubevimManager) Start(ctx context.Context) {
 
 func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig) error {
 	if cfg == nil {
-		return fmt.Errorf("imageConfig can't be empty")
+		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "cannot be nil"}
 	}
 	cdiCtrl, err := image.NewCdiController(k8sConfig)
 	if err != nil {
-		return fmt.Errorf("failed to initialize kubevirt cdi controller: %w", err)
+		return fmt.Errorf("initialize kubevirt cdi controller: %w", err)
 	}
 	if cfg.Http != nil {
 		var err error
 		m.imageMgr, err = http_im.NewHttpImageManager(cdiCtrl, cfg.Http)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Htpp image manager: %w", err)
+			return fmt.Errorf("initialize HTTP image manager: %w", err)
 		}
 		return nil
 	}
@@ -120,7 +121,7 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 		var err error
 		m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Local image manager: %w", err)
+			return fmt.Errorf("initialize Local image manager: %w", err)
 		}
 		return nil
 	}
@@ -128,57 +129,57 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 		var err error
 		m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Glance image manager: %w", err)
+			return fmt.Errorf("initialize Glance image manager: %w", err)
 		}
 		return nil
 	}
-	return fmt.Errorf("can't find propper image manager configuration")
+	return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "no valid image manager configuration found (http, local, or glance required)"}
 }
 
 func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config) error {
 	if k8sConfig == nil {
-		return fmt.Errorf("k8sConfig can't be empty")
+		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
 	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig)
 	if err != nil {
-		return fmt.Errorf("failed to create kubeovn network manager: %w", err)
+		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
 	return nil
 }
 
 func (m *kubevimManager) initFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
 	if k8sConfig == nil {
-		return fmt.Errorf("k8sConfig can't be empty")
+		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
 	m.flavourMgr, err = kubevirt_flavour.NewFlavourManager(k8sConfig, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create kubevirt flavour manager: %w", err)
+		return fmt.Errorf("create kubevirt flavour manager: %w", err)
 	}
 	return nil
 }
 
 func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
 	if k8sConfig == nil {
-		return fmt.Errorf("k8sConfig can't be empty")
+		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
 	m.computeMgr, err = kubevirt_compute.NewComputeManager(k8sConfig, cfg, m.flavourMgr, m.imageMgr, m.networkMgr)
 	if err != nil {
-		return fmt.Errorf("failed to create kubevirt compute manager: %w", err)
+		return fmt.Errorf("create kubevirt compute manager: %w", err)
 	}
 	return nil
 }
 
 func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	if cfg == nil {
-		return fmt.Errorf("ServiceConfig can't be empty")
+		return &apperrors.ErrInvalidArgument{Field: "ServiceConfig", Reason: "cannot be nil"}
 	}
 	var err error
 	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr)
 	if err != nil {
-		return fmt.Errorf("Failed to initialize NorthboundServer: %w", err)
+		return fmt.Errorf("initialize NorthboundServer: %w", err)
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 
 var (
 	// Untyped errors for simple cases
-	ErrApplyOption = errors.New("failed to apply option")
+	ErrApplyOption = errors.New("apply option")
 )
 
 func init() {

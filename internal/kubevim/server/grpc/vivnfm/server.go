@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	common "github.com/kube-nfv/kube-vim/internal/config"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -26,17 +26,15 @@ type ViVnfmServer struct {
 	ComputeMgr compute.Manager
 }
 
-// TODO:
-//      * Convert well known errors to the gRPC errors
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *nfv.QueryImagesRequest) (*nfv.QueryImagesResponse, error) {
 	res, err := s.ImageMgr.ListImages(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query images: %w", err)
+		return nil, fmt.Errorf("query images: %w", err)
 	}
 	filtered, err := filter.FilterList(res, req.ImageQueryFilter.GetValue())
 	if err != nil {
-		return nil, fmt.Errorf("failed to filter queried images: %w", err)
+		return nil, fmt.Errorf("filter queried images: %w", err)
 	}
 	return &nfv.QueryImagesResponse{
 		SoftwareImagesInformation: filtered,
@@ -60,11 +58,11 @@ func (s *ViVnfmServer) AllocateVirtualisedComputeResource(ctx context.Context, r
 func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context, req *nfv.QueryComputeRequest) (*nfv.QueryComputeResponse, error) {
 	res, err := s.ComputeMgr.ListComputeResources(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query compute resources: %w", err)
+		return nil, fmt.Errorf("query compute resources: %w", err)
 	}
 	filtered, err := filter.FilterList(res, req.QueryComputeFilter.GetValue())
 	if err != nil {
-		return nil, fmt.Errorf("failed to filter queried compute resources: %w", err)
+		return nil, fmt.Errorf("filter queried compute resources: %w", err)
 	}
 	return &nfv.QueryComputeResponse{
 		QueryResult: filtered,
@@ -74,7 +72,7 @@ func (s *ViVnfmServer) QueryVirtualisedComputeResource(ctx context.Context, req 
 func (s *ViVnfmServer) TerminateVirtualisedComputeResource(ctx context.Context, req *nfv.TerminateComputeRequest) (*nfv.TerminateComputeResponse, error) {
 	err := s.ComputeMgr.DeleteComputeResource(ctx, compute.GetComputeByUid(req.GetComputeId()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete virtualised compute resource with id \"%s\": %w", req.ComputeId.GetValue(), err)
+		return nil, fmt.Errorf("delete virtualised compute resource '%s': %w", req.ComputeId.GetValue(), err)
 	}
 	return &nfv.TerminateComputeResponse{
 		ComputeId: req.ComputeId,
@@ -92,11 +90,11 @@ func (s *ViVnfmServer) CreateComputeFlavour(ctx context.Context, req *nfv.Create
 func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryComputeFlavourRequest) (*nfv.QueryComputeFlavourResponse, error) {
 	res, err := s.FlavourMgr.GetFlavours(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get flavours: %w", err)
+		return nil, fmt.Errorf("get flavours: %w", err)
 	}
 	filtered, err := filter.FilterList(res, req.QueryComputeFlavourFilter.GetValue())
 	if err != nil {
-		return nil, fmt.Errorf("failed to filter queried flavours: %w", err)
+		return nil, fmt.Errorf("filter queried flavours: %w", err)
 	}
 	return &nfv.QueryComputeFlavourResponse{
 		Flavours: filtered,
@@ -105,7 +103,7 @@ func (s *ViVnfmServer) QueryComputeFlavour(ctx context.Context, req *nfv.QueryCo
 
 func (s *ViVnfmServer) DeleteComputeFlavour(ctx context.Context, req *nfv.DeleteComputeFlavourRequest) (*nfv.DeleteComputeFlavourResponse, error) {
 	if err := s.FlavourMgr.DeleteFlavour(ctx, req.ComputeFlavourId); err != nil {
-		return nil, fmt.Errorf("failed to delete flavour with id \"%s\": %w", req.ComputeFlavourId.Value, err)
+		return nil, fmt.Errorf("delete flavour '%s': %w", req.ComputeFlavourId.Value, err)
 	}
 	return &nfv.DeleteComputeFlavourResponse{}, nil
 }
@@ -146,11 +144,11 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 	case nfv.NetworkResourceType_NETWORK:
 		netLst, err := s.NetworkMgr.ListNetworks(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list networks: %w", err)
+			return nil, fmt.Errorf("list networks: %w", err)
 		}
 		filtered, err := filter.FilterList(netLst, req.QueryNetworkFilter.GetValue())
 		if err != nil {
-			return nil, fmt.Errorf("failed to filter networks: %w", err)
+			return nil, fmt.Errorf("filter networks: %w", err)
 		}
 		return &nfv.QueryNetworkResponse{
 			QueryNetworkResult: filtered,
@@ -158,11 +156,11 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 	case nfv.NetworkResourceType_SUBNET:
 		subLst, err := s.NetworkMgr.ListSubnets(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list subnets: %w", err)
+			return nil, fmt.Errorf("list subnets: %w", err)
 		}
 		filtered, err := filter.FilterList(subLst, req.QueryNetworkFilter.GetValue())
 		if err != nil {
-			return nil, fmt.Errorf("failed to fileter subnets: %w", err)
+			return nil, fmt.Errorf("filter subnets: %w", err)
 		}
 		return &nfv.QueryNetworkResponse{
 			QuerySubnetResult: filtered,
@@ -179,8 +177,9 @@ func (s *ViVnfmServer) TerminateVirtualisedNetworkResource(ctx context.Context, 
 			NetworkResourceId: req.NetworkResourceId,
 		}, nil
 	}
-	if !errors.Is(err, common.NotFoundErr) && !k8s_errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to delete network with id \"%s\": %w", req.NetworkResourceId.GetValue(), err)
+	var networkNotFoundErr *apperrors.ErrNotFound
+	if !errors.As(err, &networkNotFoundErr) && !k8s_errors.IsNotFound(err) {
+		return nil, fmt.Errorf("delete network '%s': %w", req.NetworkResourceId.GetValue(), err)
 	}
 	err = s.NetworkMgr.DeleteSubnet(ctx, network.GetSubnetByUid(req.NetworkResourceId))
 	if err == nil {
@@ -188,9 +187,10 @@ func (s *ViVnfmServer) TerminateVirtualisedNetworkResource(ctx context.Context, 
 			NetworkResourceId: req.NetworkResourceId,
 		}, nil
 	}
-	if errors.Is(err, common.NotFoundErr) || k8s_errors.IsNotFound(err) {
-		return nil, fmt.Errorf("network resource with id \"%s\" not match either network nor subnet: %w", req.NetworkResourceId.GetValue(), err)
+	var subnetNotFoundErr *apperrors.ErrNotFound
+	if errors.As(err, &subnetNotFoundErr) || k8s_errors.IsNotFound(err) {
+		return nil, fmt.Errorf("network resource '%s' not found in networks or subnets: %w", req.NetworkResourceId.GetValue(), err)
 	} else {
-		return nil, fmt.Errorf("failed to delete subent with id \"%s\": %w", req.NetworkResourceId.GetValue(), err)
+		return nil, fmt.Errorf("delete subnet '%s': %w", req.NetworkResourceId.GetValue(), err)
 	}
 }

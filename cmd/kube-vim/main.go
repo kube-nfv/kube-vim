@@ -19,7 +19,7 @@ import (
 )
 
 type CmdLineOpts struct {
-	confgPath string
+	configPath string
 }
 
 var (
@@ -28,7 +28,7 @@ var (
 
 func init() {
 	// Parse CmdLine flags
-	flag.StringVar(&opts.confgPath, "config", "/etc/kube-vim/config.yaml", "kube-vim configuration file path")
+	flag.StringVar(&opts.configPath, "config", "/etc/kube-vim/config.yaml", "kube-vim configuration file path")
 
 	// Init Viper Defaults
 	viper.SetDefault("service.logLevel", "info")
@@ -51,31 +51,31 @@ func SetConfigDefaultAfterInit() {
 
 func main() {
 	flag.Parse()
-	viper.SetConfigFile(opts.confgPath)
+	viper.SetConfigFile(opts.configPath)
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Can't read kube-vim configuration from path %s. Error: %v", opts.confgPath, err)
+		log.Fatalf("Can't read kube-vim configuration from path '%s': %v", opts.configPath, err)
 	}
 	SetConfigDefaultAfterInit()
 	var config config.Config
 	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("Failed to parse kube-vim configuration from path %s. Error %v", opts.confgPath, err)
+		log.Fatalf("Parse kube-vim configuration from path '%s': %v", opts.configPath, err)
 	}
 
 	// Initialize the logger
 	logger, err := common.InitLogger(*config.Service.LogLevel)
 	if err != nil {
-		log.Fatalf("failed to initialize zap logger: %v", err)
+		log.Fatalf("Initialize zap logger: %v", err)
 	}
 	defer logger.Sync() // Ensure all logs are flushed before the application exits
 
 	cfgStr, err := json.Marshal(config)
 	if err == nil {
-		logger.Debug("", zap.String("config", string(cfgStr)))
+		logger.Debug("Kube-vim configuration loaded", zap.String("config", string(cfgStr)))
 	}
 
 	mgr, err := kubevim.NewKubeVimManager(&config, logger.Named("Kubevim"))
 	if err != nil {
-		log.Fatalf("Can't create kubevim manager: %v", err)
+		log.Fatalf("Create kubevim manager: %v", err)
 	}
 
 	// Create main context

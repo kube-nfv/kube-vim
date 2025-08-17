@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -8,17 +9,42 @@ import (
 	"go.uber.org/zap"
 )
 
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientIP := getClientIP(r)
+		clientPort := getClientPort(r)
 
-		logger.Debug("New incoming request", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)))
+		logger.Debug("New incoming request", 
+			zap.String("method", r.Method), 
+			zap.String("url", r.URL.String()), 
+			zap.String("clientIP", clientIP), 
+			zap.String("clientPort", clientPort),
+			zap.String("userAgent", r.UserAgent()))
 		start := time.Now()
 
-		handler.ServeHTTP(w, r)
+		// Wrap response writer to capture status code
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		handler.ServeHTTP(rw, r)
 
 		duration := time.Since(start)
-		logger.Info("Request completed", zap.String("Method", r.Method), zap.String("Url", r.URL.String()), zap.String("ClientIP", clientIP), zap.String("Port", getClientPort(r)), zap.Duration("Duration", duration))
+		logger.Info("Request completed", 
+			zap.String("method", r.Method), 
+			zap.String("url", r.URL.String()), 
+			zap.String("clientIP", clientIP), 
+			zap.String("clientPort", clientPort), 
+			zap.Int("status", rw.status),
+			zap.Duration("duration", duration))
 	})
 }
 
@@ -32,20 +58,27 @@ func getClientIP(r *http.Request) string {
 		return strings.TrimSpace(ips[0])
 	}
 
-	// Fallback to RemoteAddr if no X-Forwarded-For header
-	// RemoteAddr is in the form "IP:PORT", so we need to extract the IP
-	clientIP := strings.Split(r.RemoteAddr, ":")[0]
-	return clientIP
+	// Check for X-Real-IP header
+	xRealIP := r.Header.Get("X-Real-IP")
+	if xRealIP != "" {
+		return xRealIP
+	}
+
+	// Fallback to RemoteAddr - use net.SplitHostPort for proper IPv6 support
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// If SplitHostPort fails, return the original RemoteAddr
+		return r.RemoteAddr
+	}
+	return host
 }
 
-// GetClientPort extracts the client port from the request
+// getClientPort extracts the client port from the request
 func getClientPort(r *http.Request) string {
-	remoteAddr := r.RemoteAddr
-	if remoteAddr != "" {
-		parts := strings.Split(remoteAddr, ":")
-		if len(parts) == 2 {
-			return parts[1]
-		}
+	// Use net.SplitHostPort for proper IPv6 support
+	_, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return "unknown"
 	}
-	return "unknown"
+	return port
 }

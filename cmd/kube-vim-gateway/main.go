@@ -19,7 +19,7 @@ import (
 )
 
 type CmdLineOpts struct {
-	confgPath string
+	configPath string
 }
 
 var (
@@ -28,7 +28,7 @@ var (
 
 func init() {
 	// Parse CmdLine flags
-	flag.StringVar(&opts.confgPath, "config", "/etc/kube-vim-gateway/config.yaml", "kube-vim gateway configuration file path")
+	flag.StringVar(&opts.configPath, "config", "/etc/kube-vim-gateway/config.yaml", "kube-vim gateway configuration file path")
 
 	//Init Viper defaults
 	viper.SetDefault("service.logLevel", "info")
@@ -41,13 +41,13 @@ func init() {
 
 func main() {
 	flag.Parse()
-	viper.SetConfigFile(opts.confgPath)
+	viper.SetConfigFile(opts.configPath)
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Can't read kube-vim gateway configuration from path %s. Error: %v", opts.confgPath, err)
+		log.Fatalf("Can't read kube-vim gateway configuration from path %s. Error: %v", opts.configPath, err)
 	}
 	var config config.Config
 	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("Failed to parse kube-vim gateway configuration from path %s. Error %v", opts.confgPath, err)
+		log.Fatalf("Failed to parse kube-vim gateway configuration from path %s. Error %v", opts.configPath, err)
 	}
 
 	// Initialize the logger
@@ -59,10 +59,10 @@ func main() {
 
 	cfgStr, err := json.Marshal(config)
 	if err == nil {
-		logger.Debug("", zap.String("config", string(cfgStr)))
+		logger.Debug("Gateway configuration loaded", zap.String("config", string(cfgStr)))
 	}
 
-	gw, err := gateway.NewKubeVimGateway(&config, logger.Named("Geteway"))
+	gw, err := gateway.NewKubeVimGateway(&config, logger.Named("Gateway"))
 	if err != nil {
 		log.Fatal("failed to initialize kube-vim gateway", zap.Error(err))
 	}
