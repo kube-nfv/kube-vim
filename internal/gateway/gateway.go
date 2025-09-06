@@ -60,11 +60,11 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	defer conn.Close()
 
 	// Wait for connection to be ready with timeout
-	connCtx, connCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer connCancel()
-	if err := waitForConnectionReady(connCtx, conn); err != nil {
-		return fmt.Errorf("kubevim server '%s' not ready: %w", connAddr, err)
-	}
+	// connCtx, connCancel := context.WithTimeout(ctx, 10*time.Second)
+	// defer connCancel()
+	// if err := waitForConnectionReady(connCtx, conn); err != nil {
+	// 	return fmt.Errorf("kubevim server '%s' not ready: %w", connAddr, err)
+	// }
 	g.logger.Info("successfully connected to the kubevim gRPC endpoint", zap.String("endpoint", connAddr))
 
 	gwmux := runtime.NewServeMux(
