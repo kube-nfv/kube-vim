@@ -2,6 +2,7 @@ package kubevirt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
@@ -75,11 +77,25 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 			// TODO: Add logic to split the NetworkAttachmentDefinition from namespace (if it exists).
 			subnet, err := netMgr.GetSubnet(ctx, network.GetSubnetByNetAttachName(multusNet.NetworkName))
 			if err != nil {
-				return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
+				// Check if the error is due to missing NetworkAttachmentDefinition (race condition during deletion)
+				var notFoundErr *apperrors.ErrNotFound
+				isK8sNotFound := k8s_errors.IsNotFound(err)
+				isKubeNfvNotFound := errors.As(err, &notFoundErr)
+				
+				if isK8sNotFound || isKubeNfvNotFound {
+					// During deletion, NetworkAttachmentDefinition might be already deleted
+					// Set placeholder values to allow VM deletion to proceed
+					netIfRes.SubnetId = &nfv.Identifier{Value: "deleted"}
+					netIfRes.NetworkId = &nfv.Identifier{Value: "deleted"}
+					netIfRes.Bandwidth = 0
+				} else {
+					return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
+				}
+			} else {
+				netIfRes.SubnetId = subnet.ResourceId
+				netIfRes.NetworkId = subnet.NetworkId
+				netIfRes.Bandwidth = 0
 			}
-			netIfRes.SubnetId = subnet.ResourceId
-			netIfRes.NetworkId = subnet.NetworkId
-			netIfRes.Bandwidth = 0
 		} else {
 			return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("network '%s'", name), Reason: "must be either multus or pod type"}
 		}
