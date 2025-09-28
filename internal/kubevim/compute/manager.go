@@ -3,7 +3,8 @@ package compute
 import (
 	"context"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 )
 
 const (
@@ -18,22 +19,22 @@ const (
 )
 
 type Manager interface {
-	AllocateComputeResource(context.Context, *nfv.AllocateComputeRequest) (*nfv.VirtualCompute, error)
-	GetComputeResource(context.Context, ...GetComputeOpt) (*nfv.VirtualCompute, error)
-	ListComputeResources(context.Context) ([]*nfv.VirtualCompute, error)
+	AllocateComputeResource(context.Context, *vivnfm.AllocateComputeRequest) (*vivnfm.VirtualCompute, error)
+	GetComputeResource(context.Context, ...GetComputeOpt) (*vivnfm.VirtualCompute, error)
+	ListComputeResources(context.Context) ([]*vivnfm.VirtualCompute, error)
 	DeleteComputeResource(context.Context, ...GetComputeOpt) error
 }
 
 type GetComputeOpt func(*getComputeOpts)
 type getComputeOpts struct {
 	Name string
-	Uid  *nfv.Identifier
+	Uid  *nfvcommon.Identifier
 }
 
 func GetComputeByName(name string) GetComputeOpt {
 	return func(gco *getComputeOpts) { gco.Name = name }
 }
-func GetComputeByUid(uid *nfv.Identifier) GetComputeOpt {
+func GetComputeByUid(uid *nfvcommon.Identifier) GetComputeOpt {
 	return func(gco *getComputeOpts) { gco.Uid = uid }
 }
 func ApplyGetComputeOpts(gco ...GetComputeOpt) *getComputeOpts {

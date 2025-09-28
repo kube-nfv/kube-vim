@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
@@ -17,8 +18,8 @@ const (
 )
 
 type Manager interface {
-	GetImage(context.Context, *nfv.Identifier) (*nfv.SoftwareImageInformation, error)
-	ListImages(context.Context) ([]*nfv.SoftwareImageInformation, error)
+	GetImage(context.Context, *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error)
+	ListImages(context.Context) ([]*vivnfm.SoftwareImageInformation, error)
 }
 
 type sourceType string

@@ -3,8 +3,8 @@ package misc
 import (
 	"io"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	common "github.com/kube-nfv/kube-vim/internal/config"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -12,13 +12,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func UIDToIdentifier(uid types.UID) *nfv.Identifier {
-	return &nfv.Identifier{
+func UIDToIdentifier(uid types.UID) *nfvcommon.Identifier {
+	return &nfvcommon.Identifier{
 		Value: string(uid),
 	}
 }
 
-func IdentifierToUID(identifier *nfv.Identifier) types.UID {
+func IdentifierToUID(identifier *nfvcommon.Identifier) types.UID {
 	return types.UID(identifier.Value)
 }
 

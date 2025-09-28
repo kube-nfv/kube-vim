@@ -9,7 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
@@ -39,7 +40,7 @@ func NewLocalImageManager(cfg *config.LocalImageConfig) (*manager, error) {
 	}, nil
 }
 
-func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {
@@ -57,14 +58,14 @@ func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.Softwa
 	return nil, &apperrors.ErrNotFound{Entity: "image", Identifier: id.Value}
 }
 
-func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	files, err := os.ReadDir(m.location)
 	if err != nil {
 		return nil, fmt.Errorf("read image directory '%s': %w", m.location, err)
 	}
-	res := make([]*nfv.SoftwareImageInformation, 0, len(files))
+	res := make([]*vivnfm.SoftwareImageInformation, 0, len(files))
 	for _, file := range files {
 		imageInfo, err := convertImage(file)
 		if err != nil {
@@ -75,7 +76,7 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 	return res, nil
 }
 
-func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location string) error {
+func (m *manager) UploadImage(ctx context.Context, id *nfvcommon.Identifier, location string) error {
 	if id == nil || id.Value == "" {
 		return &apperrors.ErrInvalidArgument{Field: "image id", Reason: "cannot be empty"}
 	}
@@ -126,16 +127,16 @@ func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location 
 	return nil
 }
 
-func convertImage(file os.DirEntry) (*nfv.SoftwareImageInformation, error) {
+func convertImage(file os.DirEntry) (*vivnfm.SoftwareImageInformation, error) {
 	// TODO:
-	return &nfv.SoftwareImageInformation{}, nil
+	return &vivnfm.SoftwareImageInformation{}, nil
 }
 
 // nameMatchRule checks if the file name matches the identifier, ignoring the extension.
 // Rule is based on the name equality without extension eg.
 // nameMatchRule("ubuntu-22.0.4", file{name: ubuntu-22.0.4}) -> true (equal match)
 // nameMatchRule("ubuntu-22.0.4", file{name: ubuntu-22.0.4.iso}) -> true (match without extension)
-func nameMatchRule(id *nfv.Identifier, file os.DirEntry) bool {
+func nameMatchRule(id *nfvcommon.Identifier, file os.DirEntry) bool {
 	if id == nil {
 		return false
 	}

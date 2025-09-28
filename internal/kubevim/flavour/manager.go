@@ -3,7 +3,8 @@ package flavour
 import (
 	"context"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 )
 
 const (
@@ -14,9 +15,9 @@ const (
 )
 
 type Manager interface {
-	CreateFlavour(context.Context, *nfv.VirtualComputeFlavour) (*nfv.Identifier, error)
-	GetFlavour(context.Context, *nfv.Identifier) (*nfv.VirtualComputeFlavour, error)
+	CreateFlavour(context.Context, *vivnfm.VirtualComputeFlavour) (*nfvcommon.Identifier, error)
+	GetFlavour(context.Context, *nfvcommon.Identifier) (*vivnfm.VirtualComputeFlavour, error)
 	// TODO: Add Filter
-	GetFlavours(context.Context) ([]*nfv.VirtualComputeFlavour, error)
-	DeleteFlavour(context.Context, *nfv.Identifier) error
+	GetFlavours(context.Context) ([]*vivnfm.VirtualComputeFlavour, error)
+	DeleteFlavour(context.Context, *nfvcommon.Identifier) error
 }

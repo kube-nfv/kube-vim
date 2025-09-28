@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/gateway"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -70,7 +70,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	gwmux := runtime.NewServeMux(
 		runtime.SetQueryParameterParser(&queryParameterParser{}),
 	)
-	if err = nfv.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
+	if err = vivnfm.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
 		return fmt.Errorf("register viVnfm gateway handler: %w", err)
 	}
 	servAddr := fmt.Sprintf(":%d", *g.cfg.Service.Server.Port)

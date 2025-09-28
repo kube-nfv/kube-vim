@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
@@ -64,7 +65,7 @@ func NewNorthboundServer(
 		log.Warn("No TLS configuration specified. Kubevim gRPC server will launch unsecure!")
 	}
 	server := grpc.NewServer(opts...)
-	nfv.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
+	vivnfm.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
 		ImageMgr:   imageMgr,
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,

@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -43,7 +44,7 @@ func NewHttpImageManager(cdiCtrl *image.CdiController, cfg *config.HttpImageConf
 // TODO(dmaloval)
 //
 //	Add ability to works with different storage clases (as well as WaitForFirstConsumer mode)
-func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImage(ctx context.Context, imageId *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error) {
 	if imageId == nil || imageId.GetValue() == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "image id", Reason: "cannot be empty"}
 	}
@@ -80,12 +81,12 @@ func (m *manager) GetImage(ctx context.Context, imageId *nfv.Identifier) (*nfv.S
 	return softwareImageInfoFromVolumeImportSource(vis)
 }
 
-func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInformation, error) {
 	images, err := m.cdiCtrl.ListVolumeImportSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list volume import sources: %w", err)
 	}
-	res := make([]*nfv.SoftwareImageInformation, 0, len(images))
+	res := make([]*vivnfm.SoftwareImageInformation, 0, len(images))
 	for idx := range images {
 		imgRef := &images[idx]
 		imgInfo, err := softwareImageInfoFromVolumeImportSource(imgRef)
@@ -97,7 +98,7 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 	return res, nil
 }
 
-func (m *manager) UploadImage(context.Context, *nfv.Identifier, string /*location*/) error {
+func (m *manager) UploadImage(context.Context, *nfvcommon.Identifier, string /*location*/) error {
 
 	return apperrors.ErrNotImplemented
 }
@@ -125,9 +126,9 @@ func tryCalculeteContentLength(url string) (int64, error) {
 	return size, nil
 }
 
-func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformation {
-	return &nfv.SoftwareImageInformation{
-		SoftwareImageId: &nfv.Identifier{
+func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *vivnfm.SoftwareImageInformation {
+	return &vivnfm.SoftwareImageInformation{
+		SoftwareImageId: &nfvcommon.Identifier{
 			Value: string(dv.GetUID()),
 		},
 		Name: dv.Name,
@@ -135,7 +136,7 @@ func softwareImageInfoFromDv(dv *v1beta1.DataVolume) *nfv.SoftwareImageInformati
 	}
 }
 
-func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*nfv.SoftwareImageInformation, error) {
+func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*vivnfm.SoftwareImageInformation, error) {
 	if !misc.IsObjectInstantiated(vis) {
 		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VolumeImportSource"}
 	}
@@ -145,14 +146,14 @@ func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*
 	if source, ok := vis.Labels[image.K8sSourceLabel]; !ok || (source != string(image.HTTP) && source != string(image.HTTPS)) {
 		return nil, fmt.Errorf("http image manager cannot convert image with '%s' source: %w", source, apperrors.ErrUnsupported)
 	}
-	metadata := &nfv.Metadata{
+	metadata := &vivnfm.Metadata{
 		Fields: vis.Labels,
 	}
 	for k, v := range vis.Annotations {
 		metadata.Fields[k] = v
 	}
-	return &nfv.SoftwareImageInformation{
-		SoftwareImageId: &nfv.Identifier{
+	return &vivnfm.SoftwareImageInformation{
+		SoftwareImageId: &nfvcommon.Identifier{
 			Value: string(vis.GetUID()),
 		},
 		Name:      vis.Name,
