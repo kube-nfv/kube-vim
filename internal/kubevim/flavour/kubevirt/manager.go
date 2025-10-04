@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -16,7 +16,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"kubevirt.io/api/instancetype/v1beta1"
-	kubevirt "kubevirt.io/client-go/generated/kubevirt/clientset/versioned"
+	kubevirt "kubevirt.io/client-go/kubevirt"
 )
 
 const (

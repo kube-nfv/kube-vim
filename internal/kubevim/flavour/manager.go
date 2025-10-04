@@ -3,15 +3,15 @@ package flavour
 import (
 	"context"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 )
 
 const (
-	K8sFlavourIdLabel             = "flavour.kubevim.kubenfv.io/id"
-	K8sFlavourSourceLabel         = "flavour.kubevim.kubenfv.io/source"
-	K8sVolumesAnnotation          = "flavour.kubevim.kubenfv.io/volumes"
-	K8sFlavourAttNameAnnotation   = "flavour.kubevim.kubenfv.io/attached-name"
+	K8sFlavourIdLabel           = "flavour.kubevim.kubenfv.io/id"
+	K8sFlavourSourceLabel       = "flavour.kubevim.kubenfv.io/source"
+	K8sVolumesAnnotation        = "flavour.kubevim.kubenfv.io/volumes"
+	K8sFlavourAttNameAnnotation = "flavour.kubevim.kubenfv.io/attached-name"
 )
 
 type Manager interface {

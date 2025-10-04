@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -67,15 +67,15 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 
 	return &v1beta1.VirtualMachineInstancetype{
 			ObjectMeta: v1.ObjectMeta{
-				Name: flavourNameFromId(flavorId),
-				Labels: labels,
+				Name:        flavourNameFromId(flavorId),
+				Labels:      labels,
 				Annotations: ann,
 			},
 			Spec: vmInstTypeSpec,
 		}, &v1beta1.VirtualMachinePreference{
 			ObjectMeta: v1.ObjectMeta{
-				Name: flavourPreferenceNameFromId(flavorId),
-				Labels: labels,
+				Name:        flavourPreferenceNameFromId(flavorId),
+				Labels:      labels,
 				Annotations: ann,
 			},
 		}, nil
@@ -137,7 +137,7 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		VirtualMemory:     virtualMem,
 		VirtualCpu:        virtualCpu,
 		StorageAttributes: storageAttributes,
-		Metadata: &vivnfm.Metadata{
+		Metadata: &nfvcommon.Metadata{
 			Fields: metadata,
 		},
 	}, nil

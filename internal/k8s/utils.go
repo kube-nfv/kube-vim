@@ -1,7 +1,6 @@
 package k8s
 
 import (
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	"k8s.io/apimachinery/pkg/types"
 )

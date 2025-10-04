@@ -12,10 +12,10 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/imagedata"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
 // Image manager for glance image storage

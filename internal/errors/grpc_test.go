@@ -77,19 +77,19 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ToGRPCError(tt.inputError)
-			
+
 			// Check that result is a gRPC status error
 			st, ok := status.FromError(result)
 			if !ok {
 				t.Errorf("ToGRPCError() did not return a gRPC status error")
 				return
 			}
-			
+
 			// Check expected code
 			if st.Code() != tt.expectedCode {
 				t.Errorf("ToGRPCError() code = %v, want %v", st.Code(), tt.expectedCode)
 			}
-			
+
 			// Check expected message
 			if st.Message() != tt.expectedMsg {
 				t.Errorf("ToGRPCError() message = %q, want %q", st.Message(), tt.expectedMsg)
@@ -102,29 +102,29 @@ func TestToGRPCError_WrappedStructuredErrors(t *testing.T) {
 	// Test that structured errors work when wrapped with fmt.Errorf
 	baseErr := &ErrNotFound{Entity: "flavour", Identifier: "test123"}
 	wrappedErr := fmt.Errorf("failed to retrieve: %w", baseErr)
-	
+
 	result := ToGRPCError(wrappedErr)
-	
+
 	st, ok := status.FromError(result)
 	if !ok {
 		t.Fatal("ToGRPCError() did not return a gRPC status error")
 	}
-	
+
 	if st.Code() != codes.NotFound {
 		t.Errorf("Expected codes.NotFound, got %v", st.Code())
 	}
-	
+
 	expectedMsg := "failed to retrieve: flavour 'test123' not found"
 	if st.Message() != expectedMsg {
 		t.Errorf("Expected message %q, got %q", expectedMsg, st.Message())
 	}
-	
+
 	// Verify original structured error can still be detected
 	var originalErr *ErrNotFound
 	if !errors.As(wrappedErr, &originalErr) {
 		t.Errorf("Original structured error not detectable in wrapped error")
 	}
-	
+
 	if originalErr.Entity != "flavour" || originalErr.Identifier != "test123" {
 		t.Errorf("Original error fields not preserved: Entity=%s, Identifier=%s", originalErr.Entity, originalErr.Identifier)
 	}
@@ -133,19 +133,19 @@ func TestToGRPCError_WrappedStructuredErrors(t *testing.T) {
 func TestToGRPCError_PreservesK8sErrors(t *testing.T) {
 	k8sNotFoundErr := k8serrors.NewNotFound(schema.GroupResource{Resource: "flavours"}, "test-flavour")
 	wrappedErr := fmt.Errorf("failed to retrieve flavour: %w", k8sNotFoundErr)
-	
+
 	result := ToGRPCError(wrappedErr)
-	
+
 	// Should convert to gRPC NotFound
 	st, ok := status.FromError(result)
 	if !ok {
 		t.Fatal("ToGRPCError() did not return a gRPC status error")
 	}
-	
+
 	if st.Code() != codes.NotFound {
 		t.Errorf("Expected codes.NotFound, got %v", st.Code())
 	}
-	
+
 	// Original K8s error should still be detectable in the chain
 	if !k8serrors.IsNotFound(wrappedErr) {
 		t.Errorf("Original K8s NotFound error not detectable in chain")

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -146,7 +146,7 @@ func softwareImageInfoFromVolumeImportSource(vis *v1beta1.VolumeImportSource) (*
 	if source, ok := vis.Labels[image.K8sSourceLabel]; !ok || (source != string(image.HTTP) && source != string(image.HTTPS)) {
 		return nil, fmt.Errorf("http image manager cannot convert image with '%s' source: %w", source, apperrors.ErrUnsupported)
 	}
-	metadata := &vivnfm.Metadata{
+	metadata := &nfvcommon.Metadata{
 		Fields: vis.Labels,
 	}
 	for k, v := range vis.Annotations {

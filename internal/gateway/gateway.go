@@ -42,7 +42,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	opts := []grpc.DialOption{
 		// Add connection backoff configuration
 		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff: backoff.DefaultConfig,
+			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: 5 * time.Second,
 		}),
 	}

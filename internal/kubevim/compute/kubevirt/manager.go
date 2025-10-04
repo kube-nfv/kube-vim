@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	kubevirt "kubevirt.io/client-go/generated/kubevirt/clientset/versioned"
+	kubevirt "kubevirt.io/client-go/kubevirt"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -52,7 +52,7 @@ const (
 
 	KubevirtVmNetworkManagement = "network.vm.kubevirt.io/management"
 
-	KubevirtInterfaceReady     = "interface.vm.kubevirt.io/ready"
+	KubevirtInterfaceReady = "interface.vm.kubevirt.io/ready"
 )
 
 const (
@@ -161,14 +161,13 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 		},
 	}
 
-
 	if req.UserData != nil {
 		volume, disk, err := initUserDataVolume(req.GetUserData())
 		if err != nil {
 			return nil, fmt.Errorf("initialize vm userdata volume: %w", err)
 		}
 		volumes = append(volumes, *volume)
-		disks   = append(disks, *disk)
+		disks = append(disks, *disk)
 	}
 
 	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
@@ -218,12 +217,12 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
-							Disks: disks,
+							Disks:      disks,
 							Interfaces: interfaces,
 						},
 					},
 					Networks: networks,
-					Volumes: volumes,
+					Volumes:  volumes,
 				},
 			},
 		},
@@ -509,9 +508,9 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			}
 
 			var ipam *vivnfm.VirtualNetworkInterfaceIPAM
-			if netInst.NetworkType == vivnfm.NetworkType_UNDERLAY {
+			if netInst.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
-			} else if netInst.NetworkType == vivnfm.NetworkType_OVERLAY {
+			} else if netInst.NetworkType == nfvcommon.NetworkType_OVERLAY {
 				returnOnMiss := true
 				if netData.Metadata != nil {
 					ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]

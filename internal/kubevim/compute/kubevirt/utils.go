@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -30,9 +30,9 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 	if err != nil {
 		return nil, fmt.Errorf("get image id from kubevirt VM '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 	}
-	operState := vivnfm.OperationalState_ENABLED
+	operState := nfvcommon.OperationalState_ENABLED
 	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
-		operState = vivnfm.OperationalState_DISABLED
+		operState = nfvcommon.OperationalState_DISABLED
 	}
 
 	runningState := getRunningState(vm, vmi)
@@ -53,7 +53,7 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 			ResourceId: &nfvcommon.Identifier{
 				Value: name,
 			},
-			OperationalState: vivnfm.OperationalState_ENABLED,
+			OperationalState: nfvcommon.OperationalState_ENABLED,
 			OwnerId:          computeId,
 		}
 		netMdFields := make(map[string]string)
@@ -82,7 +82,7 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 				var notFoundErr *apperrors.ErrNotFound
 				isK8sNotFound := k8s_errors.IsNotFound(err)
 				isKubeNfvNotFound := errors.As(err, &notFoundErr)
-				
+
 				if isK8sNotFound || isKubeNfvNotFound {
 					// During deletion, NetworkAttachmentDefinition might be already deleted
 					// Set placeholder values to allow VM deletion to proceed
@@ -109,18 +109,18 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 				})
 			}
 			netIfRes.IpAddress = ips
-			netIfRes.MacAddress = &vivnfm.MacAddress{
+			netIfRes.MacAddress = &nfvcommon.MacAddress{
 				Mac: ifaceStatus.MAC,
 			}
 			netMdFields[KubevirtInterfaceReady] = "true"
 		} else {
-			netIfRes.MacAddress = &vivnfm.MacAddress{
+			netIfRes.MacAddress = &nfvcommon.MacAddress{
 				Mac: "initializing",
 			}
 			netMdFields[KubevirtInterfaceReady] = "false"
 		}
 
-		netIfRes.Metadata = &vivnfm.Metadata{
+		netIfRes.Metadata = &nfvcommon.Metadata{
 			Fields: netMdFields,
 		}
 		netIfaces = append(netIfaces, netIfRes)
@@ -137,9 +137,9 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 		},
 		OperationalState: operState,
 		RunningState:     runningState,
-		VirtualCpu: &vivnfm.VirtualCpu{},
-		VirtualMemory: &vivnfm.VirtualMemory{},
-		Metadata: &vivnfm.Metadata{
+		VirtualCpu:       &vivnfm.VirtualCpu{},
+		VirtualMemory:    &vivnfm.VirtualMemory{},
+		Metadata: &nfvcommon.Metadata{
 			Fields: mdFields,
 		},
 	}, nil
@@ -147,32 +147,32 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 
 // GetRunningState determines the high-level operational state of a VM
 // the description string also can be set for some states
-func getRunningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) vivnfm.ComputeRunningState {
+func getRunningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) nfvcommon.ComputeRunningState {
 	// If VM is administratively stopped
 	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
-		return vivnfm.ComputeRunningState_STOPPED
+		return nfvcommon.ComputeRunningState_STOPPED
 	}
 	// If VM is stopped by the user
 	for _, cond := range vmi.Status.Conditions {
 		if cond.Type == kubevirtv1.VirtualMachineInstancePaused {
-			return vivnfm.ComputeRunningState_PAUSED
+			return nfvcommon.ComputeRunningState_PAUSED
 		}
 	}
 	// If VM is in Terminating phase
 	if vm.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusTerminating {
-		return vivnfm.ComputeRunningState_TERMINATING
+		return nfvcommon.ComputeRunningState_TERMINATING
 	}
 	if vm.Status.Created && vm.Status.Ready && vmi.Status.Phase == kubevirtv1.Running {
-		return vivnfm.ComputeRunningState_RUNNING
+		return nfvcommon.ComputeRunningState_RUNNING
 	}
 	if vmi.Status.Phase == kubevirtv1.Pending || vmi.Status.Phase == kubevirtv1.Scheduling || vmi.Status.Phase == kubevirtv1.Scheduled {
-		return vivnfm.ComputeRunningState_STARTING
+		return nfvcommon.ComputeRunningState_STARTING
 	}
 	if vmi.Status.Phase == kubevirtv1.Failed {
-		return vivnfm.ComputeRunningState_FAILED
+		return nfvcommon.ComputeRunningState_FAILED
 	}
 	// TODO: Suspeneded
-	return vivnfm.ComputeRunningState_UNKNOWN
+	return nfvcommon.ComputeRunningState_UNKNOWN
 }
 
 func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfvcommon.Identifier, error) {
@@ -224,7 +224,6 @@ func getNetworkFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubev
 	}
 }
 
-
 // Returns the kubevirt interface with specified network name from the kubevirt domain spec or nil if not found.
 func getInterfaceFromDomainSpec(ifaceName string, domSpec *kubevirtv1.DomainSpec) (*kubevirtv1.Interface, error) {
 	if domSpec == nil {
@@ -275,15 +274,15 @@ func getInterfaceStatusFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineI
 	return nil, &apperrors.ErrNotFound{Entity: "interface", Identifier: ifaceName}
 }
 
-func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (vivnfm.TypeVirtualNic, error) {
+func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfvcommon.TypeVirtualNic, error) {
 	switch {
 	case method.Bridge != nil:
-		return vivnfm.TypeVirtualNic_BRIDGE, nil
+		return nfvcommon.TypeVirtualNic_BRIDGE, nil
 	case method.Masquerade != nil:
-		return vivnfm.TypeVirtualNic_BRIDGE, nil
+		return nfvcommon.TypeVirtualNic_BRIDGE, nil
 	case method.SRIOV != nil:
-		return vivnfm.TypeVirtualNic_SRIOV, nil
+		return nfvcommon.TypeVirtualNic_SRIOV, nil
 	default:
-		return vivnfm.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
+		return nfvcommon.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
 	}
 }

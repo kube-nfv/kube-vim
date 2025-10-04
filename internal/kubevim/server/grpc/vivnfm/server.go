@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -26,7 +26,6 @@ type ViVnfmServer struct {
 	NetworkMgr network.Manager
 	ComputeMgr compute.Manager
 }
-
 
 func (s *ViVnfmServer) QueryImages(ctx context.Context, req *vivnfm.QueryImagesRequest) (*vivnfm.QueryImagesResponse, error) {
 	res, err := s.ImageMgr.ListImages(ctx)
@@ -117,7 +116,7 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return nil, status.Error(codes.InvalidArgument, "networkResourceName can't be empty")
 	}
 	switch req.NetworkResourceType {
-	case vivnfm.NetworkResourceType_NETWORK:
+	case nfvcommon.NetworkResourceType_NETWORK:
 		if req.TypeNetworkData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field typeNetworkData can't be empty with Network resource type")
 		}
@@ -125,7 +124,7 @@ func (s *ViVnfmServer) AllocateVirtualisedNetworkResource(ctx context.Context, r
 		return &vivnfm.AllocateNetworkResponse{
 			NetworkData: net,
 		}, err
-	case vivnfm.NetworkResourceType_SUBNET:
+	case nfvcommon.NetworkResourceType_SUBNET:
 		if req.TypeSubnetData == nil {
 			return nil, status.Error(codes.InvalidArgument, "field TypeSubnetData can't be empty with Subnet resource type")
 		}
@@ -142,7 +141,7 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 		return nil, status.Error(codes.InvalidArgument, "queryNetworkRequest can't be empty")
 	}
 	switch req.NetworkResourceType {
-	case vivnfm.NetworkResourceType_NETWORK:
+	case nfvcommon.NetworkResourceType_NETWORK:
 		netLst, err := s.NetworkMgr.ListNetworks(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list networks: %w", err)
@@ -154,7 +153,7 @@ func (s *ViVnfmServer) QueryVirtualisedNetworkResource(ctx context.Context, req 
 		return &vivnfm.QueryNetworkResponse{
 			QueryNetworkResult: filtered,
 		}, nil
-	case vivnfm.NetworkResourceType_SUBNET:
+	case nfvcommon.NetworkResourceType_SUBNET:
 		subLst, err := s.NetworkMgr.ListSubnets(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list subnets: %w", err)

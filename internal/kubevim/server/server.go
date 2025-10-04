@@ -8,14 +8,13 @@ import (
 	"time"
 
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/server/grpc/vivnfm"
+	vivnfmserver "github.com/kube-nfv/kube-vim/internal/kubevim/server/grpc/vivnfm"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -65,7 +64,7 @@ func NewNorthboundServer(
 		log.Warn("No TLS configuration specified. Kubevim gRPC server will launch unsecure!")
 	}
 	server := grpc.NewServer(opts...)
-	vivnfm.RegisterViVnfmServer(server, &vivnfm.ViVnfmServer{
+	vivnfm.RegisterViVnfmServer(server, &vivnfmserver.ViVnfmServer{
 		ImageMgr:   imageMgr,
 		NetworkMgr: networkManager,
 		FlavourMgr: flavourManager,

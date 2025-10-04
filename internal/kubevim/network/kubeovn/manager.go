@@ -10,8 +10,8 @@ import (
 	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	ovn_client "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
@@ -45,14 +45,14 @@ func NewKubeovnNetworkManager(k8sConfig *rest.Config) (*manager, error) {
 }
 
 func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
-	if networkData.NetworkType == nil || *networkData.NetworkType == vivnfm.NetworkType_OVERLAY {
+	if networkData.NetworkType == nil || *networkData.NetworkType == nfvcommon.NetworkType_OVERLAY {
 		net, err := m.createOverlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create overlay network '%s': %w", name, err)
 		}
 		return net, nil
 	}
-	if *networkData.NetworkType == vivnfm.NetworkType_UNDERLAY {
+	if *networkData.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 		net, err := m.createUnderlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create underlay network '%s': %w", name, err)
@@ -283,11 +283,11 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 			return fmt.Errorf("delete network subnet with id '%s': %w", subnetId.Value, err)
 		}
 	}
-	if net.NetworkType == vivnfm.NetworkType_OVERLAY {
+	if net.NetworkType == nfvcommon.NetworkType_OVERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vpc '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
-	} else if net.NetworkType == vivnfm.NetworkType_UNDERLAY {
+	} else if net.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vlans().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vlan '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
@@ -320,10 +320,10 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 	}
 
 	if vnet != nil && vnet.NetworkResourceName != nil {
-		if vnet.NetworkType == vivnfm.NetworkType_OVERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_OVERLAY {
 			subnet.Spec.Vpc = *vnet.NetworkResourceName
 		}
-		if vnet.NetworkType == vivnfm.NetworkType_UNDERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 			subnet.Spec.Vlan = *vnet.NetworkResourceName
 		}
 		subnet.Labels[network.K8sNetworkNameLabel] = *vnet.NetworkResourceName
