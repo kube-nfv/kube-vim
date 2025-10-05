@@ -10,12 +10,14 @@ import (
 	"sync"
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
 type manager struct {
+	admin.UnimplementedAdminServer
 	location string
 	lock     sync.Mutex
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -28,6 +29,8 @@ var (
 // http(s) endpoints. Uploaded image should be able to stored either in pvc or in the
 // kubevirt datavolume.
 type manager struct {
+	admin.UnimplementedAdminServer
+
 	cdiCtrl *image.CdiController
 }
 

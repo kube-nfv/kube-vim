@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/dmalovan/Dev/github.com/kube-nfv/kube-vim-api/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

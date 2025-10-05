@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	admin "github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -70,6 +71,7 @@ func NewNorthboundServer(
 		FlavourMgr: flavourManager,
 		ComputeMgr: computeManager,
 	})
+	admin.RegisterAdminServer(server, imageMgr)
 	reflection.Register(server)
 	return &NorthboundServer{
 		server: server,

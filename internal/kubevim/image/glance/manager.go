@@ -13,6 +13,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -21,6 +22,7 @@ import (
 // Image manager for glance image storage
 // Glance image manager uses global lock to protect shared resources (TODO: Rewrite with lock-free API)
 type manager struct {
+	admin.UnimplementedAdminServer
 	glanceServiceClient *gophercloud.ServiceClient
 
 	lock sync.Mutex

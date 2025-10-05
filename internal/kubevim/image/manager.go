@@ -3,6 +3,7 @@ package image
 import (
 	"context"
 	"fmt"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
@@ -18,6 +19,10 @@ const (
 )
 
 type Manager interface {
+	// Admin Api
+	admin.AdminServer
+
+	// NFV Api
 	GetImage(context.Context, *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error)
 	ListImages(context.Context) ([]*vivnfm.SoftwareImageInformation, error)
 }
