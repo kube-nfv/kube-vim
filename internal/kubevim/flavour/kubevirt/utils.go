@@ -11,7 +11,6 @@ import (
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/misc"
-	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/api/instancetype/v1beta1"
@@ -36,15 +35,14 @@ func kubeVirtInstanceTypePreferencesFromNfvFlavour(flavorId string, nfvFlavour *
 	vmInstTypeSpec.CPU = v1beta1.CPUInstancetype{
 		Guest: nfvFlavour.VirtualCpu.NumVirtualCpu,
 	}
-	if nfvFlavour.VirtualMemory.VirtualMemSize == 0 {
-		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual memory size", Reason: "cannot be 0"}
+	if nfvFlavour.VirtualMemory.VirtualMemSize == nil {
+		return nil, nil, &apperrors.ErrInvalidArgument{Field: "virtual memory size", Reason: "cannot be nil"}
 	}
-	memQ := *resource.NewQuantity(int64(nfvFlavour.VirtualMemory.VirtualMemSize)*1024*1024, resource.BinarySI)
 
 	vmInstTypeSpec.Memory = v1beta1.MemoryInstancetype{
-		Guest: memQ,
+		Guest: *nfvFlavour.VirtualMemory.VirtualMemSize,
 	}
-	// Temporary solution is to store serialized flavour volumes in the VirtualMachineInstancetype resource anno
+	// Temporary solution is to store serialized flavour volumes in the VirtualMachineInstancetype resource annotation
 	volumesJson, err := json.Marshal(nfvFlavour.StorageAttributes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal storage attributes for flavour '%s': %w", flavorId, err)
@@ -86,10 +84,10 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 		return nil, &apperrors.ErrInvalidArgument{Field: "VirtualMachineInstancetype", Reason: "cannot be nil"}
 	}
 	if !misc.IsObjectInstantiated(instType) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype"}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype", Identifier: instType.Name}
 	}
 	if pref != nil && !misc.IsObjectInstantiated(pref) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachinePreference"}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachinePreference", Identifier: pref.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(instType) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachineInstancetype", ObjectName: instType.GetName(), ObjectId: string(instType.GetUID())}
@@ -99,7 +97,7 @@ func nfvFlavourFromKubeVirtInstanceTypePreferences(flavourId string, instType *v
 	}
 	virtualMem := &vivnfm.VirtualMemoryData{
 		// Translate memory to the MiB
-		VirtualMemSize: float32(instType.Spec.Memory.Guest.Value()) / (1024 * 1024),
+		VirtualMemSize: &instType.Spec.Memory.Guest,
 	}
 
 	virtualCpu := &vivnfm.VirtualCpuData{

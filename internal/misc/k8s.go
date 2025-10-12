@@ -2,6 +2,7 @@ package misc
 
 import (
 	"io"
+	"time"
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	common "github.com/kube-nfv/kube-vim/internal/config"
@@ -43,4 +44,21 @@ func DumpObjectAsJSON(obj runtime.Object, out io.Writer) error {
 
 func ConvertK8sTimeToProtoTimestamp(t metav1.Time) *timestamppb.Timestamp {
 	return timestamppb.New(t.Time)
+}
+
+func GetCreationTimestamp(obj metav1.Object) time.Time {
+	return obj.GetCreationTimestamp().Time
+}
+
+func GetLastUpdateTime(obj metav1.Object) *time.Time {
+	var latest *time.Time
+	for _, field := range obj.GetManagedFields() {
+		if field.Time != nil {
+			if latest == nil || field.Time.After(*latest) {
+				t := field.Time.Time
+				latest = &t
+			}
+		}
+	}
+	return latest
 }

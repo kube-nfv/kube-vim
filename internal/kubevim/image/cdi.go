@@ -326,7 +326,7 @@ func GetDvs() {
 
 }
 
-func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType, error) {
+func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil
@@ -336,7 +336,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType,
 	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }
 
-func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (sourceType, error) {
+func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (SourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil

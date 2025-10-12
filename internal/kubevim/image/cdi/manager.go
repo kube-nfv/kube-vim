@@ -26,11 +26,11 @@ const (
 	CDIVolumeImportSourceKind = "VolumeImportSource"
 
 	K8sDataVolumeIdLabel = "cdi.image.kubevim.kubenfv.io/data-volume-id"
+	K8sDataVolumePhase   = "cdi.image.kubevim.kubenfv.io/data-volume-phase"
 )
 
 var (
-	// 10 Gib Image size
-	defaultImageSize = resource.NewQuantity(10*1024*1024*1024, resource.BinarySI)
+	defaultImageSize = resource.MustParse("10Gi")
 )
 
 type cdiManager struct {
@@ -61,12 +61,63 @@ func NewCDIImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig) (*cdiMa
 }
 
 func (m *cdiManager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error) {
+	if id == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "id", Reason: "can't be nil"}
+	}
+	images, err := m.cdiClient.CdiV1beta1().VolumeImportSources(common.KubeNfvDefaultNamespace).List(ctx, v1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list CDI VolumeImportSources: %w", err)
+	}
+	var imageVis *v1beta1.VolumeImportSource = nil
+	for _, image := range images.Items {
+		if misc.IdentifierToUID(id) == image.GetUID() {
+			imageVis = &image
+			break
+		}
+	}
+	if imageVis == nil {
+		return nil, &apperrors.ErrNotFound{Entity: "software image", Identifier: id.Value}
+	}
+	imgName := imageVis.Name
+	dv, err := m.cdiClient.CdiV1beta1().DataVolumes(common.KubeNfvDefaultNamespace).Get(ctx, imgName, v1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get CDI DataVolume from image '%s' (id: %s): %w", imgName, id.Value, err)
+	}
 
-	return nil, nil
+	nfvImg, err := nfvImageFromCdiDataVolumeVis(dv, imageVis)
+	if err != nil {
+		return nil, fmt.Errorf("convert CDI DataVolume and VolumeImportSource to NFV SoftwareImageInformation from image '%s' (id: %s): %w", imgName, id.Value, err)
+	}
+	return nfvImg, nil
 }
 
 func (m *cdiManager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInformation, error) {
-	return nil, nil
+	images, err := m.cdiClient.CdiV1beta1().VolumeImportSources(common.KubeNfvDefaultNamespace).List(ctx, v1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list CDI VolumeImportSources: %w", err)
+	}
+	dataVolumes, err := m.cdiClient.CdiV1beta1().DataVolumes(common.KubeNfvDefaultNamespace).List(ctx, v1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list CDI DataVolumes: %w", err)
+	}
+	dataVolumesIdx := make(map[string]*v1beta1.DataVolume)
+	for idx := range dataVolumes.Items {
+		dvRef := &dataVolumes.Items[idx]
+		dataVolumesIdx[dvRef.Name] = dvRef
+	}
+	res := make([]*vivnfm.SoftwareImageInformation, 0, len(images.Items))
+	for _, img := range images.Items {
+		imgDv, ok := dataVolumesIdx[img.Name]
+		if !ok {
+			continue;
+		}
+		nfvImg, err := nfvImageFromCdiDataVolumeVis(imgDv, &img)
+		if err != nil {
+			continue
+		}
+		res = append(res, nfvImg)
+	}
+	return res, nil
 }
 
 func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImageRequest) (*admin.DownloadImageResponse, error) {
@@ -100,18 +151,19 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 	imageId := misc.UIDToIdentifier(visInst.GetUID())
 
 	// Return non-instantiated image if LazyDownload option presents
-	if req.Options == nil || (req.Options.LazyDownload != nil && *req.Options.LazyDownload == true) {
+	if req.Options != nil && (req.Options.LazyDownload != nil && *req.Options.LazyDownload == true) {
 		return &admin.DownloadImageResponse{
 			ImageId: imageId,
 		}, nil
 	}
 	// Create DataVolume from VolumeImportSource
 	storageClassName := *m.cfg.StorageClass
-	if req.Options.StorageClass != nil && *req.Options.StorageClass != "" {
+	if req.Options != nil && (req.Options.StorageClass != nil && *req.Options.StorageClass != "") {
 		storageClassName = *req.Options.StorageClass
 	}
 	storageClass, err := getStorageClass(ctx, storageClassName, m.k8sClient)
 	if err != nil {
+		cleanupVolumeImportSource()
 		return nil, fmt.Errorf("get storageClass: %w", err)
 	}
 	dvAnnotations := make(map[string]string)
@@ -121,12 +173,13 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 
 	imageSize := defaultImageSize
 	// TODO: Add ImageSize pre-population.
-	if req.Options.StorageSize != nil {
+	if req.Options != nil && req.Options.StorageSize != nil {
 		reqSize, err := resource.ParseQuantity(*req.Options.StorageSize)
 		if err == nil {
-			imageSize = &reqSize
+			imageSize = reqSize
 		}
 	}
+	imageSize.Format = resource.BinarySI
 
 	dataVolume := v1beta1.DataVolume{
 		ObjectMeta: v1.ObjectMeta{
@@ -151,7 +204,7 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 				},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: *imageSize,
+						corev1.ResourceStorage: imageSize,
 					},
 				},
 			},

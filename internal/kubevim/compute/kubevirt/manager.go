@@ -17,12 +17,12 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
-	corev1 "k8s.io/api/core/v1"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/rest"
+	corev1 "k8s.io/api/core/v1"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	kubevirt "kubevirt.io/client-go/kubevirt"
@@ -136,30 +136,11 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	if err != nil {
 		return nil, fmt.Errorf("get image '%s': %w", req.GetVcImageId(), err)
 	}
-	dv, err := initImageDataVolume(imgInfo, req.GetComputeName())
+	dvs, err := initImageDataVolumes(imgInfo, flav.StorageAttributes, req.GetComputeName())
 	if err != nil {
 		return nil, fmt.Errorf("initialize kubevirt data volume: %w", err)
 	}
-	volumes := []kubevirtv1.Volume{
-		{
-			Name: KubevirtVmMgmtRootVolumeName,
-			VolumeSource: kubevirtv1.VolumeSource{
-				DataVolume: &kubevirtv1.DataVolumeSource{
-					Name: dv.Name,
-				},
-			},
-		},
-	}
-	disks := []kubevirtv1.Disk{
-		{
-			Name: KubevirtVmMgmtRootVolumeName,
-			DiskDevice: kubevirtv1.DiskDevice{
-				Disk: &kubevirtv1.DiskTarget{
-					Bus: "virtio",
-				},
-			},
-		},
-	}
+	volumes, disks := initVolumesDisksFromDataVolumes(dvs)
 
 	if req.UserData != nil {
 		volume, disk, err := initUserDataVolume(req.GetUserData())
@@ -202,7 +183,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 			},
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
-			DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{*dv},
+			DataVolumeTemplates: dvs,
 			Instancetype:        instanceTypeMatcher,
 			Preference:          preferenceMatcher,
 			RunStrategy:         &runStrategy,
@@ -340,46 +321,102 @@ func initVmPreferenceMatcher(preferenceName string) (*kubevirtv1.PreferenceMatch
 	}, nil
 }
 
-func initImageDataVolume(imageInfo *vivnfm.SoftwareImageInformation, vmName string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
+func initVolumesDisksFromDataVolumes(dvs []kubevirtv1.DataVolumeTemplateSpec) ([]kubevirtv1.Volume, []kubevirtv1.Disk) {
+	volumes := make([]kubevirtv1.Volume, 0, len(dvs))
+	disks := make([]kubevirtv1.Disk, 0, len(dvs))
+	for _, dv := range dvs {
+		volumes = append(volumes, kubevirtv1.Volume{
+			Name: dv.Name,
+			VolumeSource: kubevirtv1.VolumeSource{
+				DataVolume: &kubevirtv1.DataVolumeSource{
+					Name: dv.Name,
+				},
+			},
+		})
+		disks = append(disks, kubevirtv1.Disk{
+			Name: dv.Name,
+			DiskDevice: kubevirtv1.DiskDevice{
+				Disk: &kubevirtv1.DiskTarget{
+					Bus: "virtio",
+				},
+			},
+		})
+	}
+	return volumes, disks
+}
+
+func initImageDataVolumes(imageInfo *vivnfm.SoftwareImageInformation, storageAttributes []*vivnfm.VirtualStorageData, vmName string) ([]kubevirtv1.DataVolumeTemplateSpec, error) {
+	// Init bootable disk.
+	var bootableStorageAttr *vivnfm.VirtualStorageData = nil
+	for _, storageAttr := range storageAttributes {
+		if storageAttr.IsBoot != nil && *storageAttr.IsBoot == true {
+			if bootableStorageAttr != nil {
+				return nil, fmt.Errorf("more than one bootable storageAttributes specified: %w", apperrors.ErrUnsupported)
+			}
+			bootableStorageAttr = storageAttr
+		}
+	}
+	if bootableStorageAttr == nil {
+		return nil, fmt.Errorf("storage attributes not found for bootable disk: %w", apperrors.ErrUnsupported)
+	}
+	// TODO: For now only bootable disk attached supported
+	bootDv, err := initImageBootableDataVolume(imageInfo, bootableStorageAttr, vmName)
+	if err != nil {
+		return nil, fmt.Errorf("initialize bootable CDI DataVolume for vm %s: %w", vmName, err)
+	}
+	return []kubevirtv1.DataVolumeTemplateSpec{*bootDv}, nil
+}
+
+func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, bootableAttributes *vivnfm.VirtualStorageData, vmName string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
 	if imageInfo == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "software image info", Reason: "cannot be nil"}
 	}
 	if imageInfo.Name == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "software image name", Reason: "cannot be empty"}
 	}
-	// Note(dmalovan): vmName/imageName pair should be unique
-	dvName := fmt.Sprintf("%s-%s-dv", vmName, imageInfo.Name)
-	if imageInfo.Size == nil || imageInfo.GetSize().Equal(*resource.NewQuantity(0, resource.BinarySI)) {
-		return nil, &apperrors.ErrInvalidArgument{Field: "software image size", Reason: "cannot be zero"}
+	if imageInfo.Status != "ready" {
+		return nil, fmt.Errorf("image %s (id: %s) not ready (actual state: %s): %w", imageInfo.Name, imageInfo.SoftwareImageId.Value, imageInfo.Status, apperrors.ErrInternal)
+	}
+	if bootableAttributes == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "storage attributes for bootable disk", Reason: "can't be nil"}
 	}
 
+	zeroQ := resource.NewQuantity(0, resource.BinarySI)
+	if imageInfo.Size == nil || imageInfo.GetSize().Equal(*zeroQ) {
+		return nil, &apperrors.ErrInvalidArgument{Field: "software image size", Reason: "cannot be zero"}
+	}
+	if bootableAttributes.SizeOfStorage == nil || bootableAttributes.SizeOfStorage.Equal(*zeroQ){
+		return nil, &apperrors.ErrInvalidArgument{Field: "size of bootable disk", Reason: "cannot be zero"}
+	}
+	if imageInfo.GetSize().Cmp(*bootableAttributes.SizeOfStorage) == 1 {
+		return nil, &apperrors.ErrInvalidArgument{Field: "size of bootable disk", Reason: "can't be less that image size"}
+	}
+
+	dvName := fmt.Sprintf("%s-boot-dv", vmName)
 	return &kubevirtv1.DataVolumeTemplateSpec{
 		ObjectMeta: v1.ObjectMeta{
 			Name: dvName,
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
-			},
-			Annotations: map[string]string{
-				// Explicitly set the label to use the pvc population by the DV.
-				"cdi.kubevirt.io/storage.usePopulator": "true",
+				image.K8sImageIdLabel: imageInfo.SoftwareImageId.GetValue(),
 			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
-			PVC: &corev1.PersistentVolumeClaimSpec{
-				DataSourceRef: &corev1.TypedObjectReference{
-					APIGroup: &v1beta1.CDIGroupVersionKind.Group,
-					Kind:     KubevirtVolumeImportSourceKind,
-					Name:     imageInfo.Name,
+			Source: &v1beta1.DataVolumeSource{
+				PVC: &v1beta1.DataVolumeSourcePVC{
+					Namespace: common.KubeNfvDefaultNamespace,
+					Name: imageInfo.Name,
 				},
-				AccessModes: []corev1.PersistentVolumeAccessMode{
-					// TODO: Temporary solution to make only readWriteOnce data volumes.
-					// Rewrite this with identifying accessmode from the storage class
-					corev1.ReadWriteOnce,
-				},
+			},
+			Storage: &v1beta1.StorageSpec{
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: *imageInfo.GetSize(),
+						corev1.ResourceStorage: *bootableAttributes.SizeOfStorage,
 					},
+				},
+				AccessModes: []corev1.PersistentVolumeAccessMode{
+					// TODO: Temporary solution to make it works with ReadWriteOnce sc.
+					corev1.ReadWriteOnce,
 				},
 			},
 		},

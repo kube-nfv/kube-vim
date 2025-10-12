@@ -3,9 +3,15 @@ package cdi
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/kube-nfv/kube-vim-api/pkg/apis"
 	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
+	"github.com/kube-nfv/kube-vim/internal/misc"
+	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -78,4 +84,85 @@ func getStorageClass(ctx context.Context, name string, clientset *kubernetes.Cli
 	}
 
 	return nil, &apperrors.ErrNotFound{Entity: "storageClass", Identifier: "default"}
+}
+
+func nfvImageFromCdiDataVolumeVis(dv *v1beta1.DataVolume, vis *v1beta1.VolumeImportSource) (*vivnfm.SoftwareImageInformation, error) {
+	if dv == nil || vis == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "dataVolume or volumeImportSource", Reason: "can't be nil"}
+	}
+	if !misc.IsObjectInstantiated(dv) {
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: dv.Kind, Identifier: dv.Name}
+	}
+	if !misc.IsObjectInstantiated(vis) {
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vis.Kind, Identifier: vis.Name}
+	}
+	if !misc.IsObjectManagedByKubeNfv(dv) {
+		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: dv.Kind, ObjectName: dv.Name, ObjectId: string(dv.GetUID())}
+	}
+	if !misc.IsObjectManagedByKubeNfv(vis) {
+		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: vis.Kind, ObjectName: vis.Name, ObjectId: string(vis.GetUID())}
+	}
+
+	imgId := misc.UIDToIdentifier(vis.GetUID())
+	imgName := vis.GetName()
+	srcTypeName, err := sourceNameFromImportSourceType(vis.Spec.Source)
+	if err != nil {
+		return nil, fmt.Errorf("get sourceName from ImportSourceType: %w", err)
+	}
+
+	metadata := map[string]string{
+		image.K8sImageIdLabel: imgId.GetValue(),
+		image.K8sSourceLabel: string(srcTypeName),
+		K8sDataVolumeIdLabel: string(dv.GetUID()),
+		K8sDataVolumePhase: string(dv.Status.Phase),
+	}
+
+	for _, dvCond := range dv.Status.Conditions {
+		switch dvCond.Type {
+		case v1beta1.DataVolumeBound:
+			if dvCond.Status == v1.ConditionTrue {
+				metadata[image.K8sIsImageBoundToPvc] = "true"
+			} else {
+				metadata[image.K8sIsImageBoundToPvc] = "false"
+			}
+		}
+	}
+	crtTime := misc.ConvertToProtoTimestamp(misc.GetCreationTimestamp(vis))
+	updtTime := crtTime
+	lstUpdtTime := misc.GetLastUpdateTime(dv)
+	if lstUpdtTime != nil {
+		updtTime = misc.ConvertToProtoTimestamp(*lstUpdtTime)
+	}
+
+	// TODO: For now each image is uploaded
+	isUploaded := true
+	status := "ready"
+
+	metadata[image.K8sIsUploadLabel] = strconv.FormatBool(isUploaded)
+
+	res := &vivnfm.SoftwareImageInformation{
+		SoftwareImageId: imgId,
+		Name: imgName,
+		CreatedAt: crtTime,
+		UpdatedAt: updtTime,
+		Size: dv.Spec.Storage.Resources.Requests.Storage(),
+		Status: status,
+		Metadata: &apis.Metadata{
+			Fields: metadata,
+		},
+	}
+	return res, nil
+}
+
+func sourceNameFromImportSourceType(source *v1beta1.ImportSourceType) (image.SourceType, error) {
+	if source == nil {
+		return "", &apperrors.ErrInvalidArgument{Field: "source", Reason: "can't be nil"}
+	}
+	if source.HTTP != nil {
+		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
+			return image.HTTPS, nil
+		}
+		return image.HTTP, nil
+	}
+	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }

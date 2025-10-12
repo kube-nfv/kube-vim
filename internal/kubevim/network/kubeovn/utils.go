@@ -46,7 +46,7 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfvcommon.Identifie
 		return nil, &apperrors.ErrInvalidArgument{Field: "vpc name", Reason: "cannot be empty"}
 	}
 	if !misc.IsObjectInstantiated(vpc) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vpc.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vpc.Kind, Identifier: vpc.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(vpc) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
@@ -79,7 +79,7 @@ func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfvcommon.Identi
 		return nil, &apperrors.ErrInvalidArgument{Field: "vlan name", Reason: "cannot be empty"}
 	}
 	if !misc.IsObjectInstantiated(vlan) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vlan.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vlan.Kind, Identifier: vlan.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(vlan) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
@@ -239,7 +239,7 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*vivnfm.Ne
 		return nil, &apperrors.ErrInvalidArgument{Field: "subnet", Reason: "cannot be nil"}
 	}
 	if !misc.IsObjectInstantiated(kubeovnSub) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: kubeovnSub.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: kubeovnSub.Kind, Identifier: kubeovnSub.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
