@@ -44,6 +44,9 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 	if errors.Is(err, ErrUnsupported) {
 		return status.Error(codes.Unimplemented, err.Error())
 	}
+	if errors.Is(err, ErrInternal) {
+		return status.Error(codes.Internal, err.Error())
+	}
 
 	// Return nil if this is not a common error (let other converters handle it)
 	return nil

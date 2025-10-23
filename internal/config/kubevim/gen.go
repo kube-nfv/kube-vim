@@ -38,6 +38,9 @@ type ImageConfig struct {
 
 	// Local Configuration for Local image provider.
 	Local *LocalImageConfig `json:"local,omitempty"`
+
+	// StorageClass Kubernetes StorageClass for software image PVCs. By default 'default' storageClass will be used
+	StorageClass *string `json:"storageClass,omitempty"`
 }
 
 // K8sConfig Configuration related to Kubernetes operations.

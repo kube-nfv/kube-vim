@@ -5,7 +5,8 @@ import (
 	"net"
 
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
@@ -13,7 +14,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func kubeovnVpcFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (*kubeovnv1.Vpc, error) {
+func kubeovnVpcFromNfvNetworkData(name string, nfvNet *vivnfm.VirtualNetworkData) (*kubeovnv1.Vpc, error) {
 	if len(name) == 0 {
 		return nil, &apperrors.ErrInvalidArgument{Field: "name", Reason: "cannot be empty"}
 	}
@@ -32,7 +33,7 @@ func kubeovnVpcFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (
 	return res, nil
 }
 
-func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfv.Identifier) (*nfv.VirtualNetwork, error) {
+func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfvcommon.Identifier) (*vivnfm.VirtualNetwork, error) {
 	if vpc == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "vpc", Reason: "cannot be nil"}
 	}
@@ -45,7 +46,7 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfv.Identifier) (*n
 		return nil, &apperrors.ErrInvalidArgument{Field: "vpc name", Reason: "cannot be empty"}
 	}
 	if !misc.IsObjectInstantiated(vpc) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vpc.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vpc.Kind, Identifier: vpc.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(vpc) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
@@ -54,18 +55,18 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfv.Identifier) (*n
 			ObjectId:   string(vpc.GetUID()),
 		}
 	}
-	return &nfv.VirtualNetwork{
+	return &vivnfm.VirtualNetwork{
 		NetworkResourceId:   misc.UIDToIdentifier(uid),
 		NetworkResourceName: &name,
 		SubnetId:            subnetIds,
 		Bandwidth:           0,
-		NetworkType:         nfv.NetworkType_OVERLAY,
+		NetworkType:         nfvcommon.NetworkType_OVERLAY,
 		IsShared:            false,
-		OperationalState:    nfv.OperationalState_ENABLED,
+		OperationalState:    nfvcommon.OperationalState_ENABLED,
 	}, nil
 }
 
-func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfv.Identifier) (*nfv.VirtualNetwork, error) {
+func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfvcommon.Identifier) (*vivnfm.VirtualNetwork, error) {
 	if vlan == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "vlan", Reason: "cannot be nil"}
 	}
@@ -78,7 +79,7 @@ func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfv.Identifier) 
 		return nil, &apperrors.ErrInvalidArgument{Field: "vlan name", Reason: "cannot be empty"}
 	}
 	if !misc.IsObjectInstantiated(vlan) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vlan.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vlan.Kind, Identifier: vlan.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(vlan) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
@@ -89,28 +90,28 @@ func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfv.Identifier) 
 	}
 	segmentationId := uint64(vlan.Spec.ID)
 
-	return &nfv.VirtualNetwork{
+	return &vivnfm.VirtualNetwork{
 		NetworkResourceId:   misc.UIDToIdentifier(uid),
 		NetworkResourceName: &name,
 		SubnetId:            subnetIds,
 		Bandwidth:           0,
-		NetworkType:         nfv.NetworkType_UNDERLAY,
+		NetworkType:         nfvcommon.NetworkType_UNDERLAY,
 		IsShared:            false,
 		ProviderNetwork:     &vlan.Spec.Provider,
 		SegmentationId:      &segmentationId,
-		OperationalState:    nfv.OperationalState_ENABLED,
+		OperationalState:    nfvcommon.OperationalState_ENABLED,
 	}, nil
 
 }
 
-func kubeovnVlanFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) (*kubeovnv1.Vlan, error) {
+func kubeovnVlanFromNfvNetworkData(name string, nfvNet *vivnfm.VirtualNetworkData) (*kubeovnv1.Vlan, error) {
 	if len(name) == 0 {
 		return nil, &apperrors.ErrInvalidArgument{Field: "name", Reason: "cannot be empty"}
 	}
 	if nfvNet == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "network data", Reason: "cannot be nil"}
 	}
-	if nfvNet.GetNetworkType() != nfv.NetworkType_UNDERLAY {
+	if nfvNet.GetNetworkType() != nfvcommon.NetworkType_UNDERLAY {
 		return nil, fmt.Errorf("vlan construction for network type '%s': %w", nfvNet.GetNetworkType(), apperrors.ErrUnsupported)
 	}
 	if nfvNet.ProviderNetwork == nil || *nfvNet.ProviderNetwork == "" {
@@ -136,39 +137,39 @@ func kubeovnVlanFromNfvNetworkData(name string, nfvNet *nfv.VirtualNetworkData) 
 	return res, nil
 }
 
-// Returns kubeovn IP version string representation of the nfv.IPVersion enum or
+// Returns kubeovn IP version string representation of the nfvcommon.IPVersion enum or
 // error if it is contains unexpected data.
 //
 // Kubeovn IPVersion string MUST be one of the: IPv4, IPv6 or Dual
 // Note(dmalovan): Dual IPVersion is not yet supported.
-func kubeovnIpVersionFromNfv(ipVersion *nfv.IPVersion) (string, error) {
+func kubeovnIpVersionFromNfv(ipVersion *nfvcommon.IPVersion) (string, error) {
 	if ipVersion == nil {
 		return "", &apperrors.ErrInvalidArgument{Field: "ip version", Reason: "not specified"}
 	}
 	switch *ipVersion {
-	case nfv.IPVersion_IPV4:
+	case nfvcommon.IPVersion_IPV4:
 		return "IPv4", nil
-	case nfv.IPVersion_IPV6:
+	case nfvcommon.IPVersion_IPV6:
 		return "IPv6", nil
 	default:
 		return "", fmt.Errorf("unsupported ip version '%v': %w", *ipVersion, apperrors.ErrUnsupported)
 	}
 }
 
-// Returns nfv.IpVersion enum representation of the kubeovn IP version string or
+// Returns vivnfm.IpVersion enum representation of the kubeovn IP version string or
 // error if it is contains unexpected data.
 //
 // Kubeovn IPVersion string MUST be one of the: IPv4, IPv6 or Dual
 // Note(dmalovan): Dual IPVersion is not yet supported.
-func nfvIpversionFromKubeovn(ipVersion string) (*nfv.IPVersion, error) {
+func nfvIpversionFromKubeovn(ipVersion string) (*nfvcommon.IPVersion, error) {
 	if ipVersion == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "ip version", Reason: "not specified"}
 	}
 	switch ipVersion {
 	case "IPv4":
-		return nfv.IPVersion_IPV4.Enum(), nil
+		return nfvcommon.IPVersion_IPV4.Enum(), nil
 	case "IPv6":
-		return nfv.IPVersion_IPV6.Enum(), nil
+		return nfvcommon.IPVersion_IPV6.Enum(), nil
 	default:
 		return nil, fmt.Errorf("unsupported ip version '%s': %w", ipVersion, apperrors.ErrUnsupported)
 	}
@@ -176,7 +177,7 @@ func nfvIpversionFromKubeovn(ipVersion string) (*nfv.IPVersion, error) {
 
 // Returns the kubeovn Subnet k8s object or error if convertation from the
 // NetworkSubnetData structure failed.
-func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetData) (*kubeovnv1.Subnet, error) {
+func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *vivnfm.NetworkSubnetData) (*kubeovnv1.Subnet, error) {
 	if len(name) == 0 {
 		return nil, &apperrors.ErrInvalidArgument{Field: "name", Reason: "cannot be empty"}
 	}
@@ -231,14 +232,14 @@ func kubeovnSubnetFromNfvSubnetData(name string, nfvSubnet *nfv.NetworkSubnetDat
 	return sub, nil
 }
 
-// Converts the instantiated kubeovn Subnet resource to the nfv.NetworkSubnet.
+// Converts the instantiated kubeovn Subnet resource to the vivnfm.NetworkSubnet.
 // TODO(dmalovan): Add address pool if it is exists
-func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.NetworkSubnet, error) {
+func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*vivnfm.NetworkSubnet, error) {
 	if kubeovnSub == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "subnet", Reason: "cannot be nil"}
 	}
 	if !misc.IsObjectInstantiated(kubeovnSub) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: kubeovnSub.Kind}
+		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: kubeovnSub.Kind, Identifier: kubeovnSub.Name}
 	}
 	if !misc.IsObjectManagedByKubeNfv(kubeovnSub) {
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{
@@ -248,9 +249,9 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
 		}
 	}
 
-	var optNetworkId *nfv.Identifier
+	var optNetworkId *nfvcommon.Identifier
 	if networkId, ok := kubeovnSub.Labels[network.K8sNetworkIdLabel]; ok && networkId != "" {
-		optNetworkId = &nfv.Identifier{
+		optNetworkId = &nfvcommon.Identifier{
 			Value: networkId,
 		}
 	}
@@ -258,18 +259,18 @@ func nfvNetworkSubnetFromKubeovnSubnet(kubeovnSub *kubeovnv1.Subnet) (*nfv.Netwo
 	if err != nil {
 		return nil, fmt.Errorf("convert ip protocol from kubeovn resource spec: %w", err)
 	}
-	return &nfv.NetworkSubnet{
+	return &vivnfm.NetworkSubnet{
 		ResourceId: misc.UIDToIdentifier(kubeovnSub.UID),
 		NetworkId:  optNetworkId,
 		IpVersion:  *ipVersion,
-		GatewayIp: &nfv.IPAddress{
+		GatewayIp: &nfvcommon.IPAddress{
 			Ip: kubeovnSub.Spec.Gateway,
 		},
-		Cidr: &nfv.IPSubnetCIDR{
+		Cidr: &nfvcommon.IPSubnetCIDR{
 			Cidr: kubeovnSub.Spec.CIDRBlock,
 		},
 		IsDhcpEnabled: kubeovnSub.Spec.EnableDHCP,
-		Metadata: &nfv.Metadata{
+		Metadata: &nfvcommon.Metadata{
 			Fields: kubeovnSub.Labels,
 		},
 	}, nil

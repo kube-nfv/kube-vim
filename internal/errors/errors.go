@@ -9,6 +9,7 @@ import (
 var (
 	ErrNotImplemented = errors.New("not implemented")
 	ErrUnsupported    = errors.New("unsupported")
+	ErrInternal       = errors.New("internal")
 )
 
 // Typed errors for cases that benefit from carrying additional fields
@@ -68,10 +69,14 @@ func (e *ErrPermissionDenied) Error() string {
 // ErrK8sObjectNotInstantiated indicates that the object is not from Kubernetes
 type ErrK8sObjectNotInstantiated struct {
 	ObjectType string
+	Identifier string
 }
 
 func (e *ErrK8sObjectNotInstantiated) Error() string {
-	return fmt.Sprintf("%s is not from Kubernetes (likely created manually)", e.ObjectType)
+	if e.Identifier == "" {
+		e.Identifier = "unknown"
+	}
+	return fmt.Sprintf("%s (id: %s) is not from Kubernetes (likely created manually)", e.ObjectType, e.Identifier)
 }
 
 // ErrK8sObjectNotManagedByKubeNfv indicates that the object was not created by kube-nfv
