@@ -38,7 +38,7 @@ func NewKubeVimGateway(cfg *config.Config, logger *zap.Logger) (*kubeVimGateway,
 }
 
 func (g *kubeVimGateway) Start(ctx context.Context) error {
-	connAddr := fmt.Sprintf("%s:%d", *g.cfg.Kubevim.Ip, *g.cfg.Kubevim.Port)
+	connAddr := *g.cfg.Kubevim.Url
 	opts := []grpc.DialOption{
 		// Add connection backoff configuration
 		grpc.WithConnectParams(grpc.ConnectParams{

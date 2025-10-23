@@ -1,0 +1,22 @@
+{{- if and .Values.gateway.enabled .Values.gateway.service.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-vim.gateway.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.gateway.labels" . | nindent 4 }}
+  {{- with .Values.gateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  ports:
+    - port: {{ .Values.gateway.service.port | default .Values.gateway.config.service.server.port }}
+      targetPort: {{ .Values.gateway.service.targetPort | default .Values.gateway.config.service.server.port }}
+      protocol: TCP
+      name: {{ .Values.gateway.service.portName }}
+  selector:
+    {{- include "kube-vim.gateway.selectorLabels" . | nindent 4 }}
+{{- end }}

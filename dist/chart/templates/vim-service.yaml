@@ -1,0 +1,22 @@
+{{- if and .Values.vim.enabled .Values.vim.service.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-vim.vim.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.vim.labels" . | nindent 4 }}
+  {{- with .Values.vim.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.vim.service.type }}
+  ports:
+    - port: {{ .Values.vim.service.port | default .Values.vim.config.service.server.port }}
+      targetPort: {{ .Values.vim.service.targetPort | default .Values.vim.config.service.server.port }}
+      protocol: TCP
+      name: {{ .Values.vim.service.portName }}
+  selector:
+    {{- include "kube-vim.vim.selectorLabels" . | nindent 4 }}
+{{- end }}

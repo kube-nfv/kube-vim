@@ -1,0 +1,50 @@
+{{- if .Values.rbac.create -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-vim.name" . }}-network-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-vim.name" . }}-network-manager
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kube-vim.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-vim.name" . }}-compute-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-vim.name" . }}-compute-manager
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kube-vim.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-vim.name" . }}-image-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-vim.name" . }}-image-manager
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kube-vim.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

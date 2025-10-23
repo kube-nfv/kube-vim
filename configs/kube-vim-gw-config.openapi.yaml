@@ -39,16 +39,13 @@ components:
       type: object
       description: "Kube-vim connection configuration."
       properties:
-        ip:
-          $ref: './common.openapi.yaml#/components/schemas/ipAddress'
-          description: "IP address of the kube-vim server. Tipically kube-vim launches in the same k8s pod as a kube-vim gateway"
-          default: 127.0.0.1
-        port:
-          $ref: './common.openapi.yaml#/components/schemas/port'
-          description: "Port of the kube-vim server."
-          default: 50051
+        url:
+          type: string
+          description: "URL of the kube-vim gRPC server. Can be an IP:port (e.g., '127.0.0.1:50051') or a service DNS name (e.g., 'kube-vim:50051'). Typically kube-vim launches in a separate pod in Kubernetes, so using the service name is recommended."
+          default: "kube-vim:50051"
+          pattern: '^[a-zA-Z0-9.-]+:[0-9]+$'
         tls:
           $ref: './common.openapi.yaml#/components/schemas/tlsClientConfig'
           description: |
             "TLS configuration for the kube-vim server connection. In most cases TLS is not needed since both kube-vim and
-            gateway launcehs in the same pod and the network is isoloted and communication is performed over loopback."
+            gateway launch in the same namespace and communication is performed over cluster network."

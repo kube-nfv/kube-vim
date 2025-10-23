@@ -1,0 +1,43 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+  $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Components deployed:
+{{- if .Values.vim.enabled }}
+  - kube-vim: {{ include "kube-vim.vim.name" . }}
+{{- end }}
+{{- if .Values.gateway.enabled }}
+  - gateway: {{ include "kube-vim.gateway.name" . }}
+{{- end }}
+
+To check the status of your deployments:
+
+{{- if .Values.vim.enabled }}
+  $ kubectl get deployment {{ include "kube-vim.vim.name" . }} -n {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.gateway.enabled }}
+  $ kubectl get deployment {{ include "kube-vim.gateway.name" . }} -n {{ .Release.Namespace }}
+{{- end }}
+
+To view the logs:
+
+{{- if .Values.vim.enabled }}
+  $ kubectl logs -l app.kubernetes.io/component=vim -n {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.gateway.enabled }}
+  $ kubectl logs -l app.kubernetes.io/component=gateway -n {{ .Release.Namespace }}
+{{- end }}
+
+Services:
+
+{{- if and .Values.vim.enabled .Values.vim.service.enabled }}
+  - {{ include "kube-vim.vim.name" . }}: {{ .Values.vim.service.type }} on port {{ .Values.vim.service.port | default .Values.vim.config.service.server.port }}
+{{- end }}
+{{- if and .Values.gateway.enabled .Values.gateway.service.enabled }}
+  - {{ include "kube-vim.gateway.name" . }}: {{ .Values.gateway.service.type }} on port {{ .Values.gateway.service.port | default .Values.gateway.config.service.server.port }}
+{{- end }}

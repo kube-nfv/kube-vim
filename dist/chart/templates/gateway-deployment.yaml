@@ -1,0 +1,71 @@
+{{- if .Values.gateway.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-vim.gateway.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.gateway.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kube-vim.gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "kube-vim.gateway.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if or .Values.gateway.imagePullSecrets .Values.global.image.pullSecrets }}
+      imagePullSecrets:
+        {{- if .Values.gateway.imagePullSecrets }}
+        {{- range .Values.gateway.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+        {{- else }}
+        {{- include "kube-vim.imagePullSecrets" . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      serviceAccountName: {{ include "kube-vim.serviceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: gateway
+        image: {{ include "kube-vim.gateway.image" . }}
+        imagePullPolicy: {{ include "kube-vim.gateway.imagePullPolicy" . }}
+        {{- with .Values.gateway.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kube-vim-gateway
+          readOnly: true
+        {{- with .Values.gateway.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "kube-vim.gateway.name" . }}-config
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

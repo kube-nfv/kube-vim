@@ -1,0 +1,56 @@
+{{- if .Values.rbac.create -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-vim.name" . }}-network-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - "k8s.cni.cncf.io"
+  resources:
+  - network-attachment-definitions
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-vim.name" . }}-compute-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - "instancetype.kubevirt.io"
+  resources:
+  - virtualmachineinstancetypes
+  - virtualmachinepreferences
+  verbs:
+  - "*"
+- apiGroups:
+  - "kubevirt.io"
+  resources:
+  - virtualmachines
+  - virtualmachineinstances
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-vim.name" . }}-image-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - "cdi.kubevirt.io"
+  resources:
+  - datavolumes
+  - volumeimportsources
+  verbs:
+  - "*"
+{{- end }}

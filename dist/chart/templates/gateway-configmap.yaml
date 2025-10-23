@@ -1,0 +1,17 @@
+{{- if .Values.gateway.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-vim.gateway.name" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.gateway.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $config := .Values.gateway.config | deepCopy }}
+    {{- if .Values.vim.enabled }}
+    {{- $vimUrl := printf "%s:%d" (include "kube-vim.vim.name" .) (.Values.vim.config.service.server.port | int) }}
+    {{- $_ := set $config "kubevim" (dict "url" $vimUrl) }}
+    {{- end }}
+    {{- toYaml $config | nindent 4 }}
+{{- end }}

@@ -1,0 +1,12 @@
+{{- if .Values.vim.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-vim.vim.name" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.vim.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml .Values.vim.config | nindent 4 }}
+{{- end }}
