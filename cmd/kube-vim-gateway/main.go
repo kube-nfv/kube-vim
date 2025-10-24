@@ -34,8 +34,7 @@ func init() {
 	viper.SetDefault("service.logLevel", "info")
 	viper.SetDefault("service.server.port", 51155)
 
-	viper.SetDefault("kubevim.ip", "127.0.0.1")
-	viper.SetDefault("kubevim.port", 50051)
+	viper.SetDefault("kubevim.url", "kube-vim:50051")
 	viper.SetDefault("kubevim.tls.insecureSkipVerify", true)
 }
 

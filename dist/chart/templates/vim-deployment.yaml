@@ -1,0 +1,77 @@
+{{- if .Values.vim.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-vim.vim.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-vim.vim.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.vim.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kube-vim.vim.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/vim-configmap.yaml") . | sha256sum }}
+        {{- with .Values.vim.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "kube-vim.vim.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if or .Values.vim.imagePullSecrets .Values.global.image.pullSecrets }}
+      imagePullSecrets:
+        {{- if .Values.vim.imagePullSecrets }}
+        {{- range .Values.vim.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+        {{- else }}
+        {{- include "kube-vim.imagePullSecrets" . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      serviceAccountName: {{ include "kube-vim.serviceAccountName" . }}
+      {{- with .Values.vim.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: vim
+        image: {{ include "kube-vim.vim.image" . }}
+        imagePullPolicy: {{ include "kube-vim.vim.imagePullPolicy" . }}
+        {{- with .Values.vim.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kube-vim
+          readOnly: true
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        {{- with .Values.vim.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "kube-vim.vim.name" . }}-config
+      {{- with .Values.vim.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vim.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vim.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

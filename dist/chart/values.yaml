@@ -1,0 +1,146 @@
+# Default values for kube-vim.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  image:
+    registry: ghcr.io/kube-nfv
+    tag: "latest"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+# ServiceAccount configuration
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  name: "kube-vim"
+  # Annotations to add to the service account
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# Kube-VIM configuration
+vim:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: kube-vim
+    pullPolicy: ""  # Uses global.image.pullPolicy if empty
+    tag: ""  # Uses global.image.tag if empty
+
+  imagePullSecrets: []  # Uses global.image.pullSecrets if empty
+
+  podAnnotations: {}
+
+  podSecurityContext: {}
+
+  securityContext: {}
+
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: ""  # Uses config.service.server.port if empty
+    targetPort: ""  # Uses config.service.server.port if empty
+    portName: grpc
+    annotations: {}
+
+  config:
+    service:
+      logLevel: "debug"
+      server:
+        port: 50051
+    image:
+      http: {}
+    network:
+      mgmt:
+        underlay:
+          providerNetwork:
+            defaultInterface: eth1
+          vlan:
+            id: 100
+          subnet:
+            protocol: "IPv4"
+            cidrBlock: 172.17.0.0/16
+            gateway: 172.17.0.1
+
+# Gateway configuration
+gateway:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: gateway
+    pullPolicy: ""  # Uses global.image.pullPolicy if empty
+    tag: ""  # Uses global.image.tag if empty
+
+  imagePullSecrets: []  # Uses global.image.pullSecrets if empty
+
+  podAnnotations: {}
+
+  podSecurityContext: {}
+
+  securityContext: {}
+
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: ""  # Uses config.service.server.port if empty
+    targetPort: ""  # Uses config.service.server.port if empty
+    portName: http
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+      # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: kube-vim-gateway.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+      # - secretName: kube-vim-gateway-tls
+      #   hosts:
+      #     - kube-vim-gateway.local
+
+  config:
+    service:
+      logLevel: "debug"
+      server:
+        port: 8080
