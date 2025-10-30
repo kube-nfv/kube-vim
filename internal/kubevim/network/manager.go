@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 )
 
 const (
@@ -17,35 +18,35 @@ const (
 )
 
 type Manager interface {
-	CreateNetwork(context.Context, string /*name*/, *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error)
-	GetNetwork(context.Context, ...GetNetworkOpt) (*nfv.VirtualNetwork, error)
-	ListNetworks(context.Context) ([]*nfv.VirtualNetwork, error)
+	CreateNetwork(context.Context, string /*name*/, *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error)
+	GetNetwork(context.Context, ...GetNetworkOpt) (*vivnfm.VirtualNetwork, error)
+	ListNetworks(context.Context) ([]*vivnfm.VirtualNetwork, error)
 	DeleteNetwork(context.Context, ...GetNetworkOpt) error
 
-	CreateSubnet(context.Context, string /*name*/, *nfv.NetworkSubnetData) (*nfv.NetworkSubnet, error)
-	GetSubnet(context.Context, ...GetSubnetOpt) (*nfv.NetworkSubnet, error)
-	ListSubnets(context.Context) ([]*nfv.NetworkSubnet, error)
+	CreateSubnet(context.Context, string /*name*/, *vivnfm.NetworkSubnetData) (*vivnfm.NetworkSubnet, error)
+	GetSubnet(context.Context, ...GetSubnetOpt) (*vivnfm.NetworkSubnet, error)
+	ListSubnets(context.Context) ([]*vivnfm.NetworkSubnet, error)
 	DeleteSubnet(context.Context, ...GetSubnetOpt) error
 }
 
-func NetworkTypeStrToNfvType(networkTypeStr string) (*nfv.NetworkType, error) {
-	typeVal, ok := nfv.NetworkResourceType_value[networkTypeStr]
+func NetworkTypeStrToNfvType(networkTypeStr string) (*nfvcommon.NetworkType, error) {
+	typeVal, ok := nfvcommon.NetworkResourceType_value[networkTypeStr]
 	if !ok {
 		return nil, fmt.Errorf("invalid networkType \"%s\"", networkTypeStr)
 	}
-	return (*nfv.NetworkType)(&typeVal), nil
+	return (*nfvcommon.NetworkType)(&typeVal), nil
 }
 
 type GetNetworkOpt func(*getNetworkOpts)
 type getNetworkOpts struct {
 	Name string
-	Uid  *nfv.Identifier
+	Uid  *nfvcommon.Identifier
 }
 
 func GetNetworkByName(name string) GetNetworkOpt {
 	return func(gno *getNetworkOpts) { gno.Name = name }
 }
-func GetNetworkByUid(uid *nfv.Identifier) GetNetworkOpt {
+func GetNetworkByUid(uid *nfvcommon.Identifier) GetNetworkOpt {
 	return func(gno *getNetworkOpts) { gno.Uid = uid }
 }
 func ApplyGetNetworkOpts(gno ...GetNetworkOpt) *getNetworkOpts {
@@ -59,16 +60,16 @@ func ApplyGetNetworkOpts(gno ...GetNetworkOpt) *getNetworkOpts {
 type GetSubnetOpt func(*getSubnetOpts)
 type getSubnetOpts struct {
 	Name          string
-	Uid           *nfv.Identifier
+	Uid           *nfvcommon.Identifier
 	NetAttachName string
-	NetId         *nfv.Identifier
-	IPAddress     *nfv.IPAddress
+	NetId         *nfvcommon.Identifier
+	IPAddress     *nfvcommon.IPAddress
 }
 
 func GetSubnetByName(name string) GetSubnetOpt {
 	return func(gso *getSubnetOpts) { gso.Name = name }
 }
-func GetSubnetByUid(uid *nfv.Identifier) GetSubnetOpt {
+func GetSubnetByUid(uid *nfvcommon.Identifier) GetSubnetOpt {
 	return func(gso *getSubnetOpts) { gso.Uid = uid }
 }
 func GetSubnetByNetAttachName(netAttachName string) GetSubnetOpt {
@@ -76,7 +77,7 @@ func GetSubnetByNetAttachName(netAttachName string) GetSubnetOpt {
 }
 
 // Returns the subnet from VPC ID and IP address which should belongs to the subnet
-func GetSubnetByNetworkIP(netId *nfv.Identifier, ip *nfv.IPAddress) GetSubnetOpt {
+func GetSubnetByNetworkIP(netId *nfvcommon.Identifier, ip *nfvcommon.IPAddress) GetSubnetOpt {
 	return func(gso *getSubnetOpts) {
 		gso.NetId = netId
 		gso.IPAddress = ip

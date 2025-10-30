@@ -14,10 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
-	cdi "kubevirt.io/client-go/generated/containerized-data-importer/clientset/versioned"
+	cdi "kubevirt.io/client-go/containerizeddataimporter"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
-
 
 // kubevirt CDI (Contrinerized Data Imported) controller manage the lifecycle of the DVs(Data Volume)
 // Current implementation is stateless (no objects located in struct related to DV). But it is not
@@ -327,7 +326,7 @@ func GetDvs() {
 
 }
 
-func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType, error) {
+func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (SourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil
@@ -337,7 +336,7 @@ func formatSourceNameFromDvSource(source *v1beta1.DataVolumeSource) (sourceType,
 	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }
 
-func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (sourceType, error) {
+func formatSourceNameFromSourceType(source *v1beta1.ImportSourceType) (SourceType, error) {
 	if source.HTTP != nil {
 		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
 			return HTTPS, nil

@@ -3,10 +3,10 @@ package network
 import (
 	"net"
 
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 )
 
-func IpBelongsToCidr(ip *nfv.IPAddress, cidr *nfv.IPSubnetCIDR) bool {
+func IpBelongsToCidr(ip *nfvcommon.IPAddress, cidr *nfvcommon.IPSubnetCIDR) bool {
 	if ip == nil || cidr == nil {
 		return false
 	}

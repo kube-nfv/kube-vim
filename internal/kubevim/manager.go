@@ -11,9 +11,10 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/image/glance"
-	http_im "github.com/kube-nfv/kube-vim/internal/kubevim/image/http"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/image/local"
+	cdiimmage "github.com/kube-nfv/kube-vim/internal/kubevim/image/cdi"
+	//"github.com/kube-nfv/kube-vim/internal/kubevim/image/glance"
+	//http_im "github.com/kube-nfv/kube-vim/internal/kubevim/image/http"
+	//"github.com/kube-nfv/kube-vim/internal/kubevim/image/local"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/server"
@@ -105,35 +106,40 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "cannot be nil"}
 	}
-	cdiCtrl, err := image.NewCdiController(k8sConfig)
+	var err error
+	m.imageMgr, err = cdiimmage.NewCDIImageManager(k8sConfig, cfg)
 	if err != nil {
-		return fmt.Errorf("initialize kubevirt cdi controller: %w", err)
+		return fmt.Errorf("initialize kubevirt cdi image manager: %w", err)
 	}
-	if cfg.Http != nil {
-		var err error
-		m.imageMgr, err = http_im.NewHttpImageManager(cdiCtrl, cfg.Http)
+	return nil
+	/*
+		cdiCtrl, err := image.NewCdiController(k8sConfig)
 		if err != nil {
-			return fmt.Errorf("initialize HTTP image manager: %w", err)
+			return fmt.Errorf("initialize kubevirt cdi controller: %w", err)
 		}
-		return nil
-	}
-	if cfg.Local != nil {
-		var err error
-		m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
-		if err != nil {
-			return fmt.Errorf("initialize Local image manager: %w", err)
+		if cfg.Http != nil {
+			m.imageMgr, err = http_im.NewHttpImageManager(cdiCtrl, cfg.Http)
+			if err != nil {
+				return fmt.Errorf("initialize HTTP image manager: %w", err)
+			}
+			return nil
 		}
-		return nil
-	}
-	if cfg.Glance != nil {
-		var err error
-		m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
-		if err != nil {
-			return fmt.Errorf("initialize Glance image manager: %w", err)
+		if cfg.Local != nil {
+			m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
+			if err != nil {
+				return fmt.Errorf("initialize Local image manager: %w", err)
+			}
+			return nil
 		}
-		return nil
-	}
-	return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "no valid image manager configuration found (http, local, or glance required)"}
+		if cfg.Glance != nil {
+			m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
+			if err != nil {
+				return fmt.Errorf("initialize Glance image manager: %w", err)
+			}
+			return nil
+		}
+		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "no valid image manager configuration found (http, local, or glance required)"}
+	*/
 }
 
 func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config) error {

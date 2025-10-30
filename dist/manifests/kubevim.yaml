@@ -78,6 +78,32 @@ rules:
   - "*"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-vim-image-manager-clusterrole
+rules:
+- apiGroups:
+  - "storage.k8s.io"
+  resources:
+  - storageclasses
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-vim-image-manager-clusterrolebinding
+  namespace: kube-nfv
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-vim-image-manager-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: kube-vim
+  namespace: kube-nfv
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: kube-vim-image-manager-role
@@ -143,6 +169,7 @@ data:
     service:
       logLevel: "debug"
     image:
+      storageClass: default
       http: {}
     network:
       mgmt:
