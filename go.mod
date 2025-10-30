@@ -11,7 +11,7 @@ require (
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/kube-nfv/kube-vim-api v0.0.5-alpha.8
 	github.com/kube-nfv/kube-vim-api/kube-ovn-api v1.14.10
-	github.com/kube-nfv/query-filter v0.0.1
+	github.com/kube-nfv/query-filter v0.0.2-alpha1
 	github.com/spf13/viper v1.21.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.75.1
@@ -66,7 +66,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/exp v0.0.0-20251002181428-27f1f14c8bb9 // indirect
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/oauth2 v0.31.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect

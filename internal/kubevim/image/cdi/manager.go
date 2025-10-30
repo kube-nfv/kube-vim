@@ -207,6 +207,7 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 						corev1.ResourceStorage: imageSize,
 					},
 				},
+				StorageClassName: &storageClassName,
 			},
 		},
 	}
