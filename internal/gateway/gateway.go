@@ -69,6 +69,7 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 
 	gwmux := runtime.NewServeMux(
 		runtime.SetQueryParameterParser(&queryParameterParser{}),
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, newLoggingMarshaler(g.logger)),
 	)
 	if err = vivnfm.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
 		return fmt.Errorf("register viVnfm gateway handler: %w", err)
