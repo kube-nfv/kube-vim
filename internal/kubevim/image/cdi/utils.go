@@ -112,9 +112,9 @@ func nfvImageFromCdiDataVolumeVis(dv *v1beta1.DataVolume, vis *v1beta1.VolumeImp
 
 	metadata := map[string]string{
 		image.K8sImageIdLabel: imgId.GetValue(),
-		image.K8sSourceLabel: string(srcTypeName),
-		K8sDataVolumeIdLabel: string(dv.GetUID()),
-		K8sDataVolumePhase: string(dv.Status.Phase),
+		image.K8sSourceLabel:  string(srcTypeName),
+		K8sDataVolumeIdLabel:  string(dv.GetUID()),
+		K8sDataVolumePhase:    string(dv.Status.Phase),
 	}
 
 	for _, dvCond := range dv.Status.Conditions {
@@ -142,11 +142,11 @@ func nfvImageFromCdiDataVolumeVis(dv *v1beta1.DataVolume, vis *v1beta1.VolumeImp
 
 	res := &vivnfm.SoftwareImageInformation{
 		SoftwareImageId: imgId,
-		Name: imgName,
-		CreatedAt: crtTime,
-		UpdatedAt: updtTime,
-		Size: dv.Spec.Storage.Resources.Requests.Storage(),
-		Status: status,
+		Name:            imgName,
+		CreatedAt:       crtTime,
+		UpdatedAt:       updtTime,
+		Size:            dv.Spec.Storage.Resources.Requests.Storage(),
+		Status:          status,
 		Metadata: &apis.Metadata{
 			Fields: metadata,
 		},

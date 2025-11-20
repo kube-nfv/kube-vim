@@ -17,12 +17,12 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
+	corev1 "k8s.io/api/core/v1"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/rest"
-	corev1 "k8s.io/api/core/v1"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	kubevirt "kubevirt.io/client-go/kubevirt"
@@ -385,7 +385,7 @@ func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, boo
 	if imageInfo.Size == nil || imageInfo.GetSize().Equal(*zeroQ) {
 		return nil, &apperrors.ErrInvalidArgument{Field: "software image size", Reason: "cannot be zero"}
 	}
-	if bootableAttributes.SizeOfStorage == nil || bootableAttributes.SizeOfStorage.Equal(*zeroQ){
+	if bootableAttributes.SizeOfStorage == nil || bootableAttributes.SizeOfStorage.Equal(*zeroQ) {
 		return nil, &apperrors.ErrInvalidArgument{Field: "size of bootable disk", Reason: "cannot be zero"}
 	}
 	if imageInfo.GetSize().Cmp(*bootableAttributes.SizeOfStorage) == 1 {
@@ -398,14 +398,14 @@ func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, boo
 			Name: dvName,
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
-				image.K8sImageIdLabel: imageInfo.SoftwareImageId.GetValue(),
+				image.K8sImageIdLabel:    imageInfo.SoftwareImageId.GetValue(),
 			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
 			Source: &v1beta1.DataVolumeSource{
 				PVC: &v1beta1.DataVolumeSourcePVC{
 					Namespace: common.KubeNfvDefaultNamespace,
-					Name: imageInfo.Name,
+					Name:      imageInfo.Name,
 				},
 			},
 			Storage: &v1beta1.StorageSpec{

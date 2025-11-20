@@ -109,7 +109,7 @@ func (m *cdiManager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInf
 	for _, img := range images.Items {
 		imgDv, ok := dataVolumesIdx[img.Name]
 		if !ok {
-			continue;
+			continue
 		}
 		nfvImg, err := nfvImageFromCdiDataVolumeVis(imgDv, &img)
 		if err != nil {

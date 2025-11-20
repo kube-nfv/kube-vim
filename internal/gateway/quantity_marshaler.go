@@ -14,16 +14,16 @@
 // This file implements a custom marshaler that wraps runtime.JSONPb and adds post-processing:
 //
 // Unmarshal (Request path):
-//   1. Let protojson unmarshal normally (Quantity fields will be empty)
-//   2. Parse original JSON to extract Quantity string values
-//   3. Use reflection to find all Quantity fields in the protobuf message
-//   4. Call Quantity.UnmarshalJSON() on each field to properly initialize internal fields
+//  1. Let protojson unmarshal normally (Quantity fields will be empty)
+//  2. Parse original JSON to extract Quantity string values
+//  3. Use reflection to find all Quantity fields in the protobuf message
+//  4. Call Quantity.UnmarshalJSON() on each field to properly initialize internal fields
 //
 // Marshal (Response path):
-//   1. Let protojson marshal normally (Quantity fields will be empty {} objects)
-//   2. Use reflection to find all Quantity fields in the protobuf message
-//   3. Call Quantity.MarshalJSON() to get the string representation
-//   4. Replace empty {} with {"string": "2048M"} format in the JSON output
+//  1. Let protojson marshal normally (Quantity fields will be empty {} objects)
+//  2. Use reflection to find all Quantity fields in the protobuf message
+//  3. Call Quantity.MarshalJSON() to get the string representation
+//  4. Replace empty {} with {"string": "2048M"} format in the JSON output
 //
 // This ensures Quantity fields work correctly in both REST API requests and responses
 // while maintaining proper protobuf compatibility for enums, timestamps, and other types.
@@ -155,7 +155,13 @@ func getTypeName(v interface{}) string {
 		return "nil"
 	}
 	switch t := v.(type) {
-	case interface{ ProtoReflect() interface{ Descriptor() interface{ FullName() interface{ String() string } } } }:
+	case interface {
+		ProtoReflect() interface {
+			Descriptor() interface {
+				FullName() interface{ String() string }
+			}
+		}
+	}:
 		return t.ProtoReflect().Descriptor().FullName().String()
 	default:
 		return "unknown"
