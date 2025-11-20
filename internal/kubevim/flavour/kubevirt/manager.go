@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -15,7 +16,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"kubevirt.io/api/instancetype/v1beta1"
-	kubevirt "kubevirt.io/client-go/generated/kubevirt/clientset/versioned"
+	kubevirt "kubevirt.io/client-go/kubevirt"
 )
 
 const (
@@ -45,7 +46,7 @@ func NewFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) (*manager,
 	}, nil
 }
 
-func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComputeFlavour) (*nfv.Identifier, error) {
+func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *vivnfm.VirtualComputeFlavour) (*nfvcommon.Identifier, error) {
 	if nfvFlavour == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "flavour", Reason: "cannot be nil"}
 	}
@@ -77,12 +78,12 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *nfv.VirtualComp
 		return nil, fmt.Errorf("create VirtualMachinePreference '%s' for flavour '%s': %w", instPref.Name, flavourId, err)
 	}
 
-	return &nfv.Identifier{
+	return &nfvcommon.Identifier{
 		Value: flavourId,
 	}, nil
 }
 
-func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.VirtualComputeFlavour, error) {
+func (m *manager) GetFlavour(ctx context.Context, id *nfvcommon.Identifier) (*vivnfm.VirtualComputeFlavour, error) {
 	if id == nil || id.GetValue() == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "flavour id", Reason: "required"}
 	}
@@ -122,7 +123,7 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfv.Identifier) (*nfv.Virt
 	return nfvFlavour, nil
 }
 
-func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour, error) {
+func (m *manager) GetFlavours(ctx context.Context) ([]*vivnfm.VirtualComputeFlavour, error) {
 	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).List(ctx, v1.ListOptions{
 		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
@@ -137,7 +138,7 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 		return nil, fmt.Errorf("list VirtualMachinePreferences: %w", err)
 	}
 
-	res := make([]*nfv.VirtualComputeFlavour, 0, len(instTypeList.Items))
+	res := make([]*vivnfm.VirtualComputeFlavour, 0, len(instTypeList.Items))
 	for idx := range instTypeList.Items {
 		instTypeRef := &instTypeList.Items[idx]
 		flavourId, ok := instTypeRef.Labels[flavour.K8sFlavourIdLabel]
@@ -168,7 +169,7 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*nfv.VirtualComputeFlavour
 	return res, nil
 }
 
-func (m *manager) DeleteFlavour(ctx context.Context, id *nfv.Identifier) error {
+func (m *manager) DeleteFlavour(ctx context.Context, id *nfvcommon.Identifier) error {
 	_, err := m.GetFlavour(ctx, id)
 	if err != nil {
 		return fmt.Errorf("verify flavour '%s' exists: %w", id.Value, err)

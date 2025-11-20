@@ -12,14 +12,17 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/imagedata"
 	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
-	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
 // Image manager for glance image storage
 // Glance image manager uses global lock to protect shared resources (TODO: Rewrite with lock-free API)
 type manager struct {
+	admin.UnimplementedAdminServer
 	glanceServiceClient *gophercloud.ServiceClient
 
 	lock sync.Mutex
@@ -47,7 +50,7 @@ func NewGlanceImageManager(cfg *config.GlanceImageConfig) (*manager, error) {
 	}, nil
 }
 
-func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.SoftwareImageInformation, error) {
+func (m *manager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {
@@ -65,14 +68,14 @@ func (m *manager) GetImage(ctx context.Context, id *nfv.Identifier) (*nfv.Softwa
 	return imgNfv, nil
 }
 
-func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformation, error) {
+func (m *manager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInformation, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	pager := images.List(m.glanceServiceClient, images.ListOpts{})
 	if pager.Err != nil {
 		return nil, fmt.Errorf("list images from glance server: %w", pager.Err)
 	}
-	imagesRes := make([]*nfv.SoftwareImageInformation, 0)
+	imagesRes := make([]*vivnfm.SoftwareImageInformation, 0)
 	if err := pager.EachPage(func(p pagination.Page) (bool, error) {
 		imgs, err := images.ExtractImages(p)
 		if err != nil {
@@ -92,7 +95,7 @@ func (m *manager) ListImages(ctx context.Context) ([]*nfv.SoftwareImageInformati
 	return imagesRes, nil
 }
 
-func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location string) error {
+func (m *manager) UploadImage(ctx context.Context, id *nfvcommon.Identifier, location string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if id == nil || id.Value == "" {
@@ -116,7 +119,7 @@ func (m *manager) UploadImage(ctx context.Context, id *nfv.Identifier, location 
 	return nil
 }
 
-func convertImage(img *images.Image) (*nfv.SoftwareImageInformation, error) {
+func convertImage(img *images.Image) (*vivnfm.SoftwareImageInformation, error) {
 	// TODO:
 	return nil, nil
 }

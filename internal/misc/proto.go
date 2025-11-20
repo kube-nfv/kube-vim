@@ -2,10 +2,12 @@ package misc
 
 import (
 	"fmt"
+	"time"
 
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -96,4 +98,11 @@ func UnmarshalAny(src *anypb.Any, dst interface{}) error {
 		return &apperrors.ErrInvalidArgument{Field: "destination type", Reason: fmt.Sprintf("unsupported type '%T' for unmarshaling", dst)}
 	}
 	return nil
+}
+
+func ConvertToProtoTimestamp(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
+		return nil
+	}
+	return timestamppb.New(t)
 }

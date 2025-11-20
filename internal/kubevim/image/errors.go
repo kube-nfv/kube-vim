@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 )
 
 var (

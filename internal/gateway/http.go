@@ -25,10 +25,10 @@ func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler
 		clientIP := getClientIP(r)
 		clientPort := getClientPort(r)
 
-		logger.Debug("New incoming request", 
-			zap.String("method", r.Method), 
-			zap.String("url", r.URL.String()), 
-			zap.String("clientIP", clientIP), 
+		logger.Debug("New incoming request",
+			zap.String("method", r.Method),
+			zap.String("url", r.URL.String()),
+			zap.String("clientIP", clientIP),
 			zap.String("clientPort", clientPort),
 			zap.String("userAgent", r.UserAgent()))
 		start := time.Now()
@@ -38,11 +38,11 @@ func LogMiddlewareHandler(handler http.Handler, logger *zap.Logger) http.Handler
 		handler.ServeHTTP(rw, r)
 
 		duration := time.Since(start)
-		logger.Info("Request completed", 
-			zap.String("method", r.Method), 
-			zap.String("url", r.URL.String()), 
-			zap.String("clientIP", clientIP), 
-			zap.String("clientPort", clientPort), 
+		logger.Info("Request completed",
+			zap.String("method", r.Method),
+			zap.String("url", r.URL.String()),
+			zap.String("clientIP", clientIP),
+			zap.String("clientPort", clientPort),
 			zap.Int("status", rw.status),
 			zap.Duration("duration", duration))
 	})

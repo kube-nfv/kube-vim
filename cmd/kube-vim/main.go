@@ -34,6 +34,8 @@ func init() {
 	viper.SetDefault("service.logLevel", "info")
 	viper.SetDefault("service.server.port", 50051)
 
+	viper.SetDefault("image.storageClass", "default")
+
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" {
 		podNamespace = common.KubeNfvDefaultNamespace

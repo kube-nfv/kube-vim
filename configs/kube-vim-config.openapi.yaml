@@ -51,6 +51,10 @@ components:
       type: object
       description: "Configuration for kube-vim image providers."
       properties:
+        storageClass:
+          type: string
+          default: "default"
+          description: "Kubernetes StorageClass for software image PVCs. By default 'default' storageClass will be used"
         http:
           $ref: '#/components/schemas/HttpImageConfig'
         local:

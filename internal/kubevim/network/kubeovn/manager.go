@@ -10,7 +10,8 @@ import (
 	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
 	ovn_client "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
+	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	"github.com/kube-nfv/kube-vim/internal/config"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
@@ -43,15 +44,15 @@ func NewKubeovnNetworkManager(k8sConfig *rest.Config) (*manager, error) {
 	}, nil
 }
 
-func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error) {
-	if networkData.NetworkType == nil || *networkData.NetworkType == nfv.NetworkType_OVERLAY {
+func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
+	if networkData.NetworkType == nil || *networkData.NetworkType == nfvcommon.NetworkType_OVERLAY {
 		net, err := m.createOverlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create overlay network '%s': %w", name, err)
 		}
 		return net, nil
 	}
-	if *networkData.NetworkType == nfv.NetworkType_UNDERLAY {
+	if *networkData.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 		net, err := m.createUnderlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create underlay network '%s': %w", name, err)
@@ -62,13 +63,13 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *n
 }
 
 // Instantiates virtual subnet for the given network. Returns the Ids of the successfully allocated and error if some of the subnets allocation failed.
-func (m *manager) allocateL3Attributes(ctx context.Context, networkName string, l3Attributes []*nfv.NetworkSubnetData) ([]*nfv.Identifier, error) {
+func (m *manager) allocateL3Attributes(ctx context.Context, networkName string, l3Attributes []*vivnfm.NetworkSubnetData) ([]*nfvcommon.Identifier, error) {
 	var l3Failed error
-	subnetIds := make([]*nfv.Identifier, 0, len(l3Attributes))
+	subnetIds := make([]*nfvcommon.Identifier, 0, len(l3Attributes))
 
 	for idx, l3attr := range l3Attributes {
 		if l3attr.NetworkId == nil || l3attr.NetworkId.Value == "" {
-			l3attr.NetworkId = &nfv.Identifier{
+			l3attr.NetworkId = &nfvcommon.Identifier{
 				Value: networkName,
 			}
 		}
@@ -83,7 +84,7 @@ func (m *manager) allocateL3Attributes(ctx context.Context, networkName string, 
 	return subnetIds, l3Failed
 }
 
-func (m *manager) createOverlayNetwork(ctx context.Context, name string, networkData *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error) {
+func (m *manager) createOverlayNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
 	vpc, err := kubeovnVpcFromNfvNetworkData(name, networkData)
 	if err != nil {
 		return nil, fmt.Errorf("convert nfv VirtualNetworkData to kube-ovn Vpc for network '%s': %w", name, err)
@@ -106,7 +107,7 @@ func (m *manager) createOverlayNetwork(ctx context.Context, name string, network
 	return res, nil
 }
 
-func (m *manager) createUnderlayNetwork(ctx context.Context, name string, networkData *nfv.VirtualNetworkData) (*nfv.VirtualNetwork, error) {
+func (m *manager) createUnderlayNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
 	// For now the only way to setup the underlay network is setup the vlan on top of the ProviderNetwork. For untagged network vlan should be 0.
 	// TODO: Create special managed CRD to manage underlay networks.
 	vlan, err := kubeovnVlanFromNfvNetworkData(name, networkData)
@@ -133,7 +134,7 @@ func (m *manager) createUnderlayNetwork(ctx context.Context, name string, networ
 
 // Return the network and all l3 attributes that was aquired.
 // Works ONLY with the networks created by kube-vim
-func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*nfv.VirtualNetwork, error) {
+func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*vivnfm.VirtualNetwork, error) {
 	var notFoundErr *apperrors.ErrNotFound
 	if net, err := m.getOverlayNetwork(ctx, opts...); err != nil && !k8s_errors.IsNotFound(err) && !errors.As(err, &notFoundErr) {
 		return nil, fmt.Errorf("get overlay network: %w", err)
@@ -148,7 +149,7 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 	return nil, &apperrors.ErrNotFound{Entity: "network"}
 }
 
-func (m *manager) getOverlayNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*nfv.VirtualNetwork, error) {
+func (m *manager) getOverlayNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*vivnfm.VirtualNetwork, error) {
 	cfg := network.ApplyGetNetworkOpts(opts...)
 	var vpc *kubeovnv1.Vpc
 	if cfg.Name != "" {
@@ -177,7 +178,7 @@ func (m *manager) getOverlayNetwork(ctx context.Context, opts ...network.GetNetw
 		return nil, &apperrors.ErrInvalidArgument{Field: "network identifier", Reason: "either name or uid must be specified"}
 	}
 
-	subnetIds := []*nfv.Identifier{}
+	subnetIds := []*nfvcommon.Identifier{}
 	for _, subnetName := range vpc.Status.Subnets {
 		subnet, err := m.GetSubnet(ctx, network.GetSubnetByName(subnetName))
 		if err != nil {
@@ -193,7 +194,7 @@ func (m *manager) getOverlayNetwork(ctx context.Context, opts ...network.GetNetw
 	return res, nil
 }
 
-func (m *manager) getUnderlayNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*nfv.VirtualNetwork, error) {
+func (m *manager) getUnderlayNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*vivnfm.VirtualNetwork, error) {
 	cfg := network.ApplyGetNetworkOpts(opts...)
 	var vlan *kubeovnv1.Vlan
 	if cfg.Name != "" {
@@ -222,7 +223,7 @@ func (m *manager) getUnderlayNetwork(ctx context.Context, opts ...network.GetNet
 		return nil, &apperrors.ErrInvalidArgument{Field: "network identifier", Reason: "either name or uid must be specified"}
 	}
 
-	subnetIds := []*nfv.Identifier{}
+	subnetIds := []*nfvcommon.Identifier{}
 	for _, subnetName := range vlan.Status.Subnets {
 		subnet, err := m.GetSubnet(ctx, network.GetSubnetByName(subnetName))
 		if err != nil {
@@ -237,7 +238,7 @@ func (m *manager) getUnderlayNetwork(ctx context.Context, opts ...network.GetNet
 	return res, nil
 }
 
-func (m *manager) ListNetworks(ctx context.Context) ([]*nfv.VirtualNetwork, error) {
+func (m *manager) ListNetworks(ctx context.Context) ([]*vivnfm.VirtualNetwork, error) {
 	netList, err := m.kubeOvnClient.KubeovnV1().Vpcs().List(ctx, v1.ListOptions{
 		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
@@ -250,7 +251,7 @@ func (m *manager) ListNetworks(ctx context.Context) ([]*nfv.VirtualNetwork, erro
 	if err != nil {
 		return nil, fmt.Errorf("list kubeovn vlans: %w", err)
 	}
-	res := make([]*nfv.VirtualNetwork, 0, len(netList.Items)+len(vlanList.Items))
+	res := make([]*vivnfm.VirtualNetwork, 0, len(netList.Items)+len(vlanList.Items))
 	for _, vpc := range netList.Items {
 		netName := vpc.Name
 		net, err := m.GetNetwork(ctx, network.GetNetworkByName(netName))
@@ -282,11 +283,11 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 			return fmt.Errorf("delete network subnet with id '%s': %w", subnetId.Value, err)
 		}
 	}
-	if net.NetworkType == nfv.NetworkType_OVERLAY {
+	if net.NetworkType == nfvcommon.NetworkType_OVERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vpc '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
-	} else if net.NetworkType == nfv.NetworkType_UNDERLAY {
+	} else if net.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vlans().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vlan '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
@@ -296,10 +297,10 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 	return nil
 }
 
-// Creates the kubeovn subnet from the specified nfv.NetworkSubnetData.
+// Creates the kubeovn subnet from the specified vivnfm.NetworkSubnetData.
 // If the subnet creation (or convertion) fails all resources (eg. Subnet, multus netowrkAttachmentDefinitions are cleared)
-func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv.NetworkSubnetData) (*nfv.NetworkSubnet, error) {
-	var vnet *nfv.VirtualNetwork
+func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *vivnfm.NetworkSubnetData) (*vivnfm.NetworkSubnet, error) {
+	var vnet *vivnfm.VirtualNetwork
 	if netId := subnetData.NetworkId; netId != nil && netId.Value != "" {
 		opts := []network.GetNetworkOpt{}
 		if misc.IsUUID(netId.Value) {
@@ -319,10 +320,10 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv
 	}
 
 	if vnet != nil && vnet.NetworkResourceName != nil {
-		if vnet.NetworkType == nfv.NetworkType_OVERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_OVERLAY {
 			subnet.Spec.Vpc = *vnet.NetworkResourceName
 		}
-		if vnet.NetworkType == nfv.NetworkType_UNDERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_UNDERLAY {
 			subnet.Spec.Vlan = *vnet.NetworkResourceName
 		}
 		subnet.Labels[network.K8sNetworkNameLabel] = *vnet.NetworkResourceName
@@ -364,12 +365,12 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *nfv
 	if err != nil {
 		// Subnet deletion should also delete nettwork attachment
 		m.DeleteSubnet(ctx, network.GetSubnetByUid(misc.UIDToIdentifier(createdSubnet.GetUID())))
-		return nil, fmt.Errorf("convert created kubeovn subnet '%s' (id: %s) to nfv.NetworkSubnet (subnet will be deleted): %w", createdSubnet.GetName(), createdSubnet.GetUID(), err)
+		return nil, fmt.Errorf("convert created kubeovn subnet '%s' (id: %s) to vivnfm.NetworkSubnet (subnet will be deleted): %w", createdSubnet.GetName(), createdSubnet.GetUID(), err)
 	}
 	return nfvSubnet, nil
 }
 
-func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (*nfv.NetworkSubnet, error) {
+func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (*vivnfm.NetworkSubnet, error) {
 	cfg := network.ApplyGetSubnetOpts(opts...)
 	if cfg.Name != "" {
 		subnet, err := m.kubeOvnClient.KubeovnV1().Subnets().Get(ctx, cfg.Name, v1.GetOptions{})
@@ -426,19 +427,19 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 	return nil, &apperrors.ErrInvalidArgument{Field: "subnet identifier", Reason: "name, uid, net attach name or network and ip must be specified"}
 }
 
-func (m *manager) ListSubnets(ctx context.Context) ([]*nfv.NetworkSubnet, error) {
+func (m *manager) ListSubnets(ctx context.Context) ([]*vivnfm.NetworkSubnet, error) {
 	subnetList, err := m.kubeOvnClient.KubeovnV1().Subnets().List(ctx, v1.ListOptions{
 		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list kubeovn subnets: %w", err)
 	}
-	res := make([]*nfv.NetworkSubnet, 0, len(subnetList.Items))
+	res := make([]*vivnfm.NetworkSubnet, 0, len(subnetList.Items))
 	for idx := range subnetList.Items {
 		subnetRef := &subnetList.Items[idx]
 		nfvSubnet, err := nfvNetworkSubnetFromKubeovnSubnet(subnetRef)
 		if err != nil {
-			return nil, fmt.Errorf("convert kubeovn subnet '%s' (id: %s) to nfv.NetworkSubnet: %w", subnetRef.GetName(), subnetRef.GetUID(), err)
+			return nil, fmt.Errorf("convert kubeovn subnet '%s' (id: %s) to vivnfm.NetworkSubnet: %w", subnetRef.GetName(), subnetRef.GetUID(), err)
 		}
 		res = append(res, nfvSubnet)
 	}
@@ -451,15 +452,15 @@ func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt
 		return fmt.Errorf("get subnet: %w", err)
 	}
 	netAttachName := subnet.Metadata.Fields[network.K8sSubnetNetAttachNameLabel]
-	// The only way to get name from the nfv.NetworkSubnet resource is to get it by label.
+	// The only way to get name from the vivnfm.NetworkSubnet resource is to get it by label.
 	subnetName := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
 
+	if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("delete kubeovn subnet '%s' (id: %s): %w", subnetName, subnet.ResourceId.Value, err)
+	}
 	// delete multus NetworkAttachmentDefinition
 	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete multus NetworkAttachmentDefinition '%s' for subnet '%s': %w", netAttachName, subnet.ResourceId.Value, err)
-	}
-	if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete kubeovn subnet '%s' (id: %s): %w", subnetName, subnet.ResourceId.Value, err)
 	}
 	return nil
 }

@@ -6,13 +6,13 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/utilities"
-	"github.com/kube-nfv/kube-vim-api/pb/nfv"
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 // gRPC-gateway custom query parameter parser to support complex query mappings.
-// ex. map filter to nfv.Filter.value, paggination, etc.
+// ex. map filter to vivnfm.Filter.value, paggination, etc.
 type queryParameterParser struct{}
 
 func (p *queryParameterParser) Parse(target proto.Message, values url.Values, filter *utilities.DoubleArray) error {
@@ -30,9 +30,9 @@ func populateQueryFilter(target proto.Message, filter string) {
 		field := md.Descriptor().Fields().Get(i)
 
 		if field.Kind() == protoreflect.MessageKind {
-			// If the proto Message field is same as a nfv.Filter
-			if field.Message() == (&nfv.Filter{}).ProtoReflect().Descriptor() {
-				setFilter := &nfv.Filter{
+			// If the proto Message field is same as a nfvcommon.Filter
+			if field.Message() == (&nfvcommon.Filter{}).ProtoReflect().Descriptor() {
+				setFilter := &nfvcommon.Filter{
 					// Note: according to the ETSI GS NFA-SOL 013 5.2 specification filter should begin with "filter="
 					Value: fmt.Sprintf("filter=%s", filter),
 				}
