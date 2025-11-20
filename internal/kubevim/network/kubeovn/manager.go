@@ -455,12 +455,12 @@ func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt
 	// The only way to get name from the vivnfm.NetworkSubnet resource is to get it by label.
 	subnetName := subnet.Metadata.Fields[network.K8sSubnetNameLabel]
 
+	if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("delete kubeovn subnet '%s' (id: %s): %w", subnetName, subnet.ResourceId.Value, err)
+	}
 	// delete multus NetworkAttachmentDefinition
 	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete multus NetworkAttachmentDefinition '%s' for subnet '%s': %w", netAttachName, subnet.ResourceId.Value, err)
-	}
-	if err := m.kubeOvnClient.KubeovnV1().Subnets().Delete(ctx, subnetName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete kubeovn subnet '%s' (id: %s): %w", subnetName, subnet.ResourceId.Value, err)
 	}
 	return nil
 }
