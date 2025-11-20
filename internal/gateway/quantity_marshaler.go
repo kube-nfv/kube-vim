@@ -54,8 +54,7 @@ func newQuantityMarshaler(logger *zap.Logger) *quantityMarshaler {
 	return &quantityMarshaler{
 		JSONPb: &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
-				UseProtoNames:   true,
-				EmitUnpopulated: false,
+				EmitUnpopulated: true,
 			},
 			UnmarshalOptions: protojson.UnmarshalOptions{
 				DiscardUnknown: true,
