@@ -702,6 +702,8 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *v
 		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/mac_address", netAttachName, common.KubeNfvDefaultNamespace)] = networkIpam.MacAddress.Mac
 	}
 
+	ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/logical_switch", netAttachName, common.KubeNfvDefaultNamespace)] = subnetName
+
 	ifaceName := fmt.Sprintf("%s-%s", subnetName, ifaceUid)
 	return &kubevirtv1.Network{
 			Name: ifaceName,
