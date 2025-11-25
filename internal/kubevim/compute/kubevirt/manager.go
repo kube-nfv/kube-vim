@@ -172,6 +172,8 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 		vmAnnotations[k] = v
 	}
 
+	useSecureBoot := false
+
 	vmSpec := &kubevirtv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
 			Name: vmName,
@@ -200,6 +202,13 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 						Devices: kubevirtv1.Devices{
 							Disks:      disks,
 							Interfaces: interfaces,
+						},
+						Firmware: &kubevirtv1.Firmware{
+							Bootloader: &kubevirtv1.Bootloader{
+								EFI: &kubevirtv1.EFI{
+									SecureBoot: &useSecureBoot,
+								},
+							},
 						},
 					},
 					Networks: networks,
