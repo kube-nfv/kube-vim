@@ -1,4 +1,5 @@
 {{- if .Values.rbac.create -}}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -15,6 +16,20 @@ rules:
   - subnets/status
   - vlans
   - vlans/status
+  verbs:
+  - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kube-vim.name" . }}-image-manager
+  labels:
+    {{- include "kube-vim.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - "storage.k8s.io"
+  resources:
+  - storageclasses
   verbs:
   - "*"
 {{- end }}
