@@ -59,10 +59,10 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	mgr := &kubevimManager{
 		logger: logger,
 	}
-	if err := mgr.initImageManager(k8sConfig, cfg.Image); err != nil {
+	if err := mgr.initImageManager(k8sConfig, cfg.Image, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("configure image manager: %w", err)
 	}
-	if err := mgr.initNetworkManager(k8sConfig); err != nil {
+	if err := mgr.initNetworkManager(k8sConfig, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("initialize network manager: %w", err)
 	}
 	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
@@ -102,12 +102,12 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	m.logger.Info("Kubevim manager shutdown completed")
 }
 
-func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig) error {
+func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig, k8sCfg *config.K8sConfig) error {
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.imageMgr, err = cdiimmage.NewCDIImageManager(k8sConfig, cfg)
+	m.imageMgr, err = cdiimmage.NewCDIImageManager(k8sConfig, cfg, k8sCfg)
 	if err != nil {
 		return fmt.Errorf("initialize kubevirt cdi image manager: %w", err)
 	}
@@ -142,12 +142,12 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 	*/
 }
 
-func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config) error {
+func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *config.K8sConfig) error {
 	if k8sConfig == nil {
 		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig)
+	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg)
 	if err != nil {
 		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
