@@ -16,6 +16,8 @@ components:
           $ref: '#/components/schemas/ImageConfig'
         network:
           $ref: '#/components/schemas/NetworkConfig'
+        compute:
+          $ref: '#/components/schemas/ComputeConfig'
     ServiceConfig:
       type: object
       description: "Configuration related to the kube-vim service."
@@ -82,3 +84,36 @@ components:
         mgmt:
           type: object
           description: "Configuration for kube-vim management network."
+
+    ComputeConfig:
+      type: object
+      description: "Configuration for compute resource scheduling."
+      properties:
+        nodeSelector:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Node selector labels for VM placement."
+        tolerations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Toleration'
+          description: "Tolerations for VM scheduling."
+
+    Toleration:
+      type: object
+      description: "Kubernetes toleration for pod/VM scheduling."
+      properties:
+        key:
+          type: string
+        operator:
+          type: string
+          enum: ["Exists", "Equal"]
+        value:
+          type: string
+        effect:
+          type: string
+          enum: ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+        tolerationSeconds:
+          type: integer
+          format: int64
