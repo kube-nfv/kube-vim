@@ -59,6 +59,7 @@ vim:
   service:
     enabled: true
     type: ClusterIP
+    loadBalancerClass: ""  # e.g. tailscale for Tailscale LB
     port: ""  # Uses config.service.server.port if empty
     targetPort: ""  # Uses config.service.server.port if empty
     portName: grpc

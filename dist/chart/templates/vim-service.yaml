@@ -12,6 +12,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.vim.service.type }}
+  {{- if .Values.vim.service.loadBalancerClass }}
+  loadBalancerClass: {{ .Values.vim.service.loadBalancerClass }}
+  {{- end }}
   ports:
     - port: {{ .Values.vim.service.port | default .Values.vim.config.service.server.port }}
       targetPort: {{ .Values.vim.service.targetPort | default .Values.vim.config.service.server.port }}
