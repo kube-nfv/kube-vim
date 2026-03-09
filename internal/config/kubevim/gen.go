@@ -7,8 +7,33 @@ import (
 	externalRef0 "github.com/kube-nfv/kube-vim/internal/config"
 )
 
+// Defines values for TolerationEffect.
+const (
+	NoExecute        TolerationEffect = "NoExecute"
+	NoSchedule       TolerationEffect = "NoSchedule"
+	PreferNoSchedule TolerationEffect = "PreferNoSchedule"
+)
+
+// Defines values for TolerationOperator.
+const (
+	Equal  TolerationOperator = "Equal"
+	Exists TolerationOperator = "Exists"
+)
+
+// ComputeConfig Configuration for compute resource scheduling.
+type ComputeConfig struct {
+	// NodeSelector Node selector labels for VM placement.
+	NodeSelector *map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations Tolerations for VM scheduling.
+	Tolerations *[]Toleration `json:"tolerations,omitempty"`
+}
+
 // Config Top-level configuration node for kube-vim.
 type Config struct {
+	// Compute Configuration for compute resource scheduling.
+	Compute *ComputeConfig `json:"compute,omitempty"`
+
 	// Image Configuration for kube-vim image providers.
 	Image *ImageConfig `json:"image,omitempty"`
 
@@ -96,3 +121,18 @@ type ServiceConfig struct {
 	// Server Kube-vim Server configuration.
 	Server *ServerConfig `json:"server,omitempty"`
 }
+
+// Toleration Kubernetes toleration for pod/VM scheduling.
+type Toleration struct {
+	Effect            *TolerationEffect   `json:"effect,omitempty"`
+	Key               *string             `json:"key,omitempty"`
+	Operator          *TolerationOperator `json:"operator,omitempty"`
+	TolerationSeconds *int64              `json:"tolerationSeconds,omitempty"`
+	Value             *string             `json:"value,omitempty"`
+}
+
+// TolerationEffect defines model for Toleration.Effect.
+type TolerationEffect string
+
+// TolerationOperator defines model for Toleration.Operator.
+type TolerationOperator string

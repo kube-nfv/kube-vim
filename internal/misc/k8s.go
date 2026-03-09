@@ -6,7 +6,9 @@ import (
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	common "github.com/kube-nfv/kube-vim/internal/config"
+	kubevimconfig "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -48,6 +50,30 @@ func ConvertK8sTimeToProtoTimestamp(t metav1.Time) *timestamppb.Timestamp {
 
 func GetCreationTimestamp(obj metav1.Object) time.Time {
 	return obj.GetCreationTimestamp().Time
+}
+
+func ToK8sTolerations(tolerations []kubevimconfig.Toleration) []corev1.Toleration {
+	result := make([]corev1.Toleration, 0, len(tolerations))
+	for _, t := range tolerations {
+		kt := corev1.Toleration{}
+		if t.Key != nil {
+			kt.Key = *t.Key
+		}
+		if t.Value != nil {
+			kt.Value = *t.Value
+		}
+		if t.Operator != nil {
+			kt.Operator = corev1.TolerationOperator(*t.Operator)
+		}
+		if t.Effect != nil {
+			kt.Effect = corev1.TaintEffect(*t.Effect)
+		}
+		if t.TolerationSeconds != nil {
+			kt.TolerationSeconds = t.TolerationSeconds
+		}
+		result = append(result, kt)
+	}
+	return result
 }
 
 func GetLastUpdateTime(obj metav1.Object) *time.Time {

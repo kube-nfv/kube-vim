@@ -70,12 +70,14 @@ type manager struct {
 	networkManager network.Manager
 
 	// Note: Access should be readonly otherwise it might introduce races
-	cfg *config.K8sConfig
+	cfg        *config.K8sConfig
+	computeCfg *config.ComputeConfig
 }
 
 func NewComputeManager(
 	k8sConfig *rest.Config,
 	cfg *config.K8sConfig,
+	computeCfg *config.ComputeConfig,
 	flavourManager flavour.Manager,
 	imageManager image.Manager,
 	networkManager network.Manager) (*manager, error) {
@@ -89,6 +91,7 @@ func NewComputeManager(
 		imageManager:   imageManager,
 		networkManager: networkManager,
 		cfg:            cfg,
+		computeCfg:     computeCfg,
 	}, nil
 }
 
@@ -218,6 +221,15 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 			},
 		},
 	}
+	if m.computeCfg != nil {
+		if m.computeCfg.NodeSelector != nil {
+			vmSpec.Spec.Template.Spec.NodeSelector = *m.computeCfg.NodeSelector
+		}
+		if m.computeCfg.Tolerations != nil {
+			vmSpec.Spec.Template.Spec.Tolerations = misc.ToK8sTolerations(*m.computeCfg.Tolerations)
+		}
+	}
+
 	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Create(ctx, vmSpec, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("create kubevirt VirtualMachine '%s': %w", vmName, err)

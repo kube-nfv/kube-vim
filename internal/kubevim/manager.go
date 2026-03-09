@@ -68,7 +68,7 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("initialize flavour manager: %w", err)
 	}
-	if err := mgr.initComputeManager(k8sConfig, cfg.K8s); err != nil {
+	if err := mgr.initComputeManager(k8sConfig, cfg.K8s, cfg.Compute); err != nil {
 		return nil, fmt.Errorf("initialize compute manager: %w", err)
 	}
 	if err := mgr.initNorthboundServer(cfg.Service.Server); err != nil {
@@ -166,12 +166,12 @@ func (m *kubevimManager) initFlavourManager(k8sConfig *rest.Config, cfg *config.
 	return nil
 }
 
-func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
+func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.K8sConfig, computeCfg *config.ComputeConfig) error {
 	if k8sConfig == nil {
 		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.computeMgr, err = kubevirt_compute.NewComputeManager(k8sConfig, cfg, m.flavourMgr, m.imageMgr, m.networkMgr)
+	m.computeMgr, err = kubevirt_compute.NewComputeManager(k8sConfig, cfg, computeCfg, m.flavourMgr, m.imageMgr, m.networkMgr)
 	if err != nil {
 		return fmt.Errorf("create kubevirt compute manager: %w", err)
 	}
