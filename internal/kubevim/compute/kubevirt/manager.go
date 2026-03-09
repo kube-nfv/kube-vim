@@ -93,6 +93,7 @@ func NewComputeManager(
 }
 
 func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.AllocateComputeRequest) (*vivnfm.VirtualCompute, error) {
+	namespace := *m.cfg.Namespace
 	if req == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "request", Reason: "cannot be empty"}
 	}
@@ -136,7 +137,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	if err != nil {
 		return nil, fmt.Errorf("get image '%s': %w", req.GetVcImageId(), err)
 	}
-	dvs, err := initImageDataVolumes(imgInfo, flav.StorageAttributes, req.GetComputeName())
+	dvs, err := initImageDataVolumes(imgInfo, flav.StorageAttributes, req.GetComputeName(), namespace)
 	if err != nil {
 		return nil, fmt.Errorf("initialize kubevirt data volume: %w", err)
 	}
@@ -151,7 +152,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 		disks = append(disks, *disk)
 	}
 
-	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM)
+	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("initialize kubevirt networks: %w", err)
 	}
@@ -217,14 +218,14 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 			},
 		},
 	}
-	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Create(ctx, vmSpec, v1.CreateOptions{})
+	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Create(ctx, vmSpec, v1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("create kubevirt VirtualMachine '%s': %w", vmName, err)
 	}
-	if err = waitVmiCreatedField(ctx, m.kubevirtClient, vm.Name, *m.cfg.Namespace); err != nil {
+	if err = waitVmiCreatedField(ctx, m.kubevirtClient, vm.Name, namespace); err != nil {
 		return nil, fmt.Errorf("create VMI for VM '%s' (uid: %s): %w", vmName, vm.UID, err)
 	}
-	vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vmName, v1.GetOptions{})
+	vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vmName, v1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get VM instance '%s' (uid: %s): %w", vmName, vm.UID, err)
 	}
@@ -236,7 +237,8 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 }
 
 func (m *manager) ListComputeResources(ctx context.Context) ([]*vivnfm.VirtualCompute, error) {
-	vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+	namespace := *m.cfg.Namespace
+	vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).List(ctx, v1.ListOptions{
 		LabelSelector: common.ManagedByKubeNfvSelector,
 	})
 	if err != nil {
@@ -244,7 +246,7 @@ func (m *manager) ListComputeResources(ctx context.Context) ([]*vivnfm.VirtualCo
 	}
 	res := make([]*vivnfm.VirtualCompute, 0, len(vmList.Items))
 	for _, vm := range vmList.Items {
-		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
+		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vm.Name, v1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 		}
@@ -258,13 +260,14 @@ func (m *manager) ListComputeResources(ctx context.Context) ([]*vivnfm.VirtualCo
 }
 
 func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) (*vivnfm.VirtualCompute, error) {
+	namespace := *m.cfg.Namespace
 	cfg := compute.ApplyGetComputeOpts(opts...)
 	if cfg.Name != "" {
-		vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+		vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, cfg.Name, v1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachine '%s': %w", cfg.Name, err)
 		}
-		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
+		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, cfg.Name, v1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", cfg.Name, vm.UID, err)
 		}
@@ -274,7 +277,7 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 		}
 		return vComp, nil
 	} else if cfg.Uid != nil && cfg.Uid.Value != "" {
-		vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+		vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).List(ctx, v1.ListOptions{
 			LabelSelector: common.ManagedByKubeNfvSelector,
 		})
 		if err != nil {
@@ -284,7 +287,7 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 			if vm.UID != misc.IdentifierToUID(cfg.Uid) {
 				continue
 			}
-			vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(*m.cfg.Namespace).Get(ctx, vm.Name, v1.GetOptions{})
+			vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vm.Name, v1.GetOptions{})
 			if err != nil {
 				return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 			}
@@ -300,11 +303,12 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 }
 
 func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) error {
+	namespace := *m.cfg.Namespace
 	vm, err := m.GetComputeResource(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("get virtual machine for deletion: %w", err)
 	}
-	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(*m.cfg.Namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
+	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete kubevirt VirtualMachine '%s' (id: %s): %w", vm.GetComputeName(), vm.ComputeId.Value, err)
 	}
 	return nil
@@ -354,7 +358,7 @@ func initVolumesDisksFromDataVolumes(dvs []kubevirtv1.DataVolumeTemplateSpec) ([
 	return volumes, disks
 }
 
-func initImageDataVolumes(imageInfo *vivnfm.SoftwareImageInformation, storageAttributes []*vivnfm.VirtualStorageData, vmName string) ([]kubevirtv1.DataVolumeTemplateSpec, error) {
+func initImageDataVolumes(imageInfo *vivnfm.SoftwareImageInformation, storageAttributes []*vivnfm.VirtualStorageData, vmName string, namespace string) ([]kubevirtv1.DataVolumeTemplateSpec, error) {
 	// Init bootable disk.
 	var bootableStorageAttr *vivnfm.VirtualStorageData = nil
 	for _, storageAttr := range storageAttributes {
@@ -369,14 +373,14 @@ func initImageDataVolumes(imageInfo *vivnfm.SoftwareImageInformation, storageAtt
 		return nil, fmt.Errorf("storage attributes not found for bootable disk: %w", apperrors.ErrUnsupported)
 	}
 	// TODO: For now only bootable disk attached supported
-	bootDv, err := initImageBootableDataVolume(imageInfo, bootableStorageAttr, vmName)
+	bootDv, err := initImageBootableDataVolume(imageInfo, bootableStorageAttr, vmName, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("initialize bootable CDI DataVolume for vm %s: %w", vmName, err)
 	}
 	return []kubevirtv1.DataVolumeTemplateSpec{*bootDv}, nil
 }
 
-func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, bootableAttributes *vivnfm.VirtualStorageData, vmName string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
+func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, bootableAttributes *vivnfm.VirtualStorageData, vmName string, namespace string) (*kubevirtv1.DataVolumeTemplateSpec, error) {
 	if imageInfo == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "software image info", Reason: "cannot be nil"}
 	}
@@ -413,7 +417,7 @@ func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, boo
 		Spec: v1beta1.DataVolumeSpec{
 			Source: &v1beta1.DataVolumeSource{
 				PVC: &v1beta1.DataVolumeSourcePVC{
-					Namespace: common.KubeNfvDefaultNamespace,
+					Namespace: namespace,
 					Name:      imageInfo.Name,
 				},
 			},
@@ -482,7 +486,7 @@ func initUserDataVolume(userData *vivnfm.UserData) (*kubevirtv1.Volume, *kubevir
 
 // Note(dmalovan): Need to think if the VM need pod network by default, or it should be configured.
 // For now pod network configured with a "masquarade" interface.
-func initNetworks(ctx context.Context, netManager network.Manager, networksData []*vivnfm.VirtualNetworkInterfaceData, networkIpam []*vivnfm.VirtualNetworkInterfaceIPAM) ([]kubevirtv1.Network, []kubevirtv1.Interface, map[string]string, error) {
+func initNetworks(ctx context.Context, netManager network.Manager, networksData []*vivnfm.VirtualNetworkInterfaceData, networkIpam []*vivnfm.VirtualNetworkInterfaceIPAM, namespace string) ([]kubevirtv1.Network, []kubevirtv1.Interface, map[string]string, error) {
 	networks := make([]kubevirtv1.Network, 0, len(networksData)+1 /*+ podNetwork*/)
 	interfaces := make([]kubevirtv1.Interface, 0, len(networksData)+1 /*+ podNetwork*/)
 	annotations := make(map[string]string)
@@ -542,7 +546,7 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("get IPAM for subnet '%s': %w", subnetIdVal, err)
 			}
-			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
+			net, iface, ann, err = initNetwork(ctx, netManager, ipam, namespace)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for subnet '%s': %w", subnetIdVal, err)
 			}
@@ -572,7 +576,7 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 					err,
 				)
 			}
-			net, iface, ann, err = initNetwork(ctx, netManager, ipam)
+			net, iface, ann, err = initNetwork(ctx, netManager, ipam, namespace)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for network '%s': %w", netData.NetworkId.Value, err)
 			}
@@ -675,7 +679,7 @@ func getNetworkIpam(ctx context.Context, networkId *nfvcommon.Identifier, netMan
 }
 
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
-func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *vivnfm.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, map[string]string, error) {
+func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *vivnfm.VirtualNetworkInterfaceIPAM, namespace string) (*kubevirtv1.Network, *kubevirtv1.Interface, map[string]string, error) {
 	if networkIpam.SubnetId == nil || networkIpam.SubnetId.Value == "" {
 		return nil, nil, nil, &apperrors.ErrInvalidArgument{Field: "network IPAM", Reason: "must have a subnetId reference"}
 	}
@@ -705,13 +709,13 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *v
 	}
 	ann := make(map[string]string)
 	if networkIpam.IpAddress != nil && networkIpam.IpAddress.Ip != "" {
-		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/ip_address", netAttachName, common.KubeNfvDefaultNamespace)] = networkIpam.IpAddress.Ip
+		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/ip_address", netAttachName, namespace)] = networkIpam.IpAddress.Ip
 	}
 	if networkIpam.MacAddress != nil && networkIpam.MacAddress.Mac != "" {
-		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/mac_address", netAttachName, common.KubeNfvDefaultNamespace)] = networkIpam.MacAddress.Mac
+		ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/mac_address", netAttachName, namespace)] = networkIpam.MacAddress.Mac
 	}
 
-	ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/logical_switch", netAttachName, common.KubeNfvDefaultNamespace)] = subnetName
+	ann[fmt.Sprintf("%s.%s.ovn.kubernetes.io/logical_switch", netAttachName, namespace)] = subnetName
 
 	ifaceName := fmt.Sprintf("%s-%s", subnetName, ifaceUid)
 	return &kubevirtv1.Network{

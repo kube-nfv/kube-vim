@@ -12,7 +12,8 @@ import (
 	ovn_client "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/client/clientset/versioned"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
-	"github.com/kube-nfv/kube-vim/internal/config"
+	common "github.com/kube-nfv/kube-vim/internal/config"
+	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
@@ -25,22 +26,25 @@ import (
 type manager struct {
 	kubeOvnClient   *ovn_client.Clientset
 	netAttachClient *netatt_client.Clientset
-	namespace       string
+	k8sCfg          *config.K8sConfig
 }
 
-func NewKubeovnNetworkManager(k8sConfig *rest.Config) (*manager, error) {
-	ovnC, err := ovn_client.NewForConfig(k8sConfig)
+func NewKubeovnNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig) (*manager, error) {
+	if k8sCfg.Namespace == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "config k8s.Namespace", Reason: "can't be nil"}
+	}
+	ovnC, err := ovn_client.NewForConfig(restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create kube-ovn k8s client: %w", err)
 	}
-	netAttC, err := netatt_client.NewForConfig(k8sConfig)
+	netAttC, err := netatt_client.NewForConfig(restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create multus network-attachment-definition k8s client: %w", err)
 	}
 	return &manager{
 		kubeOvnClient:   ovnC,
 		netAttachClient: netAttC,
-		namespace:       common.KubeNfvDefaultNamespace,
+		k8sCfg:          k8sCfg,
 	}, nil
 }
 
@@ -331,7 +335,7 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 		subnet.Labels[network.K8sNetworkTypeLabel] = vnet.NetworkType.String()
 	}
 	netAttachName := formatNetAttachName(subnet.GetName())
-	_, err = m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Create(
+	_, err = m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Create(
 		ctx,
 		&netattv1.NetworkAttachmentDefinition{
 			ObjectMeta: v1.ObjectMeta{
@@ -342,7 +346,7 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 				},
 			},
 			Spec: netattv1.NetworkAttachmentDefinitionSpec{
-				Config: formatNetAttachConfig(netAttachName, m.namespace),
+				Config: formatNetAttachConfig(netAttachName, *m.k8sCfg.Namespace),
 			},
 		}, v1.CreateOptions{})
 	if err != nil {
@@ -352,7 +356,7 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 	subnet.Labels[network.K8sSubnetNetAttachNameLabel] = netAttachName
 
 	cleanupNetAttach := func() error {
-		return m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{})
+		return m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Delete(ctx, netAttachName, v1.DeleteOptions{})
 	}
 
 	createdSubnet, err := m.kubeOvnClient.KubeovnV1().Subnets().Create(ctx, subnet, v1.CreateOptions{})
@@ -400,7 +404,7 @@ func (m *manager) GetSubnet(ctx context.Context, opts ...network.GetSubnetOpt) (
 		}
 		return nil, &apperrors.ErrNotFound{Entity: "kubeovn subnet", Identifier: cfg.Uid.GetValue()}
 	} else if cfg.NetAttachName != "" {
-		netAttach, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Get(ctx, cfg.NetAttachName, v1.GetOptions{})
+		netAttach, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Get(ctx, cfg.NetAttachName, v1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get network attachment definition '%s': %w", cfg.NetAttachName, err)
 		}
@@ -459,7 +463,7 @@ func (m *manager) DeleteSubnet(ctx context.Context, opts ...network.GetSubnetOpt
 		return fmt.Errorf("delete kubeovn subnet '%s' (id: %s): %w", subnetName, subnet.ResourceId.Value, err)
 	}
 	// delete multus NetworkAttachmentDefinition
-	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(m.namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
+	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Delete(ctx, netAttachName, v1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete multus NetworkAttachmentDefinition '%s' for subnet '%s': %w", netAttachName, subnet.ResourceId.Value, err)
 	}
 	return nil
