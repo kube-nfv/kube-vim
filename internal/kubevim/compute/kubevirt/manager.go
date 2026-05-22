@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -38,6 +39,7 @@ const (
 
 	KubevirtVmMgmtNetworkName    = "default"
 	KubevirtVmMgmtRootVolumeName = "root-volume"
+	KubevirtVmCloudInitSecretSuffix = "-cloud-init"
 
 	// Kubevirt related metadata labels that is used in vivnfm.VirtualCompute.Metadata fields
 	// In general labels should not be used in k8s object (only in vivnfm.VirtualCompute.Metadata fields)
@@ -65,6 +67,7 @@ const (
 // kubevirt manager for allocation and management of the compute resources.
 type manager struct {
 	kubevirtClient *kubevirt.Clientset
+	k8sClient      *kubernetes.Clientset
 	flavourManager flavour.Manager
 	imageManager   image.Manager
 	networkManager network.Manager
@@ -85,8 +88,13 @@ func NewComputeManager(
 	if err != nil {
 		return nil, fmt.Errorf("create kubevirt k8s client: %w", err)
 	}
+	k8sClient, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create k8s client: %w", err)
+	}
 	return &manager{
 		kubevirtClient: c,
+		k8sClient:      k8sClient,
 		flavourManager: flavourManager,
 		imageManager:   imageManager,
 		networkManager: networkManager,
@@ -146,8 +154,17 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	}
 	volumes, disks := initVolumesDisksFromDataVolumes(dvs)
 
+	var vmName string
+	if req.ComputeName == nil || *req.ComputeName == "" {
+		// Note(dmalovan): If multiple vm created from the same image this name will conflict. Need to implement the way how to
+		// make this name unique if it is not specified by the producer.
+		vmName = imgInfo.Name + "-vm"
+	} else {
+		vmName = *req.ComputeName
+	}
+
 	if req.UserData != nil {
-		volume, disk, err := initUserDataVolume(req.GetUserData())
+		volume, disk, err := m.createUserDataVolumeWithSecret(ctx, namespace, vmName, req.GetUserData())
 		if err != nil {
 			return nil, fmt.Errorf("initialize vm userdata volume: %w", err)
 		}
@@ -158,15 +175,6 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	networks, interfaces, netAnnotations, err := initNetworks(ctx, m.networkManager, req.InterfaceData, req.InterfaceIPAM, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("initialize kubevirt networks: %w", err)
-	}
-
-	var vmName string
-	if req.ComputeName == nil || *req.ComputeName == "" {
-		// Note(dmalovan): If multiple vm created from the same image this name will conflict. Need to implement the way how to
-		// make this name unique if it is not specified by the producer.
-		vmName = imgInfo.Name + "-vm"
-	} else {
-		vmName = *req.ComputeName
 	}
 
 	runStrategy := kubevirtv1.RunStrategyAlways
@@ -323,6 +331,10 @@ func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.Get
 	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete kubevirt VirtualMachine '%s' (id: %s): %w", vm.GetComputeName(), vm.ComputeId.Value, err)
 	}
+	secretName := vm.GetComputeName() + KubevirtVmCloudInitSecretSuffix
+	if err := m.k8sClient.CoreV1().Secrets(namespace).Delete(ctx, secretName, v1.DeleteOptions{}); err != nil && !k8s_errors.IsNotFound(err) {
+		return fmt.Errorf("delete cloud-init secret '%s' for VM '%s': %w", secretName, vm.GetComputeName(), err)
+	}
 	return nil
 }
 
@@ -448,30 +460,56 @@ func initImageBootableDataVolume(imageInfo *vivnfm.SoftwareImageInformation, boo
 	}, nil
 }
 
-func initUserDataVolume(userData *vivnfm.UserData) (*kubevirtv1.Volume, *kubevirtv1.Disk, error) {
+func (m *manager) createUserDataVolumeWithSecret(ctx context.Context, namespace, vmName string, userData *vivnfm.UserData) (*kubevirtv1.Volume, *kubevirtv1.Disk, error) {
 	if userData.Content == "" {
 		return nil, nil, &apperrors.ErrInvalidArgument{Field: "userData content", Reason: "cannot be empty"}
 	}
 	if userData.Method == nil {
 		return nil, nil, &apperrors.ErrInvalidArgument{Field: "userData method", Reason: "cannot be nil"}
 	}
+
+	// KubeVirt enforces a 2048-byte limit on inline userData for both
+	// cloudInitConfigDrive and cloudInitNoCloud. Persisting the content in
+	// a Secret and referencing it via UserDataSecretRef removes that limit.
+	secretName := vmName + KubevirtVmCloudInitSecretSuffix
+	secret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				common.K8sManagedByLabel:       common.KubeNfvName,
+				kubevirtv1.VirtualMachineLabel: vmName,
+			},
+		},
+		Data: map[string][]byte{
+			"userdata": []byte(userData.Content),
+		},
+	}
+	if _, err := m.k8sClient.CoreV1().Secrets(namespace).Create(ctx, secret, v1.CreateOptions{}); err != nil {
+		if !k8s_errors.IsAlreadyExists(err) {
+			return nil, nil, fmt.Errorf("create cloud-init secret '%s': %w", secretName, err)
+		}
+		if _, err := m.k8sClient.CoreV1().Secrets(namespace).Update(ctx, secret, v1.UpdateOptions{}); err != nil {
+			return nil, nil, fmt.Errorf("update cloud-init secret '%s': %w", secretName, err)
+		}
+	}
+
 	volumeName := "cloudinitdisk"
+	secretRef := &corev1.LocalObjectReference{Name: secretName}
 	var volumeSource kubevirtv1.VolumeSource
 
 	switch *userData.Method {
 	case vivnfm.UserData_CONFIG_DRIVE_PLAINTEXT,
 		vivnfm.UserData_CONFIG_DRIVE_MIME_MULTIPART:
-		// Use cloudInitConfigDrive for both plaintext and multipart
-		// TODO: Build MIME multipart config if needed with CertificateData.
 		volumeSource = kubevirtv1.VolumeSource{
 			CloudInitConfigDrive: &kubevirtv1.CloudInitConfigDriveSource{
-				UserData: userData.Content,
+				UserDataSecretRef: secretRef,
 			},
 		}
 	case vivnfm.UserData_NO_CLOUD:
 		volumeSource = kubevirtv1.VolumeSource{
 			CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
-				UserData: userData.Content,
+				UserDataSecretRef: secretRef,
 			},
 		}
 	case vivnfm.UserData_METADATA_SERVICE:
