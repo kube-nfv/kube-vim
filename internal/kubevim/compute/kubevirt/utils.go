@@ -165,7 +165,7 @@ func getRunningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachi
 	if vm.Status.Created && vm.Status.Ready && vmi.Status.Phase == kubevirtv1.Running {
 		return nfvcommon.ComputeRunningState_RUNNING
 	}
-	if vmi.Status.Phase == kubevirtv1.Pending || vmi.Status.Phase == kubevirtv1.Scheduling || vmi.Status.Phase == kubevirtv1.Scheduled {
+	if vmi.Status.Phase == kubevirtv1.Pending || vmi.Status.Phase == kubevirtv1.Scheduling || vmi.Status.Phase == kubevirtv1.Scheduled || vmi.Status.Phase == kubevirtv1.Running {
 		return nfvcommon.ComputeRunningState_STARTING
 	}
 	if vmi.Status.Phase == kubevirtv1.Failed {
