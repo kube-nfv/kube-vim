@@ -184,7 +184,7 @@ tolerates their absence.
    ```
    kubectl get vpc osm-mgmt
    kubectl get subnet osm-mgmt-subnet-0
-   kubectl get net-attach-def osm-mgmt-subnet-0-netattach -n kube-nfv
+   kubectl get net-attach-def osm-mgmt-subnet-0-netattach -n kube-vim
    ```
 
    All three should be `app.kubernetes.io/managed-by=kube-nfv`.
@@ -193,8 +193,8 @@ tolerates their absence.
    annotations:
 
    ```yaml
-   k8s.v1.cni.cncf.io/networks: kube-nfv/osm-mgmt-subnet-0-netattach
-   osm-mgmt-subnet-0-netattach.kube-nfv.ovn.kubernetes.io/logical_switch: osm-mgmt-subnet-0
+   k8s.v1.cni.cncf.io/networks: kube-vim/osm-mgmt-subnet-0-netattach
+   osm-mgmt-subnet-0-netattach.kube-vim.ovn.kubernetes.io/logical_switch: osm-mgmt-subnet-0
    ```
 
    Both are required. Without the second annotation, kube-OVN falls back to

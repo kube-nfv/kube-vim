@@ -57,10 +57,12 @@ func (m *manager) EnsureManagementNetwork(ctx context.Context, cfg *config.Manag
 	)
 	log.Debug("Ensuring kube-vim-managed management network")
 
-	if err := m.ensureMgmtVpc(ctx, log, vpcName); err != nil {
+	vpc, err := m.ensureMgmtVpc(ctx, log, vpcName)
+	if err != nil {
 		return fmt.Errorf("ensure management vpc '%s': %w", vpcName, err)
 	}
-	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, subnetName, nadName); err != nil {
+	vpcUID := string(vpc.GetUID())
+	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, vpcUID, subnetName, nadName); err != nil {
 		return fmt.Errorf("ensure management subnet '%s': %w", subnetName, err)
 	}
 	if err := m.ensureMgmtNetAttach(ctx, log, subnetName, nadName, nadNamespace); err != nil {
@@ -77,14 +79,21 @@ func mgmtVpcLabels() map[string]string {
 	}
 }
 
-func mgmtSubnetLabels(vpcName, subnetName, nadName string) map[string]string {
-	return map[string]string{
+func mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName string) map[string]string {
+	labels := map[string]string{
 		common.K8sManagedByLabel:            common.KubeNfvName,
 		network.K8sSubnetNameLabel:          subnetName,
 		network.K8sSubnetNetAttachNameLabel: nadName,
 		network.K8sNetworkNameLabel:         vpcName,
 		network.K8sNetworkTypeLabel:         nfvcommon.NetworkType_OVERLAY.String(),
 	}
+	// vpcUID is empty only on transient Vpc states where Create returned a
+	// partially-populated object; skip the label so we don't write an empty
+	// value. The next reconcile pass will fill it in.
+	if vpcUID != "" {
+		labels[network.K8sNetworkIdLabel] = vpcUID
+	}
+	return labels
 }
 
 func mgmtNetAttachLabels(subnetName string) map[string]string {
@@ -94,23 +103,24 @@ func mgmtNetAttachLabels(subnetName string) map[string]string {
 	}
 }
 
-func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName string) error {
+func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName string) (*kubeovnv1.Vpc, error) {
 	existing, err := m.kubeOvnClient.KubeovnV1().Vpcs().Get(ctx, vpcName, v1.GetOptions{})
 	if err == nil {
 		changed, merged := misc.MergeLabels(existing.Labels, mgmtVpcLabels())
 		if !changed {
 			log.Debug("Vpc already exists with required labels")
-			return nil
+			return existing, nil
 		}
 		existing.Labels = merged
-		if _, err := m.kubeOvnClient.KubeovnV1().Vpcs().Update(ctx, existing, v1.UpdateOptions{}); err != nil {
-			return fmt.Errorf("patch vpc labels: %w", err)
+		updated, err := m.kubeOvnClient.KubeovnV1().Vpcs().Update(ctx, existing, v1.UpdateOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("patch vpc labels: %w", err)
 		}
 		log.Debug("Patched Vpc labels")
-		return nil
+		return updated, nil
 	}
 	if !k8s_errors.IsNotFound(err) {
-		return fmt.Errorf("get vpc: %w", err)
+		return nil, fmt.Errorf("get vpc: %w", err)
 	}
 
 	vpc := &kubeovnv1.Vpc{
@@ -120,18 +130,20 @@ func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName st
 		},
 		Spec: kubeovnv1.VpcSpec{},
 	}
-	if _, err := m.kubeOvnClient.KubeovnV1().Vpcs().Create(ctx, vpc, v1.CreateOptions{}); err != nil {
+	created, err := m.kubeOvnClient.KubeovnV1().Vpcs().Create(ctx, vpc, v1.CreateOptions{})
+	if err != nil {
 		if k8s_errors.IsAlreadyExists(err) {
-			return nil
+			// Race: another caller created it. Re-read to get a stable UID.
+			return m.kubeOvnClient.KubeovnV1().Vpcs().Get(ctx, vpcName, v1.GetOptions{})
 		}
-		return fmt.Errorf("create vpc: %w", err)
+		return nil, fmt.Errorf("create vpc: %w", err)
 	}
 	log.Debug("Created Vpc")
-	return nil
+	return created, nil
 }
 
-func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, subnetName, nadName string) error {
-	required := mgmtSubnetLabels(vpcName, subnetName, nadName)
+func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, vpcUID, subnetName, nadName string) error {
+	required := mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName)
 	existing, err := m.kubeOvnClient.KubeovnV1().Subnets().Get(ctx, subnetName, v1.GetOptions{})
 	if err == nil {
 		changed, merged := misc.MergeLabels(existing.Labels, required)
