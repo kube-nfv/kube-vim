@@ -15,6 +15,25 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+// MergeLabels merges required into current. Returns (changed, merged) where
+// changed is true if any required key was missing or had a different value in
+// current. The merged map is a fresh copy; current is never mutated. Useful
+// for idempotent label reconciliation of existing Kubernetes objects.
+func MergeLabels(current, required map[string]string) (bool, map[string]string) {
+	merged := map[string]string{}
+	for k, v := range current {
+		merged[k] = v
+	}
+	changed := false
+	for k, v := range required {
+		if existing, ok := merged[k]; !ok || existing != v {
+			merged[k] = v
+			changed = true
+		}
+	}
+	return changed, merged
+}
+
 func UIDToIdentifier(uid types.UID) *nfvcommon.Identifier {
 	return &nfvcommon.Identifier{
 		Value: string(uid),

@@ -28,6 +28,7 @@ import (
 // kubevimManager also responsible for start ETSI MANO vi-vnfm, or-vi gRPC services
 type kubevimManager struct {
 	logger *zap.Logger
+	cfg    *config.Config
 
 	imageMgr   image.Manager
 	networkMgr network.Manager
@@ -58,6 +59,7 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 
 	mgr := &kubevimManager{
 		logger: logger,
+		cfg:    cfg,
 	}
 	if err := mgr.initImageManager(k8sConfig, cfg.Image, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("configure image manager: %w", err)
@@ -81,6 +83,14 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	errCh := make(chan error, 1) // Buffered to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	if m.cfg != nil && m.cfg.Network != nil {
+		if err := m.networkMgr.EnsureManagementNetwork(ctx, m.cfg.Network.ManagementNetwork); err != nil {
+			m.logger.Error("Failed to ensure kube-vim-managed management network", zap.Error(err))
+			return
+		}
+	}
+
 	go func() {
 		if err := m.nbServer.Start(ctx); err != nil {
 			errCh <- fmt.Errorf("start Northbound server: %w", err)
@@ -147,7 +157,7 @@ func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *conf
 		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg)
+	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg, m.logger.Named("network"))
 	if err != nil {
 		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
@@ -190,7 +200,3 @@ func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	return nil
 }
 
-func initMgmtNetwork(netMgr network.Manager) error {
-
-	return nil
-}

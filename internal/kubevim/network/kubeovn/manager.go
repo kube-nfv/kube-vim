@@ -17,6 +17,7 @@ import (
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
+	"go.uber.org/zap"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -24,14 +25,18 @@ import (
 
 // Will manage kube-vim networking for VNF using kube-ovn
 type manager struct {
+	logger          *zap.Logger
 	kubeOvnClient   *ovn_client.Clientset
 	netAttachClient *netatt_client.Clientset
 	k8sCfg          *config.K8sConfig
 }
 
-func NewKubeovnNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig) (*manager, error) {
+func NewKubeovnNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig, logger *zap.Logger) (*manager, error) {
 	if k8sCfg.Namespace == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config k8s.Namespace", Reason: "can't be nil"}
+	}
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 	ovnC, err := ovn_client.NewForConfig(restConfig)
 	if err != nil {
@@ -42,6 +47,7 @@ func NewKubeovnNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig)
 		return nil, fmt.Errorf("create multus network-attachment-definition k8s client: %w", err)
 	}
 	return &manager{
+		logger:          logger,
 		kubeOvnClient:   ovnC,
 		netAttachClient: netAttC,
 		k8sCfg:          k8sCfg,
