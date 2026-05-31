@@ -83,10 +83,44 @@ type LocalImageConfig struct {
 	Location *string `json:"location,omitempty"`
 }
 
+// ManagementNetworkConfig Optional kube-vim-managed shared management network used by an NFVO
+// (e.g. OSM) for control-plane reachability to VMs. When enabled,
+// kube-vim ensures a kube-OVN Vpc + Subnet + NetworkAttachmentDefinition
+// exist at startup with all the labels kube-vim's internal lookups
+// require. The trio is reconciled on every kube-vim restart and never
+// deleted by NS termination.
+type ManagementNetworkConfig struct {
+	// Cidr Subnet CIDR. Must not overlap with the cluster pod or service CIDR. Updates are not applied to running subnets to avoid disrupting workloads.
+	Cidr *string `json:"cidr,omitempty"`
+
+	// Enabled Whether kube-vim should provision and own the management network. Default off; opt-in.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// ExcludeIps Optional list of IPs (or ranges) to exclude from IPAM allocation.
+	ExcludeIps *[]string `json:"excludeIps,omitempty"`
+
+	// Gateway Optional gateway IP. Defaults to the first usable address of `cidr`.
+	Gateway *string `json:"gateway,omitempty"`
+
+	// Name kube-OVN Vpc name. Used as the base for the subnet name (`{name}-subnet-0`) and the default NetworkAttachmentDefinition name.
+	Name *string `json:"name,omitempty"`
+
+	// NetAttachDefName NetworkAttachmentDefinition name. Defaults to `{subnet-name}-netattach` to match kube-vim's existing convention.
+	NetAttachDefName *string `json:"netAttachDefName,omitempty"`
+
+	// NetAttachDefNamespace Namespace of the NetworkAttachmentDefinition. Defaults to the kube-vim namespace from the `k8s` section.
+	NetAttachDefNamespace *string `json:"netAttachDefNamespace,omitempty"`
+}
+
 // NetworkConfig Configuration for kube-vim cluster static network.
 type NetworkConfig struct {
-	// Mgmt Configuration for kube-vim management network.
-	Mgmt *map[string]interface{} `json:"mgmt,omitempty"`
+	// ManagementNetwork Optional kube-vim-managed shared management network used by an NFVO
+	// (e.g. OSM) for control-plane reachability to VMs. When enabled,
+	// kube-vim ensures a kube-OVN Vpc + Subnet + NetworkAttachmentDefinition
+	// exist at startup with all the labels kube-vim's internal lookups
+	// require. The trio is reconciled on every kube-vim restart and never
+	// deleted by NS termination.
+	ManagementNetwork *ManagementNetworkConfig `json:"managementNetwork,omitempty"`
 }
 
 // ServerConfig Kube-vim Server configuration.

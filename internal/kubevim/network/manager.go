@@ -6,6 +6,7 @@ import (
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
 
 const (
@@ -27,6 +28,14 @@ type Manager interface {
 	GetSubnet(context.Context, ...GetSubnetOpt) (*vivnfm.NetworkSubnet, error)
 	ListSubnets(context.Context) ([]*vivnfm.NetworkSubnet, error)
 	DeleteSubnet(context.Context, ...GetSubnetOpt) error
+
+	// EnsureManagementNetwork is idempotent: it creates the Vpc + Subnet +
+	// NetworkAttachmentDefinition described by cfg if they do not exist, and
+	// patches their labels if they exist with the wrong ones. It never mutates
+	// the subnet CIDR or gateway of an existing subnet (workloads might already
+	// have IPs from it). Intended to be called once at kube-vim startup. If cfg
+	// is nil or cfg.Enabled is false (or unset), the method is a no-op.
+	EnsureManagementNetwork(context.Context, *config.ManagementNetworkConfig) error
 }
 
 func NetworkTypeStrToNfvType(networkTypeStr string) (*nfvcommon.NetworkType, error) {
