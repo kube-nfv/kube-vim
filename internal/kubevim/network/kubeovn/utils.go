@@ -60,7 +60,7 @@ func kubeovnVpcToNfvNetwork(vpc *kubeovnv1.Vpc, subnetIds []*nfvcommon.Identifie
 		NetworkResourceName: &name,
 		SubnetId:            subnetIds,
 		Bandwidth:           0,
-		NetworkType:         nfvcommon.NetworkType_OVERLAY,
+		NetworkType:         nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY,
 		IsShared:            false,
 		OperationalState:    nfvcommon.OperationalState_ENABLED,
 	}, nil
@@ -95,7 +95,7 @@ func kubeovnVlanToNfvNetwork(vlan *kubeovnv1.Vlan, subnetIds []*nfvcommon.Identi
 		NetworkResourceName: &name,
 		SubnetId:            subnetIds,
 		Bandwidth:           0,
-		NetworkType:         nfvcommon.NetworkType_UNDERLAY,
+		NetworkType:         nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY,
 		IsShared:            false,
 		ProviderNetwork:     &vlan.Spec.Provider,
 		SegmentationId:      &segmentationId,
@@ -111,7 +111,7 @@ func kubeovnVlanFromNfvNetworkData(name string, nfvNet *vivnfm.VirtualNetworkDat
 	if nfvNet == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "network data", Reason: "cannot be nil"}
 	}
-	if nfvNet.GetNetworkType() != nfvcommon.NetworkType_UNDERLAY {
+	if nfvNet.GetNetworkType() != nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
 		return nil, fmt.Errorf("vlan construction for network type '%s': %w", nfvNet.GetNetworkType(), apperrors.ErrUnsupported)
 	}
 	if nfvNet.ProviderNetwork == nil || *nfvNet.ProviderNetwork == "" {

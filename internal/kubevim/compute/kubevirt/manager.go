@@ -608,9 +608,9 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 			}
 
 			var ipam *vivnfm.VirtualNetworkInterfaceIPAM
-			if netInst.NetworkType == nfvcommon.NetworkType_UNDERLAY {
+			if netInst.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
 				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
-			} else if netInst.NetworkType == nfvcommon.NetworkType_OVERLAY {
+			} else if netInst.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY {
 				returnOnMiss := true
 				if netData.Metadata != nil {
 					ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]

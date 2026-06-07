@@ -277,12 +277,12 @@ func getInterfaceStatusFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineI
 func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfvcommon.TypeVirtualNic, error) {
 	switch {
 	case method.Bridge != nil:
-		return nfvcommon.TypeVirtualNic_BRIDGE, nil
+		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, nil
 	case method.Masquerade != nil:
-		return nfvcommon.TypeVirtualNic_BRIDGE, nil
+		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, nil
 	case method.SRIOV != nil:
-		return nfvcommon.TypeVirtualNic_SRIOV, nil
+		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV, nil
 	default:
-		return nfvcommon.TypeVirtualNic_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
+		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
 	}
 }

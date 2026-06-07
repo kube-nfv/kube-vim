@@ -55,14 +55,14 @@ func NewKubeovnNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig,
 }
 
 func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
-	if networkData.NetworkType == nil || *networkData.NetworkType == nfvcommon.NetworkType_OVERLAY {
+	if networkData.NetworkType == nil || *networkData.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY {
 		net, err := m.createOverlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create overlay network '%s': %w", name, err)
 		}
 		return net, nil
 	}
-	if *networkData.NetworkType == nfvcommon.NetworkType_UNDERLAY {
+	if *networkData.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
 		net, err := m.createUnderlayNetwork(ctx, name, networkData)
 		if err != nil {
 			return nil, fmt.Errorf("create underlay network '%s': %w", name, err)
@@ -293,11 +293,11 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 			return fmt.Errorf("delete network subnet with id '%s': %w", subnetId.Value, err)
 		}
 	}
-	if net.NetworkType == nfvcommon.NetworkType_OVERLAY {
+	if net.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vpcs().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vpc '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
-	} else if net.NetworkType == nfvcommon.NetworkType_UNDERLAY {
+	} else if net.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
 		if err = m.kubeOvnClient.KubeovnV1().Vlans().Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete kubeovn vlan '%s' (id: %s): %w", *net.NetworkResourceName, net.NetworkResourceId.Value, err)
 		}
@@ -330,10 +330,10 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 	}
 
 	if vnet != nil && vnet.NetworkResourceName != nil {
-		if vnet.NetworkType == nfvcommon.NetworkType_OVERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY {
 			subnet.Spec.Vpc = *vnet.NetworkResourceName
 		}
-		if vnet.NetworkType == nfvcommon.NetworkType_UNDERLAY {
+		if vnet.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
 			subnet.Spec.Vlan = *vnet.NetworkResourceName
 		}
 		subnet.Labels[network.K8sNetworkNameLabel] = *vnet.NetworkResourceName
