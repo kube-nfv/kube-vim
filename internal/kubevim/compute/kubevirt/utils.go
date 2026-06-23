@@ -76,26 +76,32 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 				netMdFields[KubevirtVmNetworkManagement] = "false"
 			}
 			// TODO: Add logic to split the NetworkAttachmentDefinition from namespace (if it exists).
-			subnet, err := netMgr.GetSubnet(ctx, network.GetSubnetByNetAttachName(multusNet.NetworkName))
-			if err != nil {
-				// Check if the error is due to missing NetworkAttachmentDefinition (race condition during deletion)
-				var notFoundErr *apperrors.ErrNotFound
-				isK8sNotFound := k8s_errors.IsNotFound(err)
-				isKubeNfvNotFound := errors.As(err, &notFoundErr)
-
-				if isK8sNotFound || isKubeNfvNotFound {
-					// During deletion, NetworkAttachmentDefinition might be already deleted
-					// Set placeholder values to allow VM deletion to proceed
-					netIfRes.SubnetId = &nfvcommon.Identifier{Value: "deleted"}
-					netIfRes.NetworkId = &nfvcommon.Identifier{Value: "deleted"}
-					netIfRes.Bandwidth = 0
-				} else {
-					return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
-				}
-			} else {
-				netIfRes.SubnetId = subnet.ResourceId
-				netIfRes.NetworkId = subnet.NetworkId
+			// SR-IOV networks map directly to a NAD with no subnet — check for that first.
+			if sriovNet, err := netMgr.GetNetwork(ctx, network.GetNetworkByName(multusNet.NetworkName)); err == nil && sriovNet.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_SRIOV {
+				netIfRes.NetworkId = sriovNet.NetworkResourceId
 				netIfRes.Bandwidth = 0
+			} else {
+				subnet, err := netMgr.GetSubnet(ctx, network.GetSubnetByNetAttachName(multusNet.NetworkName))
+				if err != nil {
+					// Check if the error is due to missing NetworkAttachmentDefinition (race condition during deletion)
+					var notFoundErr *apperrors.ErrNotFound
+					isK8sNotFound := k8s_errors.IsNotFound(err)
+					isKubeNfvNotFound := errors.As(err, &notFoundErr)
+
+					if isK8sNotFound || isKubeNfvNotFound {
+						// During deletion, NetworkAttachmentDefinition might be already deleted
+						// Set placeholder values to allow VM deletion to proceed
+						netIfRes.SubnetId = &nfvcommon.Identifier{Value: "deleted"}
+						netIfRes.NetworkId = &nfvcommon.Identifier{Value: "deleted"}
+						netIfRes.Bandwidth = 0
+					} else {
+						return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
+					}
+				} else {
+					netIfRes.SubnetId = subnet.ResourceId
+					netIfRes.NetworkId = subnet.NetworkId
+					netIfRes.Bandwidth = 0
+				}
 			}
 		} else {
 			return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("network '%s'", name), Reason: "must be either multus or pod type"}

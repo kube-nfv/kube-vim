@@ -121,6 +121,15 @@ type NetworkConfig struct {
 	// require. The trio is reconciled on every kube-vim restart and never
 	// deleted by NS termination.
 	ManagementNetwork *ManagementNetworkConfig `json:"managementNetwork,omitempty"`
+
+	// Sriov Settings applied to every SR-IOV network kube-vim creates. SR-IOV
+	// networks are rendered as ovs-cni NetworkAttachmentDefinitions so the
+	// VF representor is attached to an OVS bridge, enabling OVS hardware
+	// offload of the VF traffic. ovs-cni auto-discovers the bridge from the
+	// VF's PF (the PF uplink must already be a port on the bridge), which is
+	// the correct behaviour for multi-PF hosts where each PF has its own
+	// bridge.
+	Sriov *SriovNetworkConfig `json:"sriov,omitempty"`
 }
 
 // ServerConfig Kube-vim Server configuration.
@@ -154,6 +163,20 @@ type ServiceConfig struct {
 
 	// Server Kube-vim Server configuration.
 	Server *ServerConfig `json:"server,omitempty"`
+}
+
+// SriovNetworkConfig Settings applied to every SR-IOV network kube-vim creates. SR-IOV
+// networks are rendered as ovs-cni NetworkAttachmentDefinitions so the
+// VF representor is attached to an OVS bridge, enabling OVS hardware
+// offload of the VF traffic. ovs-cni auto-discovers the bridge from the
+// VF's PF (the PF uplink must already be a port on the bridge), which is
+// the correct behaviour for multi-PF hosts where each PF has its own
+// bridge.
+type SriovNetworkConfig struct {
+	// SocketFile OVSDB socket ovs-cni connects to. Defaults to the standard path;
+	// on kube-OVN/Talos hosts the socket lives at /run/openvswitch/db.sock
+	// (reachable via the /var/run -> /run symlink, or set explicitly).
+	SocketFile *string `json:"socketFile,omitempty"`
 }
 
 // Toleration Kubernetes toleration for pod/VM scheduling.

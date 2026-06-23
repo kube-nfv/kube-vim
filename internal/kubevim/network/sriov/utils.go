@@ -17,37 +17,38 @@ const (
 	sriovCniVersion           = "0.3.1"
 )
 
-type sriovCniConfig struct {
+// ovsCniConfig is the subset of the ovs-cni (type: ovs) configuration kube-vim
+// renders for SR-IOV networks. The VF representor is attached to an OVS bridge
+// so VF traffic is hardware-offloaded by the NIC. The VF itself (vfio or
+// netdevice) is delivered to the VM by Multus from the device-plugin resource
+// referenced by the NAD's resourceName annotation.
+type ovsCniConfig struct {
 	CniVersion string `json:"cniVersion"`
 	Name       string `json:"name"`
 	Type       string `json:"type"`
-	Vlan       *int   `json:"vlan,omitempty"`
-	SpoofChk   string `json:"spoofchk"`
-	Trust      string `json:"trust"`
-	LinkState  string `json:"link_state"`
-	MinTxRate  *int   `json:"min_tx_rate,omitempty"`
+	// Vlan is the access VLAN applied to the OVS port (representor side).
+	Vlan *int `json:"vlan,omitempty"`
+	// SocketFile is the OVSDB socket ovs-cni connects to.
+	SocketFile string `json:"socket_file,omitempty"`
 }
 
-func formatSriovCniConfig(name string, vlan uint64, minTxRateMbps float32) (string, error) {
-	cfg := sriovCniConfig{
+// formatOvsCniConfig renders the NAD config. The OVS bridge is intentionally
+// not set: ovs-cni auto-discovers it from the VF's PF, which is required for
+// multi-PF hosts where each PF is attached to its own bridge.
+func formatOvsCniConfig(name string, vlan uint64, socketFile string) (string, error) {
+	cfg := ovsCniConfig{
 		CniVersion: sriovCniVersion,
 		Name:       name,
-		Type:       "sriov",
-		SpoofChk:   "off",
-		Trust:      "on",
-		LinkState:  "auto",
+		Type:       "ovs",
+		SocketFile: socketFile,
 	}
 	if vlan != 0 {
 		v := int(vlan)
 		cfg.Vlan = &v
 	}
-	if minTxRateMbps > 0 {
-		r := int(minTxRateMbps)
-		cfg.MinTxRate = &r
-	}
 	b, err := json.Marshal(cfg)
 	if err != nil {
-		return "", fmt.Errorf("marshal sriov cni config: %w", err)
+		return "", fmt.Errorf("marshal ovs cni config: %w", err)
 	}
 	return string(b), nil
 }
@@ -71,16 +72,13 @@ func nadToNfvNetwork(nad *netattv1.NetworkAttachmentDefinition) (*vivnfm.Virtual
 	name := nad.GetName()
 	resourceName := nad.Annotations[nadResourceNameAnnotation]
 
-	// Parse vlan and min_tx_rate back from the stored config.
-	var cfg sriovCniConfig
+	// Parse vlan back from the stored config. ovs-cni has no per-port rate
+	// limiting, so bandwidth is not represented in the NAD.
+	var cfg ovsCniConfig
 	var vlan uint64
-	var bandwidth float32
 	if err := json.Unmarshal([]byte(nad.Spec.Config), &cfg); err == nil {
 		if cfg.Vlan != nil {
 			vlan = uint64(*cfg.Vlan)
-		}
-		if cfg.MinTxRate != nil {
-			bandwidth = float32(*cfg.MinTxRate)
 		}
 	}
 
@@ -91,7 +89,7 @@ func nadToNfvNetwork(nad *netattv1.NetworkAttachmentDefinition) (*vivnfm.Virtual
 		NetworkType:         networkType,
 		ProviderNetwork:     &resourceName,
 		SegmentationId:      &vlan,
-		Bandwidth:           bandwidth,
+		Bandwidth:           0,
 		IsShared:            false,
 		OperationalState:    nfvcommon.OperationalState_ENABLED,
 		Metadata: &nfvcommon.Metadata{

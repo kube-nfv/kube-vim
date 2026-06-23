@@ -40,7 +40,7 @@ type Manager interface {
 }
 
 func NetworkTypeStrToNfvType(networkTypeStr string) (*nfvcommon.NetworkType, error) {
-	typeVal, ok := nfvcommon.NetworkResourceType_value[networkTypeStr]
+	typeVal, ok := nfvcommon.NetworkType_value[networkTypeStr]
 	if !ok {
 		return nil, fmt.Errorf("invalid networkType \"%s\"", networkTypeStr)
 	}

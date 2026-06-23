@@ -84,6 +84,28 @@ components:
         managementNetwork:
           $ref: '#/components/schemas/ManagementNetworkConfig'
           description: "Configuration for the kube-vim-managed shared management network."
+        sriov:
+          $ref: '#/components/schemas/SriovNetworkConfig'
+          description: "Configuration for SR-IOV networks (rendered as ovs-cni NADs for OVS hardware offload)."
+
+    SriovNetworkConfig:
+      type: object
+      description: |
+        Settings applied to every SR-IOV network kube-vim creates. SR-IOV
+        networks are rendered as ovs-cni NetworkAttachmentDefinitions so the
+        VF representor is attached to an OVS bridge, enabling OVS hardware
+        offload of the VF traffic. ovs-cni auto-discovers the bridge from the
+        VF's PF (the PF uplink must already be a port on the bridge), which is
+        the correct behaviour for multi-PF hosts where each PF has its own
+        bridge.
+      properties:
+        socketFile:
+          type: string
+          default: "unix:/var/run/openvswitch/db.sock"
+          description: |
+            OVSDB socket ovs-cni connects to. Defaults to the standard path;
+            on kube-OVN/Talos hosts the socket lives at /run/openvswitch/db.sock
+            (reachable via the /var/run -> /run symlink, or set explicitly).
 
     ManagementNetworkConfig:
       type: object

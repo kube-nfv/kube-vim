@@ -3,6 +3,7 @@ package sriov
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
@@ -12,7 +13,6 @@ import (
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
-	"github.com/kube-nfv/kube-vim/internal/misc"
 	"go.uber.org/zap"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,9 +23,10 @@ type manager struct {
 	logger          *zap.Logger
 	netAttachClient *netatt_client.Clientset
 	k8sCfg          *config.K8sConfig
+	socketFile      string
 }
 
-func NewSriovNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig, logger *zap.Logger) (*manager, error) {
+func NewSriovNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig, sriovCfg *config.SriovNetworkConfig, logger *zap.Logger) (*manager, error) {
 	if k8sCfg.Namespace == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config k8s.Namespace", Reason: "can't be nil"}
 	}
@@ -36,10 +37,15 @@ func NewSriovNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig, l
 	if err != nil {
 		return nil, fmt.Errorf("create multus network-attachment-definition k8s client: %w", err)
 	}
+	var socketFile string
+	if sriovCfg != nil && sriovCfg.SocketFile != nil {
+		socketFile = *sriovCfg.SocketFile
+	}
 	return &manager{
 		logger:          logger,
 		netAttachClient: netAttC,
 		k8sCfg:          k8sCfg,
+		socketFile:      socketFile,
 	}, nil
 }
 
@@ -54,13 +60,18 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *v
 		return nil, &apperrors.ErrInvalidArgument{Field: "layer3Attributes", Reason: "SR-IOV networks do not support subnets"}
 	}
 
+	resourceName := *networkData.ProviderNetwork
+	if !strings.Contains(resourceName, "/") {
+		resourceName = "openshift.io/" + resourceName
+	}
+
 	var vlan uint64
 	if networkData.SegmentationId != nil {
 		vlan = *networkData.SegmentationId
 	}
-	cniConfig, err := formatSriovCniConfig(name, vlan, networkData.Bandwidth)
+	cniConfig, err := formatOvsCniConfig(name, vlan, m.socketFile)
 	if err != nil {
-		return nil, fmt.Errorf("build sriov-cni config for network '%s': %w", name, err)
+		return nil, fmt.Errorf("build ovs-cni config for network '%s': %w", name, err)
 	}
 
 	nad := &netattv1.NetworkAttachmentDefinition{
@@ -68,12 +79,12 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *v
 			Name:      name,
 			Namespace: *m.k8sCfg.Namespace,
 			Annotations: map[string]string{
-				nadResourceNameAnnotation: *networkData.ProviderNetwork,
+				nadResourceNameAnnotation: resourceName,
 			},
 			Labels: map[string]string{
-				common.K8sManagedByLabel:     common.KubeNfvName,
-				network.K8sNetworkTypeLabel:  nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String(),
-				network.K8sNetworkNameLabel:  name,
+				common.K8sManagedByLabel:    common.KubeNfvName,
+				network.K8sNetworkTypeLabel: nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String(),
+				network.K8sNetworkNameLabel: name,
 			},
 		},
 		Spec: netattv1.NetworkAttachmentDefinitionSpec{
@@ -103,6 +114,9 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 				return nil, &apperrors.ErrNotFound{Entity: fmt.Sprintf("SR-IOV network '%s'", cfg.Name)}
 			}
 			return nil, fmt.Errorf("get SR-IOV NetworkAttachmentDefinition '%s': %w", cfg.Name, err)
+		}
+		if nad.Labels[network.K8sNetworkTypeLabel] != nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String() {
+			return nil, &apperrors.ErrNotFound{Entity: fmt.Sprintf("SR-IOV network '%s'", cfg.Name)}
 		}
 		return nadToNfvNetwork(nad)
 	}
@@ -175,11 +189,4 @@ func (m *manager) DeleteSubnet(_ context.Context, _ ...network.GetSubnetOpt) err
 func (m *manager) EnsureManagementNetwork(_ context.Context, _ *config.ManagementNetworkConfig) error {
 	// SR-IOV backend has no management-network concept.
 	return nil
-}
-
-// isSriovNad returns true when the NAD was created by the sriov backend.
-func isSriovNad(nad *netattv1.NetworkAttachmentDefinition) bool {
-	labels := nad.GetLabels()
-	return misc.IsObjectManagedByKubeNfv(nad) &&
-		labels[network.K8sNetworkTypeLabel] == nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String()
 }
