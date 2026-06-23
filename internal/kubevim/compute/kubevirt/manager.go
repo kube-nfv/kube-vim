@@ -37,8 +37,8 @@ const (
 	KubevirtVirtualMachineInstanceTypeKind = "VirtualMachineInstanceType"
 	KubevirtVirtualMachinePreferenceKind   = "VirtualMachinePreference"
 
-	KubevirtVmMgmtNetworkName    = "default"
-	KubevirtVmMgmtRootVolumeName = "root-volume"
+	KubevirtVmMgmtNetworkName       = "default"
+	KubevirtVmMgmtRootVolumeName    = "root-volume"
 	KubevirtVmCloudInitSecretSuffix = "-cloud-init"
 
 	// Kubevirt related metadata labels that is used in vivnfm.VirtualCompute.Metadata fields
@@ -607,28 +607,35 @@ func initNetworks(ctx context.Context, netManager network.Manager, networksData 
 				return nil, nil, nil, fmt.Errorf("get network '%s' referenced in VirtualNetworkInterfaceData: %w", netData.NetworkId.Value, err)
 			}
 
-			var ipam *vivnfm.VirtualNetworkInterfaceIPAM
-			if netInst.NetworkType == nfvcommon.NetworkType_UNDERLAY {
-				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
-			} else if netInst.NetworkType == nfvcommon.NetworkType_OVERLAY {
-				returnOnMiss := true
-				if netData.Metadata != nil {
-					ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]
-					allocateRandom := ok && ann == "random"
-					returnOnMiss = !allocateRandom
+			if netInst.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_SRIOV {
+				net, iface, ann, err = initSriovNetwork(netInst, networkIpam)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("initialize SR-IOV interface for network '%s': %w", netData.NetworkId.Value, err)
 				}
-				ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, returnOnMiss)
-			}
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf(
-					"get IPAM for network '%s': %w",
-					netData.NetworkId.Value,
-					err,
-				)
-			}
-			net, iface, ann, err = initNetwork(ctx, netManager, ipam, namespace)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for network '%s': %w", netData.NetworkId.Value, err)
+			} else {
+				var ipam *vivnfm.VirtualNetworkInterfaceIPAM
+				if netInst.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY {
+					ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, false)
+				} else if netInst.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY {
+					returnOnMiss := true
+					if netData.Metadata != nil {
+						ann, ok := netData.Metadata.Fields[compute.KubenfvVmNetworkSubnetAssignmentAnnotation]
+						allocateRandom := ok && ann == "random"
+						returnOnMiss = !allocateRandom
+					}
+					ipam, err = getNetworkIpam(ctx, netData.NetworkId, netManager, networkIpam, returnOnMiss)
+				}
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf(
+						"get IPAM for network '%s': %w",
+						netData.NetworkId.Value,
+						err,
+					)
+				}
+				net, iface, ann, err = initNetwork(ctx, netManager, ipam, namespace)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("initialize kubevirt network and interface from IPAM for network '%s': %w", netData.NetworkId.Value, err)
+				}
 			}
 		}
 		networks = append(networks, *net)
@@ -726,6 +733,41 @@ func getNetworkIpam(ctx context.Context, networkId *nfvcommon.Identifier, netMan
 		})
 	}
 	return getSubnetIpam(ctx, fstSubId, netManager, netIPAMs)
+}
+
+func initSriovNetwork(netInst *vivnfm.VirtualNetwork, networkIpams []*vivnfm.VirtualNetworkInterfaceIPAM) (*kubevirtv1.Network, *kubevirtv1.Interface, map[string]string, error) {
+	if netInst.Metadata == nil {
+		return nil, nil, nil, fmt.Errorf("SR-IOV network has no metadata: %w", apperrors.ErrUnsupported)
+	}
+	nadName, ok := netInst.Metadata.Fields[network.K8sNetworkNetAttachNameLabel]
+	if !ok {
+		netId := ""
+		if netInst.NetworkResourceId != nil {
+			netId = netInst.NetworkResourceId.Value
+		}
+		return nil, nil, nil, fmt.Errorf("SR-IOV network '%s' missing label '%s': %w",
+			netId, network.K8sNetworkNetAttachNameLabel, apperrors.ErrUnsupported)
+	}
+	ann := make(map[string]string)
+	for _, ipam := range networkIpams {
+		if ipam.NetworkId != nil && netInst.NetworkResourceId != nil && ipam.NetworkId.Value == netInst.NetworkResourceId.Value {
+			if ipam.MacAddress != nil && ipam.MacAddress.Mac != "" {
+				ann["k8s.v1.cni.cncf.io/networks"] = fmt.Sprintf(`[{"name":%q,"mac":%q}]`, nadName, ipam.MacAddress.Mac)
+			}
+			break
+		}
+	}
+	return &kubevirtv1.Network{
+			Name: nadName,
+			NetworkSource: kubevirtv1.NetworkSource{
+				Multus: &kubevirtv1.MultusNetwork{NetworkName: nadName},
+			},
+		}, &kubevirtv1.Interface{
+			Name: nadName,
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				SRIOV: &kubevirtv1.InterfaceSRIOV{},
+			},
+		}, ann, nil
 }
 
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID

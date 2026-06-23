@@ -85,7 +85,7 @@ func mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName string) map[string]st
 		network.K8sSubnetNameLabel:          subnetName,
 		network.K8sSubnetNetAttachNameLabel: nadName,
 		network.K8sNetworkNameLabel:         vpcName,
-		network.K8sNetworkTypeLabel:         nfvcommon.NetworkType_OVERLAY.String(),
+		network.K8sNetworkTypeLabel:         nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY.String(),
 	}
 	// vpcUID is empty only on transient Vpc states where Create returned a
 	// partially-populated object; skip the label so we don't write an empty

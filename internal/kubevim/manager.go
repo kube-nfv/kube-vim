@@ -16,7 +16,9 @@ import (
 	//http_im "github.com/kube-nfv/kube-vim/internal/kubevim/image/http"
 	//"github.com/kube-nfv/kube-vim/internal/kubevim/image/local"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network/composite"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network/sriov"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/server"
 	"go.uber.org/zap"
 	"k8s.io/client-go/rest"
@@ -156,11 +158,19 @@ func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *conf
 	if k8sConfig == nil {
 		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
 	}
-	var err error
-	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg, m.logger.Named("network"))
+	ovnMgr, err := kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg, m.logger.Named("network.ovn"))
 	if err != nil {
 		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
+	var sriovCfg *config.SriovNetworkConfig
+	if m.cfg.Network != nil {
+		sriovCfg = m.cfg.Network.Sriov
+	}
+	sriovMgr, err := sriov.NewSriovNetworkManager(k8sConfig, k8sCfg, sriovCfg, m.logger.Named("network.sriov"))
+	if err != nil {
+		return fmt.Errorf("create sriov network manager: %w", err)
+	}
+	m.networkMgr = composite.NewManager(ovnMgr, sriovMgr)
 	return nil
 }
 
@@ -199,4 +209,3 @@ func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	}
 	return nil
 }
-
