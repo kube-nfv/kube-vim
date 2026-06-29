@@ -67,7 +67,7 @@ reachability is solved for free.
 
 The blockers are inside kube-vim, not in the network model:
 
-* `nfvNetworkSubnetFromKubeovnSubnet` (`network/kubeovn/utils.go:244`)
+* `nfvNetworkSubnetFromKubeovnSubnet` (`network/kubeovn/utils.go`)
   rejects any object that does not carry the
   `app.kubernetes.io/managed-by: kube-nfv` label. `ovn-default` is owned by
   kube-OVN, not kube-nfv.
@@ -154,7 +154,7 @@ network:
 
 ### Required labels and why
 
-`initNetwork` (`internal/kubevim/compute/kubevirt/manager.go:746-768`) reads
+`initNetwork` (`internal/kubevim/compute/kubevirt/manager.go`) reads
 the following labels off the `Subnet` object on every VM creation:
 
 | Label                              | Purpose                                                       |
