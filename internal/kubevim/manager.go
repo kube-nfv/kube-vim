@@ -20,6 +20,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/sriov"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/server"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/telemetry"
 	"go.uber.org/zap"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -32,10 +33,11 @@ type kubevimManager struct {
 	logger *zap.Logger
 	cfg    *config.Config
 
-	imageMgr   image.Manager
-	networkMgr network.Manager
-	flavourMgr flavour.Manager
-	computeMgr compute.Manager
+	imageMgr     image.Manager
+	networkMgr   network.Manager
+	flavourMgr   flavour.Manager
+	computeMgr   compute.Manager
+	telemetryMgr *telemetry.Manager
 
 	nbServer *server.NorthboundServer
 }
@@ -75,6 +77,9 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if err := mgr.initComputeManager(k8sConfig, cfg.K8s, cfg.Compute); err != nil {
 		return nil, fmt.Errorf("initialize compute manager: %w", err)
 	}
+	if err := mgr.initTelemetryManager(cfg.Monitoring); err != nil {
+		return nil, fmt.Errorf("initialize telemetry manager: %w", err)
+	}
 	if err := mgr.initNorthboundServer(cfg.Service.Server); err != nil {
 		return nil, fmt.Errorf("configure northbound server: %w", err)
 	}
@@ -96,6 +101,11 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	go func() {
 		if err := m.nbServer.Start(ctx); err != nil {
 			errCh <- fmt.Errorf("start Northbound server: %w", err)
+		}
+	}()
+	go func() {
+		if err := m.telemetryMgr.Start(ctx); err != nil {
+			errCh <- fmt.Errorf("start telemetry server: %w", err)
 		}
 	}()
 	go func() {
@@ -198,12 +208,21 @@ func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.
 	return nil
 }
 
+func (m *kubevimManager) initTelemetryManager(cfg *config.MonitoringConfig) error {
+	var err error
+	m.telemetryMgr, err = telemetry.NewManager(cfg, m.logger.Named("Telemetry"), m.computeMgr, m.networkMgr)
+	if err != nil {
+		return fmt.Errorf("create telemetry manager: %w", err)
+	}
+	return nil
+}
+
 func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "ServiceConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr)
+	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.telemetryMgr.MeterProvider(), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr)
 	if err != nil {
 		return fmt.Errorf("initialize NorthboundServer: %w", err)
 	}

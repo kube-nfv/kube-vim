@@ -44,6 +44,12 @@ spec:
         securityContext:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+        {{- if .Values.vim.config.monitoring.enabled }}
+        ports:
+        - name: metrics
+          containerPort: {{ .Values.vim.config.monitoring.metricsPort }}
+          protocol: TCP
+        {{- end }}
         volumeMounts:
         - name: config
           mountPath: /etc/kube-vim
