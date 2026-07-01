@@ -16,6 +16,8 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	vivnfmserver "github.com/kube-nfv/kube-vim/internal/kubevim/server/grpc/vivnfm"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -37,12 +39,17 @@ type NorthboundServer struct {
 func NewNorthboundServer(
 	cfg *config.ServerConfig,
 	log *zap.Logger,
+	meterProvider metric.MeterProvider,
 	imageMgr image.Manager,
 	networkManager network.Manager,
 	flavourManager flavour.Manager,
 	computeManager compute.Manager) (*NorthboundServer, error) {
 	// TODO: Add Security
 	opts := []grpc.ServerOption{
+		// Emits per-RPC RED metrics through meterProvider (a no-op provider when
+		// monitoring is disabled). No trace exporter is configured, so spans are
+		// no-ops.
+		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(meterProvider))),
 		grpc.ConnectionTimeout(ConnectionTimeout),
 		grpc.ChainUnaryInterceptor(
 			// Error conversion interceptor (first to convert errors)

@@ -20,6 +20,12 @@ spec:
       targetPort: {{ .Values.vim.service.targetPort | default .Values.vim.config.service.server.port }}
       protocol: TCP
       name: {{ .Values.vim.service.portName }}
+    {{- if .Values.vim.config.monitoring.enabled }}
+    - port: {{ .Values.vim.config.monitoring.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
   selector:
     {{- include "kube-vim.vim.selectorLabels" . | nindent 4 }}
 {{- end }}

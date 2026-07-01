@@ -70,8 +70,27 @@ vim:
       logLevel: "debug"
       server:
         port: 50051
+    # Telemetry. When enabled kube-vim serves a Prometheus /metrics endpoint on
+    # metricsPort exposing its own operational metrics and the kubevim_*_info
+    # correlation metrics. Off by default; opt-in.
+    monitoring:
+      enabled: false
+      metricsPort: 9095
     image:
       http: {}
+
+  # Prometheus Operator (prometheus-community) integration. Renders a
+  # ServiceMonitor targeting the metrics port. Requires the Operator CRDs and
+  # config.monitoring.enabled=true. Off by default so the chart does not depend
+  # on the Operator; plain-Prometheus users can scrape the metrics port directly.
+  metrics:
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      scrapeTimeout: ""
+      labels: {}
+      relabelings: []
+      metricRelabelings: []
     network:
       mgmt:
         underlay:

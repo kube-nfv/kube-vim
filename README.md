@@ -72,6 +72,10 @@ compatible set of CRDs:
   [docs/management-network.md](docs/management-network.md).
 - **cloud-init** — pass NoCloud / ConfigDrive user-data via Kubernetes Secret (bypasses
   KubeVirt's 2 KiB inline limit).
+- **Monitoring** — opt-in Prometheus `/metrics` endpoint exposing kube-vim's own
+  operational metrics plus `kubevim_*_info` correlation metrics that join backend
+  (KubeVirt/kube-OVN/SR-IOV) series to ETSI resource IDs. See
+  [docs/monitoring.md](docs/monitoring.md).
 
 ## Quick start (Kind)
 
@@ -140,6 +144,7 @@ API** (outside the ETSI reference points) handles image management tasks.
 
 - [docs/management-network.md](docs/management-network.md) — managed management network design & runbook
 - [docs/sriov-networks.md](docs/sriov-networks.md) — SR-IOV networks design & runbook
+- [docs/monitoring.md](docs/monitoring.md) — telemetry / metrics design & runbook
 
 ## License
 
