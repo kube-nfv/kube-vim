@@ -27,6 +27,9 @@ func SetViperDefaults(podNamespace string) {
 	viper.SetDefault("network.managementNetwork.cidr", "10.240.0.0/24")
 
 	viper.SetDefault("network.sriov.socketFile", "unix:/var/run/openvswitch/db.sock")
+
+	viper.SetDefault("monitoring.enabled", false)
+	viper.SetDefault("monitoring.metricsPort", 9095)
 }
 
 // Normalize fills in defaults that depend on other already-loaded values. It

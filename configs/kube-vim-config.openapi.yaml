@@ -18,6 +18,8 @@ components:
           $ref: '#/components/schemas/NetworkConfig'
         compute:
           $ref: '#/components/schemas/ComputeConfig'
+        monitoring:
+          $ref: '#/components/schemas/MonitoringConfig'
     ServiceConfig:
       type: object
       description: "Configuration related to the kube-vim service."
@@ -158,6 +160,25 @@ components:
           items:
             $ref: '#/components/schemas/Toleration'
           description: "Tolerations for VM scheduling."
+
+    MonitoringConfig:
+      type: object
+      description: |
+        Configuration for kube-vim telemetry. When enabled, kube-vim serves a
+        Prometheus /metrics endpoint on a dedicated port. The endpoint exposes
+        kube-vim's own operational metrics and the `kubevim_*_info` correlation
+        metrics used to join backend (KubeVirt/kube-OVN/SR-IOV) series to ETSI
+        resource IDs in Prometheus. kube-vim never proxies or re-exports backend
+        counters.
+      properties:
+        enabled:
+          type: boolean
+          default: false
+          description: "Whether kube-vim serves the Prometheus /metrics endpoint. Default off; opt-in."
+        metricsPort:
+          $ref: './common.openapi.yaml#/components/schemas/port'
+          default: 9095
+          description: "Port for the Prometheus /metrics endpoint."
 
     Toleration:
       type: object

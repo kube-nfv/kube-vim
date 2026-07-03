@@ -40,6 +40,14 @@ type Config struct {
 	// K8s Configuration related to Kubernetes operations.
 	K8s *K8sConfig `json:"k8s,omitempty"`
 
+	// Monitoring Configuration for kube-vim telemetry. When enabled, kube-vim serves a
+	// Prometheus /metrics endpoint on a dedicated port. The endpoint exposes
+	// kube-vim's own operational metrics and the `kubevim_*_info` correlation
+	// metrics used to join backend (KubeVirt/kube-OVN/SR-IOV) series to ETSI
+	// resource IDs in Prometheus. kube-vim never proxies or re-exports backend
+	// counters.
+	Monitoring *MonitoringConfig `json:"monitoring,omitempty"`
+
 	// Network Configuration for kube-vim cluster static network.
 	Network *NetworkConfig `json:"network,omitempty"`
 
@@ -110,6 +118,25 @@ type ManagementNetworkConfig struct {
 
 	// NetAttachDefNamespace Namespace of the NetworkAttachmentDefinition. Defaults to the kube-vim namespace from the `k8s` section.
 	NetAttachDefNamespace *string `json:"netAttachDefNamespace,omitempty"`
+}
+
+// MonitoringConfig Configuration for kube-vim telemetry. When enabled, kube-vim serves a
+// Prometheus /metrics endpoint on a dedicated port. The endpoint exposes
+// kube-vim's own operational metrics and the `kubevim_*_info` correlation
+// metrics used to join backend (KubeVirt/kube-OVN/SR-IOV) series to ETSI
+// resource IDs in Prometheus. kube-vim never proxies or re-exports backend
+// counters.
+type MonitoringConfig struct {
+	// Enabled Whether kube-vim serves the Prometheus /metrics endpoint. Default off; opt-in.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// MetricsPort "A TCP port number specifies the endpoint for network communication on the service.
+	// Port numbers range from 1 to 65535, with the lower range (1-1023) typically reserved for well-known services and system processes.
+	// It is important to choose a port within the allowed range that does not conflict with other services running on the host.
+	//
+	// Ensure that the selected port is open and accessible for communication while respecting the security policies of your network.
+	// Avoid using ports that are commonly blocked by firewalls or reserved for specific applications."
+	MetricsPort *externalRef0.Port `json:"metricsPort,omitempty"`
 }
 
 // NetworkConfig Configuration for kube-vim cluster static network.
