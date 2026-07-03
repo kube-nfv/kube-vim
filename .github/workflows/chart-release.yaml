@@ -1,0 +1,40 @@
+name: chart-release
+
+on:
+  push:
+    tags:
+      - 'chart/v*'
+
+permissions:
+  contents: read
+  packages: write   # push chart to ghcr.io OCI registry
+
+jobs:
+  chart-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Resolve chart version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#chart/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Lint chart
+        run: helm lint dist/chart
+
+      - name: Package chart
+        env:
+          CHART_VERSION: ${{ steps.version.outputs.version }}
+        # appVersion is taken from the committed Chart.yaml (drives the default image tag);
+        # only the packaging version comes from the tag.
+        run: helm package dist/chart --version "$CHART_VERSION"
+
+      - name: Push chart to ghcr.io
+        env:
+          CHART_VERSION: ${{ steps.version.outputs.version }}
+        run: helm push "kube-vim-${CHART_VERSION}.tgz" oci://ghcr.io/kube-nfv/charts

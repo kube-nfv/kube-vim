@@ -1,4 +1,7 @@
 apiVersion: v2
 name: kube-vim
 description: A Helm chart for Kube-NFV kube-vim installation
-version: 0.0.1 # TODO: Change it in future
+version: 0.0.1 # chart packaging version; bump on any chart change, released via chart/v* tag
+# App release the chart deploys by default. Drives the image tag (see _helpers.tpl).
+# Bump manually to a published kube-vim release before cutting a chart release.
+appVersion: "0.0.1"

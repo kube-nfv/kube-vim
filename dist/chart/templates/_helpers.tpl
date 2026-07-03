@@ -107,7 +107,7 @@ Return the proper image name for VIM
 {{- define "kube-vim.vim.image" -}}
 {{- $registry := .Values.global.image.registry -}}
 {{- $repository := .Values.vim.image.repository -}}
-{{- $tag := .Values.vim.image.tag | default .Values.global.image.tag -}}
+{{- $tag := .Values.vim.image.tag | default .Values.global.image.tag | default .Chart.AppVersion -}}
 {{- printf "%s/%s:%s" $registry $repository $tag -}}
 {{- end }}
 
@@ -117,7 +117,7 @@ Return the proper image name for Gateway
 {{- define "kube-vim.gateway.image" -}}
 {{- $registry := .Values.global.image.registry -}}
 {{- $repository := .Values.gateway.image.repository -}}
-{{- $tag := .Values.gateway.image.tag | default .Values.global.image.tag -}}
+{{- $tag := .Values.gateway.image.tag | default .Values.global.image.tag | default .Chart.AppVersion -}}
 {{- printf "%s/%s:%s" $registry $repository $tag -}}
 {{- end }}
 

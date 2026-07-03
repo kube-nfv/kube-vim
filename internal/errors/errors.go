@@ -74,7 +74,7 @@ type ErrK8sObjectNotInstantiated struct {
 
 func (e *ErrK8sObjectNotInstantiated) Error() string {
 	if e.Identifier == "" {
-		e.Identifier = "unknown"
+		return fmt.Sprintf("%s is not from Kubernetes (likely created manually)", e.ObjectType)
 	}
 	return fmt.Sprintf("%s (id: %s) is not from Kubernetes (likely created manually)", e.ObjectType, e.Identifier)
 }
