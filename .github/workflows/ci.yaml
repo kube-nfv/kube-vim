@@ -1,0 +1,86 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # TODO(#23): re-enable once golangci-lint is migrated to v2 (Go 1.25 support)
+  # and the existing findings are resolved. When re-enabling, add `lint` back to
+  # the `ci` gate's `needs` below.
+  # lint:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: go.mod
+  #         cache: true
+  #     - name: make lint
+  #       run: make lint
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: make build
+        run: make build
+      - name: Verify generated/formatted code is committed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::'make build' produced changes. Run 'make generate' and 'make fmt' and commit the result."
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: make test
+        run: make test
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: helm lint dist/chart
+      - name: Require chart version bump when chart changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA"...HEAD -- dist/chart; then
+            echo "No chart changes; skipping version-bump check."
+            exit 0
+          fi
+          old_ver=$(git show "$BASE_SHA":dist/chart/Chart.yaml | awk '/^version:/ {print $2; exit}')
+          new_ver=$(awk '/^version:/ {print $2; exit}' dist/chart/Chart.yaml)
+          echo "chart version: $old_ver -> $new_ver"
+          if [ "$old_ver" = "$new_ver" ]; then
+            echo "::error::dist/chart changed but Chart.yaml 'version' was not bumped."
+            exit 1
+          fi
+
+  # Single required status check aggregating the jobs above.
+  # Branch protection on main requires the "ci" context.
+  ci:
+    runs-on: ubuntu-latest
+    needs: [build, test, helm-lint]  # add `lint` once the lint job is re-enabled
+    steps:
+      - run: echo "all checks passed"

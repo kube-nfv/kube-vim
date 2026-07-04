@@ -6,7 +6,9 @@
 global:
   image:
     registry: ghcr.io/kube-nfv
-    tag: "latest"
+    # Empty by default so the image tag falls back to the chart's appVersion.
+    # Override to pin a specific image tag across all components.
+    tag: ""
     pullPolicy: IfNotPresent
     pullSecrets: []
 

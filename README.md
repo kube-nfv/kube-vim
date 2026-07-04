@@ -110,10 +110,15 @@ Binaries are written to `bin/`. Build dependency tools are installed under `bin/
 
 ## Deployment
 
-kube-vim is deployed with the Helm chart in [`dist/chart`](dist/chart):
+kube-vim is deployed with the Helm chart in [`dist/chart`](dist/chart), either from a local
+checkout or from the published OCI chart:
 
 ```bash
+# from the repo
 helm install kube-vim ./dist/chart -n kube-vim --create-namespace
+
+# from the OCI registry (published on chart/v* tags)
+helm install kube-vim oci://ghcr.io/kube-nfv/charts/kube-vim -n kube-vim --create-namespace
 ```
 
 Both components read configuration loaded by [Viper](https://github.com/spf13/viper) from a
@@ -145,6 +150,7 @@ API** (outside the ETSI reference points) handles image management tasks.
 - [docs/management-network.md](docs/management-network.md) — managed management network design & runbook
 - [docs/sriov-networks.md](docs/sriov-networks.md) — SR-IOV networks design & runbook
 - [docs/monitoring.md](docs/monitoring.md) — telemetry / metrics design & runbook
+- [docs/ci-cd.md](docs/ci-cd.md) — CI/CD workflows, release management & runbook
 
 ## License
 

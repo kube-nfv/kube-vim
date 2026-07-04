@@ -1,0 +1,68 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # create GitHub Release + upload assets
+  packages: write   # push images to ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make docker-build KUBEVIM_VERSION="$VERSION" KUBEVIM_GATEWAY_VERSION="$VERSION"
+
+      - name: Push images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for img in kube-vim gateway; do
+            docker push "ghcr.io/kube-nfv/$img:$VERSION"
+            docker tag  "ghcr.io/kube-nfv/$img:$VERSION" "ghcr.io/kube-nfv/$img:latest"
+            docker push "ghcr.io/kube-nfv/$img:latest"
+          done
+
+      - name: Build binaries
+        run: make build
+
+      - name: Stage release binaries
+        run: |
+          mkdir -p release
+          cp bin/kube-vim release/kube-vim-linux-amd64
+          cp bin/gateway release/gateway-linux-amd64
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            release/kube-vim-linux-amd64 \
+            release/gateway-linux-amd64
