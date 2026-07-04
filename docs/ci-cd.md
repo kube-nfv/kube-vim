@@ -67,7 +67,9 @@ Chart releases therefore **follow** app releases.
 
 `main` requires a PR (direct pushes blocked), the `ci` check to pass and be
 up to date, linear history, and conversation resolution; force-pushes and
-deletion are blocked. Configured via the GitHub API (not a committed file).
+deletion are blocked. Only members of the `maintainers` team may bypass the PR
+requirement and push directly to `main`. Configured via the GitHub API (not a
+committed file).
 
 ## Operator runbook
 
