@@ -9,6 +9,7 @@ import (
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
@@ -17,7 +18,7 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) (*vivnfm.VirtualCompute, error) {
+func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance, launcher launcherInfo) (*vivnfm.VirtualCompute, error) {
 	if vmi == nil || vm == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt resources", Reason: "virtualMachine and virtualMachineInstance cannot be nil"}
 	}
@@ -44,6 +45,9 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 	mdFields[KubevirtVmiStatusPhase] = string(vmi.Status.Phase)
 	if vmi.Status.Reason != "" {
 		mdFields[KubevirtVmiStatusReason] = vmi.Status.Reason
+	}
+	if launcher.podName != "" {
+		mdFields[compute.ComputePodNameMetadataKey] = launcher.podName
 	}
 
 	netIfaces := make([]*vivnfm.VirtualNetworkInterface, 0, len(vmi.Status.Interfaces))
@@ -124,6 +128,10 @@ func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager
 				Mac: "initializing",
 			}
 			netMdFields[KubevirtInterfaceReady] = "false"
+		}
+
+		if pci, ok := launcher.hostPciByVnic[name]; ok && pci != "" {
+			netMdFields[compute.VnicHostPciAddressMetadataKey] = pci
 		}
 
 		netIfRes.Metadata = &nfvcommon.Metadata{

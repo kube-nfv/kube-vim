@@ -84,6 +84,8 @@ func observeComputeInfo(ctx context.Context, obs metric.Observer, logger *zap.Lo
 			attribute.String("flavour_id", c.GetFlavourId().GetValue()),
 			attribute.String("image_id", c.GetVcImageId().GetValue()),
 			attribute.String("host_id", c.GetHostId().GetValue()),
+			// pod_name is the virt-launcher pod, the join key to cAdvisor/kube-state-metrics.
+			attribute.String("pod_name", c.GetMetadata().GetFields()[compute.ComputePodNameMetadataKey]),
 			attribute.String("operational_state", c.GetOperationalState().String()),
 			attribute.String("running_state", c.GetRunningState().String()),
 		))
@@ -96,6 +98,12 @@ func observeComputeInfo(ctx context.Context, obs metric.Observer, logger *zap.Lo
 				attribute.String("subnet_id", nic.GetSubnetId().GetValue()),
 				attribute.String("network_port_id", nic.GetNetworkPortId().GetValue()),
 				attribute.String("type", nic.GetTypeVirtualNic().String()),
+				// host_id disambiguates the pci_address join across nodes (PCI addresses
+				// are node-local, not cluster-unique).
+				attribute.String("host_id", c.GetHostId().GetValue()),
+				// pci_address is the host VF/pass-through address for host-PCI vNICs
+				// (SR-IOV); empty for virtio/bridge vNICs.
+				attribute.String("pci_address", nic.GetMetadata().GetFields()[compute.VnicHostPciAddressMetadataKey]),
 			))
 		}
 	}

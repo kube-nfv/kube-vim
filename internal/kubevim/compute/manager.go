@@ -16,6 +16,15 @@ const (
 	//    manual - SubnetID should be specified (default)
 	KubenfvVmNetworkSubnetAssignmentAnnotation = "compute.kubevim.kubenfv.io/network.subnet.assignment"
 	UnknownNetworkSubnetAssigmentAnnotationMsg = "unknown network subnet assignment annotation, should be one of: random, manual"
+
+	// VnicHostPciAddressMetadataKey holds the host PCI address backing a vNIC, set
+	// only when it maps to a host PCI device (SR-IOV VF or PCI pass-through). Absent
+	// for virtio/bridge vNICs, which are tap devices with no host PCI device.
+	VnicHostPciAddressMetadataKey = "compute.kubevim.kubenfv.io/host-pci-address"
+
+	// ComputePodNameMetadataKey holds the virt-launcher pod name backing a compute;
+	// the join key to pod-scoped backend series (cAdvisor, kube-state-metrics).
+	ComputePodNameMetadataKey = "compute.kubevim.kubenfv.io/pod-name"
 )
 
 type Manager interface {

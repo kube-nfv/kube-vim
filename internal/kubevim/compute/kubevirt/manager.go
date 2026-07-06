@@ -2,8 +2,11 @@ package kubevirt
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
+
+	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	"github.com/google/uuid"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
@@ -249,7 +252,7 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	if err != nil {
 		return nil, fmt.Errorf("get VM instance '%s' (uid: %s): %w", vmName, vm.UID, err)
 	}
-	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
+	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, m.getLauncherInfo(ctx, vmi))
 	if err != nil {
 		return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vmName, vm.UID, err)
 	}
@@ -270,13 +273,69 @@ func (m *manager) ListComputeResources(ctx context.Context) ([]*vivnfm.VirtualCo
 		if err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 		}
-		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
+		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi, m.getLauncherInfo(ctx, vmi))
 		if err != nil {
 			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
 		}
 		res = append(res, vComp)
 	}
 	return res, nil
+}
+
+// kubevirtNetworkInfo mirrors the kubevirt.io/network-info annotation payload
+// (upstream type lives in the non-consumable kubevirt.io/kubevirt module).
+const kubevirtNetworkInfoAnnotation = "kubevirt.io/network-info"
+
+type kubevirtNetworkInfo struct {
+	Interfaces []struct {
+		Network    string               `json:"network"`
+		DeviceInfo *netattv1.DeviceInfo `json:"deviceInfo,omitempty"`
+	} `json:"interfaces,omitempty"`
+}
+
+type launcherInfo struct {
+	podName       string
+	hostPciByVnic map[string]string // vNIC name -> host PCI address (SR-IOV / pass-through)
+}
+
+// getLauncherInfo reads the VMI's virt-launcher pod name and per-vNIC host PCI
+// addresses. Best-effort: returns zero values on any error, never fails the caller.
+func (m *manager) getLauncherInfo(ctx context.Context, vmi *kubevirtv1.VirtualMachineInstance) launcherInfo {
+	info := launcherInfo{hostPciByVnic: map[string]string{}}
+	if vmi == nil || vmi.UID == "" {
+		return info
+	}
+	pods, err := m.k8sClient.CoreV1().Pods(*m.cfg.Namespace).List(ctx, v1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", kubevirtv1.CreatedByLabel, string(vmi.UID)),
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return info
+	}
+	// Prefer the pod on the VMI's current node (unambiguous during migration).
+	pod := &pods.Items[0]
+	for i := range pods.Items {
+		if pods.Items[i].Spec.NodeName == vmi.Status.NodeName {
+			pod = &pods.Items[i]
+			break
+		}
+	}
+	info.podName = pod.Name
+
+	infoJSON, ok := pod.Annotations[kubevirtNetworkInfoAnnotation]
+	if !ok {
+		return info
+	}
+	var netInfo kubevirtNetworkInfo
+	if err := json.Unmarshal([]byte(infoJSON), &netInfo); err != nil {
+		return info
+	}
+	for _, iface := range netInfo.Interfaces {
+		if iface.DeviceInfo == nil || iface.DeviceInfo.Pci == nil || iface.DeviceInfo.Pci.PciAddress == "" {
+			continue
+		}
+		info.hostPciByVnic[iface.Network] = iface.DeviceInfo.Pci.PciAddress
+	}
+	return info
 }
 
 func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) (*vivnfm.VirtualCompute, error) {
@@ -291,7 +350,7 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 		if err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", cfg.Name, vm.UID, err)
 		}
-		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi)
+		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, m.getLauncherInfo(ctx, vmi))
 		if err != nil {
 			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", cfg.Name, vm.UID, err)
 		}
@@ -311,7 +370,7 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 			if err != nil {
 				return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
 			}
-			vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi)
+			vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi, m.getLauncherInfo(ctx, vmi))
 			if err != nil {
 				return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
 			}

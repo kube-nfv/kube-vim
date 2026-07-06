@@ -54,12 +54,50 @@ Correlation (value always `1`):
 
 | Metric | Key labels |
 |---|---|
-| `kubevim_compute_info` | `compute_id`, `compute_name`, `flavour_id`, `image_id`, `host_id`, `operational_state`, `running_state` |
-| `kubevim_vnic_info` | `compute_id`, `compute_name`, `vnic_id`, `network_id`, `subnet_id`, `network_port_id`, `type` |
+| `kubevim_compute_info` | `compute_id`, `compute_name`, `flavour_id`, `image_id`, `host_id`, `pod_name`, `operational_state`, `running_state` |
+| `kubevim_vnic_info` | `compute_id`, `compute_name`, `vnic_id`, `network_id`, `subnet_id`, `network_port_id`, `type`, `host_id`, `pci_address` |
 | `kubevim_network_info` | `network_id`, `network_name`, `network_type`, `provider_network`, `segmentation_id`, `operational_state` |
 
 `compute_name` equals the KubeVirt VM/VMI name — the join key to the `name` label
-on `kubevirt_vmi_*`. `compute_id` is the ETSI compute id (the VM UID).
+on `kubevirt_vmi_*`. `compute_id` is the ETSI compute id (the VM UID). `pod_name` is
+the virt-launcher pod — the join key to pod-scoped series (cAdvisor `container_*`,
+kube-state-metrics `kube_pod_*`) that `kubevirt_vmi_*` does not cover.
+
+On `kubevim_vnic_info`, two labels make a vNIC deterministically joinable to its
+backend counters:
+
+- `pci_address` — the **host** VF/pass-through PCI address of a host-PCI vNIC
+  (`type=TYPE_VIRTUAL_NIC_SRIOV`); the join key to the SR-IOV VF exporter's
+  `sriov_vf_*{pciAddr}` series. Empty for virtio/bridge vNICs. Sourced from the
+  virt-launcher pod's `kubevirt.io/network-info` annotation.
+- `host_id` — the node name (matches `kubevim_compute_info.host_id`). Keeps the
+  `pci_address` join unambiguous: PCI addresses are node-local, not cluster-unique.
+
+`pod_name`/`pci_address` are read best-effort from the virt-launcher pod on each
+scrape; if the pod or annotation is absent the labels are empty and the scrape still
+succeeds. The `kubevirt.io/network-info` payload type is redefined locally
+(`internal/kubevim/compute/kubevirt`) rather than imported — the upstream type sits
+in the `kubevirt.io/kubevirt` application module, which is not consumable as a
+library (kube-vim depends only on the `kubevirt.io/api` / `client-go` staging modules).
+
+Bridge/virtio vNICs need no extra label: KubeVirt sets the `interface` label on
+`kubevirt_vmi_network_*` to the network name, which equals `vnic_id`, so the join
+keys on `vnic_id` directly. (SR-IOV VF traffic bypasses virtio and never appears in
+`kubevirt_vmi_network_*`.)
+
+```promql
+# SR-IOV VF counters → ETSI compute/vNIC
+sriov_vf_rx_packets
+  * on(pciAddr) group_left(compute_id, vnic_id)
+  label_replace(kubevim_vnic_info{type="TYPE_VIRTUAL_NIC_SRIOV"},
+                "pciAddr", "$1", "pci_address", "(.+)")
+
+# bridge/virtio counters → ETSI compute/vNIC
+kubevirt_vmi_network_receive_packets_total
+  * on(name, interface) group_left(compute_id, vnic_id)
+  label_replace(label_replace(kubevim_vnic_info{type="TYPE_VIRTUAL_NIC_BRIDGE"},
+      "name", "$1", "compute_name", "(.+)"), "interface", "$1", "vnic_id", "(.+)")
+```
 
 The gauges are OTEL observable gauges whose callback reuses the domain managers'
 existing `List*` methods (`compute.Manager.ListComputeResources`,
@@ -117,6 +155,8 @@ pod annotations are intentionally not emitted — the Operator ignores them.
 - **FM gRPC API** (IFA 005/006 §7.6) over Alertmanager.
 - **PM gRPC API** (§7.7) over Prometheus range queries — `PmJob` CRD, `Threshold`
   → generated `PrometheusRule`, and a Subscribe/Notify subsystem.
-- **Known gap:** SR-IOV VF traffic bypasses OVS and is invisible to KubeVirt, so
-  per-vNIC byte/packet counters for SR-IOV interfaces need a node-level VF
-  exporter (`kubevim_vnic_info` already carries `type` to identify them).
+- **SR-IOV VF counters:** VF traffic bypasses OVS and is invisible to KubeVirt, so
+  per-vNIC byte/packet counters come from a node-level VF exporter
+  (`sriov_vf_*`, keyed by `pciAddr`). `kubevim_vnic_info` now carries `pci_address`
+  + `host_id` to join those series to the ETSI compute/vNIC (see above); deploying
+  the exporter and the recording rules remains operator/NFVO-side work.
