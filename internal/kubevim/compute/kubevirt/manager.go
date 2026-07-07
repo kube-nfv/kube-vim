@@ -807,11 +807,17 @@ func initSriovNetwork(netInst *vivnfm.VirtualNetwork, networkIpams []*vivnfm.Vir
 		return nil, nil, nil, fmt.Errorf("SR-IOV network '%s' missing label '%s': %w",
 			netId, network.K8sNetworkNetAttachNameLabel, apperrors.ErrUnsupported)
 	}
-	ann := make(map[string]string)
+	iface := &kubevirtv1.Interface{
+		Name: nadName,
+		InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+			SRIOV: &kubevirtv1.InterfaceSRIOV{},
+		},
+	}
+	// Set MAC on the interface; KubeVirt forwards it to sriov-cni via the network selection request.
 	for _, ipam := range networkIpams {
 		if ipam.NetworkId != nil && netInst.NetworkResourceId != nil && ipam.NetworkId.Value == netInst.NetworkResourceId.Value {
 			if ipam.MacAddress != nil && ipam.MacAddress.Mac != "" {
-				ann["k8s.v1.cni.cncf.io/networks"] = fmt.Sprintf(`[{"name":%q,"mac":%q}]`, nadName, ipam.MacAddress.Mac)
+				iface.MacAddress = ipam.MacAddress.Mac
 			}
 			break
 		}
@@ -821,12 +827,7 @@ func initSriovNetwork(netInst *vivnfm.VirtualNetwork, networkIpams []*vivnfm.Vir
 			NetworkSource: kubevirtv1.NetworkSource{
 				Multus: &kubevirtv1.MultusNetwork{NetworkName: nadName},
 			},
-		}, &kubevirtv1.Interface{
-			Name: nadName,
-			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
-				SRIOV: &kubevirtv1.InterfaceSRIOV{},
-			},
-		}, ann, nil
+		}, iface, nil, nil
 }
 
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
