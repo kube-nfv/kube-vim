@@ -823,11 +823,11 @@ func initSriovNetwork(netInst *vivnfm.VirtualNetwork, networkIpams []*vivnfm.Vir
 		}
 	}
 	return &kubevirtv1.Network{
-			Name: nadName,
-			NetworkSource: kubevirtv1.NetworkSource{
-				Multus: &kubevirtv1.MultusNetwork{NetworkName: nadName},
-			},
-		}, iface, nil, nil
+		Name: nadName,
+		NetworkSource: kubevirtv1.NetworkSource{
+			Multus: &kubevirtv1.MultusNetwork{NetworkName: nadName},
+		},
+	}, iface, nil, nil
 }
 
 // Returns the kubevirt network and interface from the IPAM. Ipam should have an SubnetID
