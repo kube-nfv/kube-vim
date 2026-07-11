@@ -76,6 +76,8 @@ When attaching an SR-IOV network to a VM, set `typeVirtualNic` to `TYPE_VIRTUAL_
 
 SR-IOV networks do not support subnets. All subnet operations on an SR-IOV network return an error.
 
+Networks placed on the **same PF** are separated from one another by their access VLAN: give each co-located SR-IOV network a distinct `segmentationId` to isolate it. `segmentationId: 0` leaves the port untagged, so multiple untagged networks on the same PF land in a single shared L2 broadcast domain. Networks on different PFs are already isolated by hardware.
+
 ## Architecture
 
 ### Composite network manager
@@ -128,11 +130,30 @@ The `vfio`/`netdevice` driver mode is set by the VF pool (`SriovNetworkNodePolic
 
 ### Compute layer
 
-When `AllocateVirtualisedComputeResource` references an SR-IOV network, kube-vim skips subnet and IPAM resolution and emits a KubeVirt VM spec with an SR-IOV interface binding (`interface.sriov: {}`). No OVN annotations are written — kube-OVN does not manage these bridges, and the VF data path is offloaded to the NIC.
+When `AllocateVirtualisedComputeResource` references an SR-IOV network, kube-vim skips subnet and IPAM resolution and emits a KubeVirt VM spec with an SR-IOV interface binding (`interface.sriov: {}`). No OVN annotations are written: the VF data path is offloaded to the NIC and is **not** attached to any OVN logical switch. The underlying OVS bridge may itself be a kube-OVN ProviderNetwork, but that registration alone does not place the VF port on the overlay — see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation).
 
 The KubeVirt binding is unchanged by the move to ovs-cni: KubeVirt discovers the VF PCI address from the Multus `network-status` `device-info`, independent of the CNI type, and passes it through to QEMU.
 
 If a MAC address is provided in the IPAM entry, kube-vim writes a `k8s.v1.cni.cncf.io/networks` runtime-config annotation on the virt-launcher pod so Multus passes it to ovs-cni at VF setup time.
+
+### Bridge provisioning and overlay isolation
+
+ovs-cni attaches representors but never creates bridges. The per-PF OVS bridges — each with its PF uplink attached — must be provisioned out of band by the cluster operator. Common mechanisms:
+
+- **kube-OVN ProviderNetwork** (with hardware offload enabled) — creates a bridge per PF, moves the PF uplink onto it, enables `hw-offload`, and registers an OVS bridge mapping. The natural choice when kube-OVN is already the cluster CNI.
+- **sriov-network-operator `manageSoftwareBridges`** — the operator creates and manages the OVS bridges directly.
+- **Manual / out-of-band** — bridges created by external tooling.
+
+kube-vim is agnostic to which is used; it only requires that each PF's bridge exists with the uplink attached, so ovs-cni's auto-discovery can resolve it.
+
+**Overlay isolation.** When these bridges are kube-OVN ProviderNetworks, kube-OVN *knows* them (they appear in the OVS bridge mappings) — but knowing a bridge is not the same as connecting it to the overlay. An SR-IOV provider bridge stays isolated from the OVN overlay (`br-int`) **as long as no OVN logical switch has a localnet port on that provider** — i.e. as long as no kube-OVN `Vlan` + provider-bound `Subnet` references it.
+
+Creating such a `Subnet` makes OVN add a localnet patch between `br-int` and the provider bridge. That would:
+
+- merge the SR-IOV L2 domain into the OVN overlay, and
+- push the OVN pipeline (ACLs, conntrack, NAT) onto the offloaded bridge — much of which does not hardware-offload and silently falls back to the software data path, defeating the point of switchdev.
+
+So the isolation guarantee is: on a provider network used for SR-IOV, the only intended attachments are VF representors (added by ovs-cni) and the PF uplink. **Do not bind kube-OVN `Vlan`/`Subnet` objects to it.** This is enforced by convention, not by a hard barrier — worth guarding in CI/policy on clusters that also use kube-OVN VLAN provider subnets for other purposes.
 
 ## Prerequisites
 
@@ -146,7 +167,7 @@ If a MAC address is provided in the IPAM entry, kube-vim writes a `k8s.v1.cni.cn
 | Open vSwitch | One OVS bridge **per PF**, with the PF uplink already attached as a port (so ovs-cni's auto-discovery resolves it) |
 | KubeVirt | SR-IOV feature gate must be enabled |
 
-> **Note:** the data path is OVS hardware offload — `switchdev` PFs + per-PF OVS bridges with uplinks attached are mandatory. ovs-cni does **not** create bridges; it only attaches representors to existing ones. Provisioning bridges/switchdev is the cluster operator's responsibility (e.g. via sriov-network-operator's `manageSoftwareBridges`, or out-of-band). A future `NodeNetworkProfile` (Phase 2) will own this.
+> **Note:** the data path is OVS hardware offload — `switchdev` PFs + per-PF OVS bridges with uplinks attached are mandatory. ovs-cni does **not** create bridges; it only attaches representors to existing ones. Provisioning the bridges/switchdev is the cluster operator's responsibility — see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation) for the supported mechanisms and the isolation boundary. A future `NodeNetworkProfile` (Phase 2) will let kube-vim own this declaratively.
 
 ### KubeVirt SR-IOV feature gate
 
@@ -296,7 +317,7 @@ A `NodeNetworkProfile` CR will allow cluster operators to express the full node 
 - **Ports** — physical NIC ports and their roles.
 - **Bonds / LAG** — hardware or kernel bonding; members, mode, LACP. Reconciled via NMState-operator.
 - **VF pool partitioning** — per-PF named pools with non-overlapping VF ranges by device type (`netdevice` / `vfio-pci`). Reconciled into `SriovNetworkNodePolicy` objects.
-- **kube-OVN ProviderNetwork wiring** — bind a kube-OVN ProviderNetwork uplink to a specific host interface, bond, or VF netdevice.
+- **kube-OVN ProviderNetwork wiring** — declaratively bind a kube-OVN ProviderNetwork uplink to a specific host interface, bond, or VF netdevice (automating what operators wire by hand today; see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation)).
 - **OVS-DPDK / vhost-user** — bootstrap userspace OVS + DPDK, hugepages, and vhost-user socket paths for line-rate NFV data planes.
 
 The current tenant path is forward-compatible: it consumes any resource name the device plugin exposes, regardless of whether the VF pool was provisioned by hand, by raw `SriovNetworkNodePolicy`, or by a future `NodeNetworkProfile`.
