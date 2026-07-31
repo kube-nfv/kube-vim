@@ -47,7 +47,7 @@ with no Kubernetes client dependency:
 
 - `nfv⇄k8s` conversions and validation in each domain's `utils.go`
   (`network/kubeovn`, `network/sriov`, `flavour/kubevirt`, `compute/kubevirt`),
-- format/marshal helpers (CNI config rendering, quantity marshaling),
+- format/marshal helpers (e.g. SR-IOV CNI config rendering),
 - error → gRPC/k8s mapping (`internal/errors`).
 
 These functions survive an internals refactor, so the tests are durable.
