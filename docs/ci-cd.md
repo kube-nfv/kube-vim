@@ -10,7 +10,8 @@ Three GitHub Actions workflows drive validation and releases, all delegating to
 the `make` targets so CI mirrors local development:
 
 - **`ci`** — runs on every PR and push to `main`: `build` (+ generated/formatted
-  code is committed), `test`, and `helm-lint`. A no-op `ci` gate job aggregates
+  code is committed), `test` (`make test`; unit-test conventions in
+  [`testing.md`](testing.md)), and `helm-lint`. A no-op `ci` gate job aggregates
   them and is the single required status check on `main`.
 - **`release`** — runs on a `v*` tag: builds and pushes both images to
   `ghcr.io/kube-nfv`, then cuts a GitHub Release with binaries.
