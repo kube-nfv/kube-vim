@@ -6,6 +6,7 @@ import (
 
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/k8s"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	kubevirt_compute "github.com/kube-nfv/kube-vim/internal/kubevim/compute/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -24,6 +25,15 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+)
+
+const (
+	// k8sClientQPS/Burst raise client-go's conservative defaults (5/10) for the
+	// shared cluster client; watch traffic is served by the cache, not per-call.
+	k8sClientQPS   = 50
+	k8sClientBurst = 100
+	k8sUserAgent   = "kube-vim"
 )
 
 // Main kubevim object. It is stand as a mediator between different kubevim components like
@@ -38,6 +48,10 @@ type kubevimManager struct {
 	flavourMgr   flavour.Manager
 	computeMgr   compute.Manager
 	telemetryMgr *telemetry.Manager
+
+	// cluster hosts the shared scheme, cache-backed client and APIReader used by
+	// all managers. Its cache must be started (Start) and synced before serving.
+	cluster cluster.Cluster
 
 	nbServer *server.NorthboundServer
 }
@@ -60,21 +74,39 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 			return nil, fmt.Errorf("get k8s inClusterConfig: %w", err)
 		}
 	}
+	// Tune the shared config. Note: no global rest.Config.Timeout is set; it would
+	// cap the cache's long-lived watch connections. Per-call deadlines are used instead.
+	k8sConfig.QPS = k8sClientQPS
+	k8sConfig.Burst = k8sClientBurst
+	k8sConfig.UserAgent = k8sUserAgent
+
+	scheme, err := k8s.BuildScheme()
+	if err != nil {
+		return nil, fmt.Errorf("build k8s scheme: %w", err)
+	}
+	if cfg.K8s == nil || cfg.K8s.Namespace == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "k8s.namespace", Reason: "cannot be nil"}
+	}
+	cl, err := k8s.NewCluster(k8sConfig, *cfg.K8s.Namespace, scheme)
+	if err != nil {
+		return nil, fmt.Errorf("build shared k8s cluster: %w", err)
+	}
 
 	mgr := &kubevimManager{
-		logger: logger,
-		cfg:    cfg,
+		logger:  logger,
+		cfg:     cfg,
+		cluster: cl,
 	}
-	if err := mgr.initImageManager(k8sConfig, cfg.Image, cfg.K8s); err != nil {
+	if err := mgr.initImageManager(cfg.Image, cfg.K8s); err != nil {
 		return nil, fmt.Errorf("configure image manager: %w", err)
 	}
-	if err := mgr.initNetworkManager(k8sConfig, cfg.K8s); err != nil {
+	if err := mgr.initNetworkManager(cfg.K8s); err != nil {
 		return nil, fmt.Errorf("initialize network manager: %w", err)
 	}
-	if err := mgr.initFlavourManager(k8sConfig, cfg.K8s); err != nil {
+	if err := mgr.initFlavourManager(cfg.K8s); err != nil {
 		return nil, fmt.Errorf("initialize flavour manager: %w", err)
 	}
-	if err := mgr.initComputeManager(k8sConfig, cfg.K8s, cfg.Compute); err != nil {
+	if err := mgr.initComputeManager(cfg.K8s, cfg.Compute); err != nil {
 		return nil, fmt.Errorf("initialize compute manager: %w", err)
 	}
 	if err := mgr.initTelemetryManager(cfg.Monitoring); err != nil {
@@ -90,6 +122,18 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	errCh := make(chan error, 1) // Buffered to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// Start the shared cache and block until it has synced before serving, so
+	// managers never read from a cold cache.
+	go func() {
+		if err := m.cluster.Start(ctx); err != nil {
+			errCh <- fmt.Errorf("start k8s cluster cache: %w", err)
+		}
+	}()
+	if !m.cluster.GetCache().WaitForCacheSync(ctx) {
+		m.logger.Error("k8s cache failed to sync; kube-vim manager will terminate")
+		return
+	}
 
 	if m.cfg != nil && m.cfg.Network != nil {
 		if err := m.networkMgr.EnsureManagementNetwork(ctx, m.cfg.Network.ManagementNetwork); err != nil {
@@ -124,12 +168,12 @@ func (m *kubevimManager) Start(ctx context.Context) {
 	m.logger.Info("Kubevim manager shutdown completed")
 }
 
-func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.ImageConfig, k8sCfg *config.K8sConfig) error {
+func (m *kubevimManager) initImageManager(cfg *config.ImageConfig, k8sCfg *config.K8sConfig) error {
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "cannot be nil"}
 	}
 	var err error
-	m.imageMgr, err = cdiimmage.NewCDIImageManager(k8sConfig, cfg, k8sCfg)
+	m.imageMgr, err = cdiimmage.NewCDIImageManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg, k8sCfg)
 	if err != nil {
 		return fmt.Errorf("initialize kubevirt cdi image manager: %w", err)
 	}
@@ -164,11 +208,8 @@ func (m *kubevimManager) initImageManager(k8sConfig *rest.Config, cfg *config.Im
 	*/
 }
 
-func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *config.K8sConfig) error {
-	if k8sConfig == nil {
-		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
-	}
-	ovnMgr, err := kubeovn.NewKubeovnNetworkManager(k8sConfig, k8sCfg, m.logger.Named("network.ovn"))
+func (m *kubevimManager) initNetworkManager(k8sCfg *config.K8sConfig) error {
+	ovnMgr, err := kubeovn.NewKubeovnNetworkManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), k8sCfg, m.logger.Named("network.ovn"))
 	if err != nil {
 		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
@@ -176,7 +217,7 @@ func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *conf
 	if m.cfg.Network != nil {
 		sriovCfg = m.cfg.Network.Sriov
 	}
-	sriovMgr, err := sriov.NewSriovNetworkManager(k8sConfig, k8sCfg, sriovCfg, m.logger.Named("network.sriov"))
+	sriovMgr, err := sriov.NewSriovNetworkManager(m.cluster.GetClient(), k8sCfg, sriovCfg, m.logger.Named("network.sriov"))
 	if err != nil {
 		return fmt.Errorf("create sriov network manager: %w", err)
 	}
@@ -184,24 +225,18 @@ func (m *kubevimManager) initNetworkManager(k8sConfig *rest.Config, k8sCfg *conf
 	return nil
 }
 
-func (m *kubevimManager) initFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) error {
-	if k8sConfig == nil {
-		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
-	}
+func (m *kubevimManager) initFlavourManager(cfg *config.K8sConfig) error {
 	var err error
-	m.flavourMgr, err = kubevirt_flavour.NewFlavourManager(k8sConfig, cfg)
+	m.flavourMgr, err = kubevirt_flavour.NewFlavourManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg)
 	if err != nil {
 		return fmt.Errorf("create kubevirt flavour manager: %w", err)
 	}
 	return nil
 }
 
-func (m *kubevimManager) initComputeManager(k8sConfig *rest.Config, cfg *config.K8sConfig, computeCfg *config.ComputeConfig) error {
-	if k8sConfig == nil {
-		return &apperrors.ErrInvalidArgument{Field: "k8sConfig", Reason: "cannot be nil"}
-	}
+func (m *kubevimManager) initComputeManager(cfg *config.K8sConfig, computeCfg *config.ComputeConfig) error {
 	var err error
-	m.computeMgr, err = kubevirt_compute.NewComputeManager(k8sConfig, cfg, computeCfg, m.flavourMgr, m.imageMgr, m.networkMgr)
+	m.computeMgr, err = kubevirt_compute.NewComputeManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg, computeCfg, m.flavourMgr, m.imageMgr, m.networkMgr)
 	if err != nil {
 		return fmt.Errorf("create kubevirt compute manager: %w", err)
 	}

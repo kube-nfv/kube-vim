@@ -16,10 +16,8 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	cdi "kubevirt.io/client-go/containerizeddataimporter"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -36,30 +34,24 @@ var (
 type cdiManager struct {
 	admin.UnimplementedAdminServer
 
-	cdiClient *cdi.Clientset
-	k8sClient *kubernetes.Clientset
+	// client serves cache-backed reads and direct writes.
+	client client.Client
+	// apiReader is uncached; used for cluster-scoped/unowned reads (StorageClass).
+	apiReader client.Reader
 	cfg       *config.ImageConfig
 	k8sCfg    *config.K8sConfig
 }
 
-func NewCDIImageManager(restConfig *rest.Config, cfg *config.ImageConfig, k8sCfg *config.K8sConfig) (*cdiManager, error) {
+func NewCDIImageManager(cl client.Client, apiReader client.Reader, cfg *config.ImageConfig, k8sCfg *config.K8sConfig) (*cdiManager, error) {
 	if cfg.StorageClass == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config image.StorageClass", Reason: "can't be empty"}
 	}
 	if k8sCfg.Namespace == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config k8s.Namespace", Reason: "can't be nil"}
 	}
-	cdiClient, err := cdi.NewForConfig(restConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create kubevirt CDI k8s client: %w", err)
-	}
-	k8sClient, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create kubernetes client: %w", err)
-	}
 	return &cdiManager{
-		cdiClient: cdiClient,
-		k8sClient: k8sClient,
+		client:    cl,
+		apiReader: apiReader,
 		cfg:       cfg,
 		k8sCfg:    k8sCfg,
 	}, nil
@@ -69,14 +61,16 @@ func (m *cdiManager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*v
 	if id == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "id", Reason: "can't be nil"}
 	}
-	images, err := m.cdiClient.CdiV1beta1().VolumeImportSources(*m.k8sCfg.Namespace).List(ctx, v1.ListOptions{})
-	if err != nil {
+	ns := client.InNamespace(*m.k8sCfg.Namespace)
+	managed := client.MatchingLabels{common.K8sManagedByLabel: common.KubeNfvName}
+	visList := &v1beta1.VolumeImportSourceList{}
+	if err := m.client.List(ctx, visList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list CDI VolumeImportSources: %w", err)
 	}
-	var imageVis *v1beta1.VolumeImportSource = nil
-	for _, image := range images.Items {
-		if misc.IdentifierToUID(id) == image.GetUID() {
-			imageVis = &image
+	var imageVis *v1beta1.VolumeImportSource
+	for idx := range visList.Items {
+		if misc.IdentifierToUID(id) == visList.Items[idx].GetUID() {
+			imageVis = &visList.Items[idx]
 			break
 		}
 	}
@@ -84,8 +78,8 @@ func (m *cdiManager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*v
 		return nil, &apperrors.ErrNotFound{Entity: "software image", Identifier: id.Value}
 	}
 	imgName := imageVis.Name
-	dv, err := m.cdiClient.CdiV1beta1().DataVolumes(*m.k8sCfg.Namespace).Get(ctx, imgName, v1.GetOptions{})
-	if err != nil {
+	dv := &v1beta1.DataVolume{}
+	if err := m.client.Get(ctx, client.ObjectKey{Namespace: *m.k8sCfg.Namespace, Name: imgName}, dv); err != nil {
 		return nil, fmt.Errorf("get CDI DataVolume from image '%s' (id: %s): %w", imgName, id.Value, err)
 	}
 
@@ -97,26 +91,29 @@ func (m *cdiManager) GetImage(ctx context.Context, id *nfvcommon.Identifier) (*v
 }
 
 func (m *cdiManager) ListImages(ctx context.Context) ([]*vivnfm.SoftwareImageInformation, error) {
-	images, err := m.cdiClient.CdiV1beta1().VolumeImportSources(*m.k8sCfg.Namespace).List(ctx, v1.ListOptions{})
-	if err != nil {
+	ns := client.InNamespace(*m.k8sCfg.Namespace)
+	managed := client.MatchingLabels{common.K8sManagedByLabel: common.KubeNfvName}
+	visList := &v1beta1.VolumeImportSourceList{}
+	if err := m.client.List(ctx, visList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list CDI VolumeImportSources: %w", err)
 	}
-	dataVolumes, err := m.cdiClient.CdiV1beta1().DataVolumes(*m.k8sCfg.Namespace).List(ctx, v1.ListOptions{})
-	if err != nil {
+	dvList := &v1beta1.DataVolumeList{}
+	if err := m.client.List(ctx, dvList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list CDI DataVolumes: %w", err)
 	}
 	dataVolumesIdx := make(map[string]*v1beta1.DataVolume)
-	for idx := range dataVolumes.Items {
-		dvRef := &dataVolumes.Items[idx]
+	for idx := range dvList.Items {
+		dvRef := &dvList.Items[idx]
 		dataVolumesIdx[dvRef.Name] = dvRef
 	}
-	res := make([]*vivnfm.SoftwareImageInformation, 0, len(images.Items))
-	for _, img := range images.Items {
+	res := make([]*vivnfm.SoftwareImageInformation, 0, len(visList.Items))
+	for idx := range visList.Items {
+		img := &visList.Items[idx]
 		imgDv, ok := dataVolumesIdx[img.Name]
 		if !ok {
 			continue
 		}
-		nfvImg, err := nfvImageFromCdiDataVolumeVis(imgDv, &img)
+		nfvImg, err := nfvImageFromCdiDataVolumeVis(imgDv, img)
 		if err != nil {
 			continue
 		}
@@ -146,14 +143,19 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 			Source: importSourceType,
 		},
 	}
-	visInst, err := m.cdiClient.CdiV1beta1().VolumeImportSources(*m.k8sCfg.Namespace).Create(ctx, volumeImportSource, v1.CreateOptions{})
-	if err != nil {
+	volumeImportSource.Namespace = *m.k8sCfg.Namespace
+	if err := m.client.Create(ctx, volumeImportSource); err != nil {
 		return nil, fmt.Errorf("create CDI VolumeImportSource: %w", err)
 	}
+	// Cleanup must run even when the request ctx has been canceled (that is often
+	// why we are rolling back), so it uses a ctx detached from cancellation.
+	cleanupCtx := context.WithoutCancel(ctx)
 	cleanupVolumeImportSource := func() error {
-		return m.cdiClient.CdiV1beta1().VolumeImportSources(*m.k8sCfg.Namespace).Delete(ctx, imgName, v1.DeleteOptions{})
+		return m.client.Delete(cleanupCtx, &v1beta1.VolumeImportSource{
+			ObjectMeta: v1.ObjectMeta{Name: imgName, Namespace: *m.k8sCfg.Namespace},
+		})
 	}
-	imageId := misc.UIDToIdentifier(visInst.GetUID())
+	imageId := misc.UIDToIdentifier(volumeImportSource.GetUID())
 
 	// Return non-instantiated image if LazyDownload option presents
 	if req.Options != nil && (req.Options.LazyDownload != nil && *req.Options.LazyDownload == true) {
@@ -166,7 +168,7 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 	if req.Options != nil && (req.Options.StorageClass != nil && *req.Options.StorageClass != "") {
 		storageClassName = *req.Options.StorageClass
 	}
-	storageClass, err := getStorageClass(ctx, storageClassName, m.k8sClient)
+	storageClass, err := getStorageClass(ctx, storageClassName, m.apiReader)
 	if err != nil {
 		cleanupVolumeImportSource()
 		return nil, fmt.Errorf("get storageClass: %w", err)
@@ -191,7 +193,7 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 			Name: imgName,
 			Labels: map[string]string{
 				common.K8sManagedByLabel: common.KubeNfvName,
-				image.K8sImageIdLabel:    string(visInst.GetUID()),
+				image.K8sImageIdLabel:    string(volumeImportSource.GetUID()),
 			},
 			Annotations: dvAnnotations,
 		},
@@ -216,19 +218,23 @@ func (m *cdiManager) DownloadImage(ctx context.Context, req *admin.DownloadImage
 			},
 		},
 	}
-	dvInst, err := m.cdiClient.CdiV1beta1().DataVolumes(*m.k8sCfg.Namespace).Create(ctx, &dataVolume, v1.CreateOptions{})
-	if err != nil {
+	dataVolume.Namespace = *m.k8sCfg.Namespace
+	if err := m.client.Create(ctx, &dataVolume); err != nil {
 		cleanupVolumeImportSource()
 		return nil, fmt.Errorf("create CDI DataVolume for image '%s': %w", imgName, err)
 	}
 	cleanupDataVolume := func() error {
 		cleanupVolumeImportSource()
-		return m.cdiClient.CdiV1beta1().DataVolumes(*m.k8sCfg.Namespace).Delete(ctx, imgName, v1.DeleteOptions{})
+		return m.client.Delete(cleanupCtx, &v1beta1.DataVolume{
+			ObjectMeta: v1.ObjectMeta{Name: imgName, Namespace: *m.k8sCfg.Namespace},
+		})
 	}
 
-	// Update label of volumeImportSource with dv instanceId
-	visInst.ObjectMeta.Labels[K8sDataVolumeIdLabel] = string(dvInst.GetUID())
-	if _, err = m.cdiClient.CdiV1beta1().VolumeImportSources(*m.k8sCfg.Namespace).Update(ctx, visInst, v1.UpdateOptions{}); err != nil {
+	// Label the VolumeImportSource with the DataVolume id. Patch (not Update) to
+	// avoid a resourceVersion conflict on the object we just created.
+	visBase := volumeImportSource.DeepCopy()
+	volumeImportSource.Labels[K8sDataVolumeIdLabel] = string(dataVolume.GetUID())
+	if err := m.client.Patch(ctx, volumeImportSource, client.MergeFrom(visBase)); err != nil {
 		cleanupDataVolume()
 		return nil, fmt.Errorf("update CDI VolumeImportSource label for image '%s': %w", imgName, err)
 	}

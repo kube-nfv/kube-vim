@@ -24,13 +24,10 @@ import (
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	kubevirt "kubevirt.io/client-go/kubevirt"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -61,16 +58,20 @@ const (
 )
 
 const (
-	vmiCreationTimeout     = time.Second * 2
-	vmStatusCreatedTimeout = time.Second * 3
+	// vmiCreationTimeout bounds how long AllocateComputeResource waits for KubeVirt
+	// to create the VMI after the VM is created (scheduler + virt-controller).
+	vmiCreationTimeout = time.Second * 30
+	vmiPollInterval    = time.Millisecond * 500
 )
 
 // ipamConfigurationMissingErr moved to errors.go as ErrIPAMConfigurationMissing
 
 // kubevirt manager for allocation and management of the compute resources.
 type manager struct {
-	kubevirtClient *kubevirt.Clientset
-	k8sClient      *kubernetes.Clientset
+	// client serves cache-backed reads and direct writes.
+	client client.Client
+	// apiReader is uncached; used to poll for a just-created VMI (read-after-write).
+	apiReader      client.Reader
 	flavourManager flavour.Manager
 	imageManager   image.Manager
 	networkManager network.Manager
@@ -81,23 +82,16 @@ type manager struct {
 }
 
 func NewComputeManager(
-	k8sConfig *rest.Config,
+	cl client.Client,
+	apiReader client.Reader,
 	cfg *config.K8sConfig,
 	computeCfg *config.ComputeConfig,
 	flavourManager flavour.Manager,
 	imageManager image.Manager,
 	networkManager network.Manager) (*manager, error) {
-	c, err := kubevirt.NewForConfig(k8sConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create kubevirt k8s client: %w", err)
-	}
-	k8sClient, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create k8s client: %w", err)
-	}
 	return &manager{
-		kubevirtClient: c,
-		k8sClient:      k8sClient,
+		client:         cl,
+		apiReader:      apiReader,
 		flavourManager: flavourManager,
 		imageManager:   imageManager,
 		networkManager: networkManager,
@@ -241,39 +235,84 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 		}
 	}
 
-	vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Create(ctx, vmSpec, v1.CreateOptions{})
-	if err != nil {
+	if err := m.client.Create(ctx, vmSpec); err != nil {
 		return nil, fmt.Errorf("create kubevirt VirtualMachine '%s': %w", vmName, err)
 	}
-	if err = waitVmiCreatedField(ctx, m.kubevirtClient, vm.Name, namespace); err != nil {
-		return nil, fmt.Errorf("create VMI for VM '%s' (uid: %s): %w", vmName, vm.UID, err)
-	}
-	vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vmName, v1.GetOptions{})
+	vmi, err := m.waitForVmi(ctx, vmName, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("get VM instance '%s' (uid: %s): %w", vmName, vm.UID, err)
+		return nil, fmt.Errorf("await VMI for VM '%s' (uid: %s): %w", vmName, vmSpec.UID, err)
 	}
-	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, m.getLauncherInfo(ctx, vmi))
+	virtualCompute, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vmSpec, vmi, m.getLauncherInfo(ctx, vmi))
 	if err != nil {
-		return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vmName, vm.UID, err)
+		return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vmName, vmSpec.UID, err)
 	}
 	return virtualCompute, nil
 }
 
+// waitForVmi polls the apiserver (uncached, for strong read-after-write) until the
+// VMI for the just-created VM exists, or vmiCreationTimeout elapses.
+func (m *manager) waitForVmi(ctx context.Context, name, namespace string) (*kubevirtv1.VirtualMachineInstance, error) {
+	ctx, cancel := context.WithTimeout(ctx, vmiCreationTimeout)
+	defer cancel()
+	key := client.ObjectKey{Namespace: namespace, Name: name}
+	for {
+		vmi := &kubevirtv1.VirtualMachineInstance{}
+		err := m.apiReader.Get(ctx, key, vmi)
+		if err == nil {
+			return vmi, nil
+		}
+		if !k8s_errors.IsNotFound(err) {
+			return nil, fmt.Errorf("get VirtualMachineInstance '%s': %w", name, err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("VMI '%s' not created after %s: %w", name, vmiCreationTimeout, ctx.Err())
+		case <-time.After(vmiPollInterval):
+		}
+	}
+}
+
 func (m *manager) ListComputeResources(ctx context.Context) ([]*vivnfm.VirtualCompute, error) {
 	namespace := *m.cfg.Namespace
-	vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).List(ctx, v1.ListOptions{
-		LabelSelector: common.ManagedByKubeNfvSelector,
-	})
-	if err != nil {
+	managed := client.MatchingLabels{common.K8sManagedByLabel: common.KubeNfvName}
+	ns := client.InNamespace(namespace)
+
+	vmList := &kubevirtv1.VirtualMachineList{}
+	if err := m.client.List(ctx, vmList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list kubevirt VirtualMachines: %w", err)
 	}
-	res := make([]*vivnfm.VirtualCompute, 0, len(vmList.Items))
-	for _, vm := range vmList.Items {
-		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vm.Name, v1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
+	// List VMIs and virt-launcher pods once, then join in memory, instead of a
+	// per-VM VMI Get + per-VM pod List (this path also runs on every metrics scrape).
+	vmiList := &kubevirtv1.VirtualMachineInstanceList{}
+	if err := m.client.List(ctx, vmiList, ns, managed); err != nil {
+		return nil, fmt.Errorf("list kubevirt VirtualMachineInstances: %w", err)
+	}
+	vmiByName := make(map[string]*kubevirtv1.VirtualMachineInstance, len(vmiList.Items))
+	for i := range vmiList.Items {
+		vmiByName[vmiList.Items[i].Name] = &vmiList.Items[i]
+	}
+	podList := &corev1.PodList{}
+	if err := m.client.List(ctx, podList, ns); err != nil {
+		return nil, fmt.Errorf("list virt-launcher pods: %w", err)
+	}
+	podsByVmiUID := make(map[string][]*corev1.Pod)
+	for i := range podList.Items {
+		if uid, ok := podList.Items[i].Labels[kubevirtv1.CreatedByLabel]; ok {
+			podsByVmiUID[uid] = append(podsByVmiUID[uid], &podList.Items[i])
 		}
-		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi, m.getLauncherInfo(ctx, vmi))
+	}
+
+	res := make([]*vivnfm.VirtualCompute, 0, len(vmList.Items))
+	for i := range vmList.Items {
+		vm := &vmList.Items[i]
+		vmi, ok := vmiByName[vm.Name]
+		if !ok {
+			// VMI not present yet (VM just created, or brief cache lag). Skip it;
+			// it will appear on a subsequent list rather than failing the whole call.
+			continue
+		}
+		launcher := launcherInfoFromPod(selectLauncherPod(podsByVmiUID[string(vmi.UID)], vmi.Status.NodeName))
+		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, launcher)
 		if err != nil {
 			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
 		}
@@ -301,26 +340,45 @@ type launcherInfo struct {
 // getLauncherInfo reads the VMI's virt-launcher pod name and per-vNIC host PCI
 // addresses. Best-effort: returns zero values on any error, never fails the caller.
 func (m *manager) getLauncherInfo(ctx context.Context, vmi *kubevirtv1.VirtualMachineInstance) launcherInfo {
-	info := launcherInfo{hostPciByVnic: map[string]string{}}
 	if vmi == nil || vmi.UID == "" {
-		return info
+		return launcherInfo{hostPciByVnic: map[string]string{}}
 	}
-	pods, err := m.k8sClient.CoreV1().Pods(*m.cfg.Namespace).List(ctx, v1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", kubevirtv1.CreatedByLabel, string(vmi.UID)),
-	})
-	if err != nil || len(pods.Items) == 0 {
-		return info
+	podList := &corev1.PodList{}
+	if err := m.client.List(ctx, podList,
+		client.InNamespace(*m.cfg.Namespace),
+		client.MatchingLabels{kubevirtv1.CreatedByLabel: string(vmi.UID)},
+	); err != nil {
+		return launcherInfo{hostPciByVnic: map[string]string{}}
 	}
-	// Prefer the pod on the VMI's current node (unambiguous during migration).
-	pod := &pods.Items[0]
-	for i := range pods.Items {
-		if pods.Items[i].Spec.NodeName == vmi.Status.NodeName {
-			pod = &pods.Items[i]
-			break
+	pods := make([]*corev1.Pod, 0, len(podList.Items))
+	for i := range podList.Items {
+		pods = append(pods, &podList.Items[i])
+	}
+	return launcherInfoFromPod(selectLauncherPod(pods, vmi.Status.NodeName))
+}
+
+// selectLauncherPod prefers the pod on the given node (unambiguous during
+// migration), else the first pod. Returns nil for an empty set.
+func selectLauncherPod(pods []*corev1.Pod, nodeName string) *corev1.Pod {
+	if len(pods) == 0 {
+		return nil
+	}
+	for _, p := range pods {
+		if p.Spec.NodeName == nodeName {
+			return p
 		}
 	}
-	info.podName = pod.Name
+	return pods[0]
+}
 
+// launcherInfoFromPod parses the virt-launcher pod name and per-vNIC host PCI
+// addresses from the kubevirt network-info annotation.
+func launcherInfoFromPod(pod *corev1.Pod) launcherInfo {
+	info := launcherInfo{hostPciByVnic: map[string]string{}}
+	if pod == nil {
+		return info
+	}
+	info.podName = pod.Name
 	infoJSON, ok := pod.Annotations[kubevirtNetworkInfoAnnotation]
 	if !ok {
 		return info
@@ -342,43 +400,39 @@ func (m *manager) GetComputeResource(ctx context.Context, opts ...compute.GetCom
 	namespace := *m.cfg.Namespace
 	cfg := compute.ApplyGetComputeOpts(opts...)
 	if cfg.Name != "" {
-		vm, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, cfg.Name, v1.GetOptions{})
-		if err != nil {
+		vm := &kubevirtv1.VirtualMachine{}
+		if err := m.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: cfg.Name}, vm); err != nil {
 			return nil, fmt.Errorf("get kubevirt VirtualMachine '%s': %w", cfg.Name, err)
 		}
-		vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, cfg.Name, v1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", cfg.Name, vm.UID, err)
-		}
-		vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, m.getLauncherInfo(ctx, vmi))
-		if err != nil {
-			return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", cfg.Name, vm.UID, err)
-		}
-		return vComp, nil
+		return m.computeFromVM(ctx, vm)
 	} else if cfg.Uid != nil && cfg.Uid.Value != "" {
-		vmList, err := m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).List(ctx, v1.ListOptions{
-			LabelSelector: common.ManagedByKubeNfvSelector,
-		})
-		if err != nil {
+		vmList := &kubevirtv1.VirtualMachineList{}
+		if err := m.client.List(ctx, vmList, client.InNamespace(namespace), client.MatchingLabels{common.K8sManagedByLabel: common.KubeNfvName}); err != nil {
 			return nil, fmt.Errorf("list kubevirt VirtualMachines: %w", err)
 		}
-		for _, vm := range vmList.Items {
-			if vm.UID != misc.IdentifierToUID(cfg.Uid) {
+		for i := range vmList.Items {
+			if vmList.Items[i].UID != misc.IdentifierToUID(cfg.Uid) {
 				continue
 			}
-			vmi, err := m.kubevirtClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, vm.Name, v1.GetOptions{})
-			if err != nil {
-				return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
-			}
-			vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, &vm, vmi, m.getLauncherInfo(ctx, vmi))
-			if err != nil {
-				return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
-			}
-			return vComp, nil
+			return m.computeFromVM(ctx, &vmList.Items[i])
 		}
 		return nil, &apperrors.ErrNotFound{Entity: "virtual machine", Identifier: cfg.Uid.Value}
 	}
 	return nil, &apperrors.ErrInvalidArgument{Field: "compute lookup", Reason: "either name or uid must be specified"}
+}
+
+// computeFromVM resolves the VMI and launcher info for a VM (from the cache) and
+// converts it to a vivnfm.VirtualCompute.
+func (m *manager) computeFromVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) (*vivnfm.VirtualCompute, error) {
+	vmi := &kubevirtv1.VirtualMachineInstance{}
+	if err := m.client.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}, vmi); err != nil {
+		return nil, fmt.Errorf("get kubevirt VirtualMachineInstance '%s' (uid: %s): %w", vm.Name, vm.UID, err)
+	}
+	vComp, err := nfvVirtualComputeFromKubevirtVm(ctx, m.networkManager, vm, vmi, m.getLauncherInfo(ctx, vmi))
+	if err != nil {
+		return nil, fmt.Errorf("convert kubevirt VM '%s' (uid: %s) to nfv VirtualCompute: %w", vm.Name, vm.UID, err)
+	}
+	return vComp, nil
 }
 
 func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.GetComputeOpt) error {
@@ -387,11 +441,13 @@ func (m *manager) DeleteComputeResource(ctx context.Context, opts ...compute.Get
 	if err != nil {
 		return fmt.Errorf("get virtual machine for deletion: %w", err)
 	}
-	if err = m.kubevirtClient.KubevirtV1().VirtualMachines(namespace).Delete(ctx, vm.GetComputeName(), v1.DeleteOptions{}); err != nil {
+	vmObj := &kubevirtv1.VirtualMachine{ObjectMeta: v1.ObjectMeta{Name: vm.GetComputeName(), Namespace: namespace}}
+	if err = m.client.Delete(ctx, vmObj); err != nil {
 		return fmt.Errorf("delete kubevirt VirtualMachine '%s' (id: %s): %w", vm.GetComputeName(), vm.ComputeId.Value, err)
 	}
 	secretName := vm.GetComputeName() + KubevirtVmCloudInitSecretSuffix
-	if err := m.k8sClient.CoreV1().Secrets(namespace).Delete(ctx, secretName, v1.DeleteOptions{}); err != nil && !k8s_errors.IsNotFound(err) {
+	secret := &corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: secretName, Namespace: namespace}}
+	if err := m.client.Delete(ctx, secret); err != nil && !k8s_errors.IsNotFound(err) {
 		return fmt.Errorf("delete cloud-init secret '%s' for VM '%s': %w", secretName, vm.GetComputeName(), err)
 	}
 	return nil
@@ -544,11 +600,11 @@ func (m *manager) createUserDataVolumeWithSecret(ctx context.Context, namespace,
 			"userdata": []byte(userData.Content),
 		},
 	}
-	if _, err := m.k8sClient.CoreV1().Secrets(namespace).Create(ctx, secret, v1.CreateOptions{}); err != nil {
+	if err := m.client.Create(ctx, secret); err != nil {
 		if !k8s_errors.IsAlreadyExists(err) {
 			return nil, nil, fmt.Errorf("create cloud-init secret '%s': %w", secretName, err)
 		}
-		if _, err := m.k8sClient.CoreV1().Secrets(namespace).Update(ctx, secret, v1.UpdateOptions{}); err != nil {
+		if err := m.client.Update(ctx, secret); err != nil {
 			return nil, nil, fmt.Errorf("update cloud-init secret '%s': %w", secretName, err)
 		}
 	}
@@ -884,71 +940,4 @@ func initNetwork(ctx context.Context, netManager network.Manager, networkIpam *v
 				Bridge: &kubevirtv1.InterfaceBridge{},
 			},
 		}, ann, nil
-}
-
-// Waits for the k8s vm object status.created field equal to True.
-// If VM object already exists and has a status.created: true, the function will
-// returns immediately.
-func waitVmiCreatedField(ctx context.Context, client *kubevirt.Clientset, vmName string, namespace string) error {
-	vm, err := client.KubevirtV1().VirtualMachines(namespace).Get(ctx, vmName, v1.GetOptions{})
-	if err != nil && !k8s_errors.IsNotFound(err) {
-		return fmt.Errorf("get kubevirt VM '%s': %w", vmName, err)
-	}
-	// vm exists and vmi already created.
-	if err == nil && vm.Status.Created {
-		return nil
-	}
-
-	vmSelector := fields.OneTermEqualSelector("metadata.name", vmName).String()
-	watcher, err := client.KubevirtV1().VirtualMachines(namespace).Watch(ctx, v1.ListOptions{
-		FieldSelector: vmSelector,
-	})
-	if err != nil {
-		return fmt.Errorf("watch VirtualMachine '%s': %w", vmName, err)
-	}
-	defer watcher.Stop()
-	watchCtx, cancel := context.WithTimeout(ctx, vmStatusCreatedTimeout)
-	defer cancel()
-	for {
-		select {
-		case event := <-watcher.ResultChan():
-			vm, ok := event.Object.(*kubevirtv1.VirtualMachine)
-			if !ok || vm.Name != vmName {
-				continue
-			}
-			if vm.Status.Created {
-				return nil
-			}
-		case <-watchCtx.Done():
-			return fmt.Errorf("VM '%s' status.created is not true after '%s'", vmName, vmStatusCreatedTimeout)
-		}
-	}
-}
-
-func waitVmiObjectCreated(ctx context.Context, client *kubevirt.Clientset, vmName string, namesapce string) (*kubevirtv1.VirtualMachineInstance, error) {
-	fieldSelector := fields.OneTermEqualSelector("metadata.name", vmName).String()
-	watcher, err := client.KubevirtV1().VirtualMachineInstances(namesapce).Watch(ctx, v1.ListOptions{
-		FieldSelector: fieldSelector,
-		Watch:         true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("watch VirtualMachineInstance '%s': %w", vmName, err)
-	}
-	defer watcher.Stop()
-	watchCtx, cancel := context.WithTimeout(ctx, vmiCreationTimeout)
-	defer cancel()
-	for {
-		select {
-		case event := <-watcher.ResultChan():
-			vmi, ok := event.Object.(*kubevirtv1.VirtualMachineInstance)
-			if !ok {
-				continue
-			}
-			if vmi.Name == vmName {
-				return vmi, nil
-			}
-		case <-watchCtx.Done():
-			return nil, fmt.Errorf("no VMI creation after '%v'", vmiCreationTimeout)
-		}
-	}
 }
