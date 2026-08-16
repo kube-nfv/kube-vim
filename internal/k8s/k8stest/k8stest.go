@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/k8s"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
+
+// TestNamespace is the namespace managers are configured with across tests.
+const TestNamespace = "kube-nfv"
+
+// ID builds an ETSI Identifier, the most common test fixture argument.
+func ID(v string) *nfvcommon.Identifier { return &nfvcommon.Identifier{Value: v} }
+
+// Ptr returns a pointer to v, for the many optional (pointer) proto fields.
+func Ptr[T any](v T) *T { return &v }
 
 // AssignMetaOnCreate mirrors the apiserver stamping a UID and creation timestamp
 // on create, which the fake client does not do on its own. Read-after-create

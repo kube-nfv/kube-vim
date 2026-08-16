@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const testNamespace = "kube-nfv"
+const testNamespace = k8stest.TestNamespace
 
 func newManager(t *testing.T, objs ...client.Object) (*manager, client.Client) {
 	t.Helper()
@@ -51,12 +51,13 @@ func seedNad(t *testing.T, name, resource string, vlan uint64) *netattv1.Network
 }
 
 func TestCreateNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("creates NAD and prefixes bare provider resource", func(t *testing.T) {
 		m, cl := newManager(t)
 		got, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{
 			NetworkType:     sriovType(),
-			ProviderNetwork: ptr("intel_sriov"),
-			SegmentationId:  uptr(100),
+			ProviderNetwork: k8stest.Ptr("intel_sriov"),
+			SegmentationId:  k8stest.Ptr[uint64](100),
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "net1", got.GetNetworkResourceName())
@@ -72,7 +73,7 @@ func TestCreateNetwork(t *testing.T) {
 		m, cl := newManager(t)
 		_, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{
 			NetworkType:     sriovType(),
-			ProviderNetwork: ptr("mellanox.com/sriov_rdma"),
+			ProviderNetwork: k8stest.Ptr("mellanox.com/sriov_rdma"),
 		})
 		require.NoError(t, err)
 		nad := &netattv1.NetworkAttachmentDefinition{}
@@ -85,7 +86,7 @@ func TestCreateNetwork(t *testing.T) {
 		overlay := nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY
 		_, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{
 			NetworkType:     &overlay,
-			ProviderNetwork: ptr("intel_sriov"),
+			ProviderNetwork: k8stest.Ptr("intel_sriov"),
 		})
 		assert.ErrorIs(t, err, apperrors.ErrUnsupported)
 	})
@@ -101,7 +102,7 @@ func TestCreateNetwork(t *testing.T) {
 		m, _ := newManager(t)
 		_, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{
 			NetworkType:      sriovType(),
-			ProviderNetwork:  ptr("intel_sriov"),
+			ProviderNetwork:  k8stest.Ptr("intel_sriov"),
 			Layer3Attributes: []*vivnfm.NetworkSubnetData{{}},
 		})
 		var target *apperrors.ErrInvalidArgument
@@ -110,6 +111,7 @@ func TestCreateNetwork(t *testing.T) {
 }
 
 func TestGetNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("by name", func(t *testing.T) {
 		m, _ := newManager(t, seedNad(t, "net1", "openshift.io/intel_sriov", 100))
 		got, err := m.GetNetwork(context.Background(), network.GetNetworkByName("net1"))
@@ -150,6 +152,7 @@ func TestGetNetwork(t *testing.T) {
 }
 
 func TestListNetworks(t *testing.T) {
+	t.Parallel()
 	t.Run("returns only kube-nfv-owned sriov networks", func(t *testing.T) {
 		foreign := seedNad(t, "foreign", "openshift.io/x", 0)
 		delete(foreign.Labels, common.K8sManagedByLabel)
@@ -168,6 +171,7 @@ func TestListNetworks(t *testing.T) {
 }
 
 func TestDeleteNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("removes the NAD", func(t *testing.T) {
 		m, cl := newManager(t, seedNad(t, "net1", "openshift.io/a", 0))
 		require.NoError(t, m.DeleteNetwork(context.Background(), network.GetNetworkByName("net1")))
@@ -184,6 +188,7 @@ func TestDeleteNetwork(t *testing.T) {
 }
 
 func TestSubnetsUnsupported(t *testing.T) {
+	t.Parallel()
 	m, _ := newManager(t)
 	_, err := m.CreateSubnet(context.Background(), "s", nil)
 	assert.ErrorIs(t, err, apperrors.ErrUnsupported)
@@ -193,6 +198,3 @@ func TestSubnetsUnsupported(t *testing.T) {
 	assert.ErrorIs(t, err, apperrors.ErrUnsupported)
 	assert.ErrorIs(t, m.DeleteSubnet(context.Background()), apperrors.ErrUnsupported)
 }
-
-func ptr(s string) *string  { return &s }
-func uptr(u uint64) *uint64 { return &u }

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const testNamespace = "kube-nfv"
+const testNamespace = k8stest.TestNamespace
 
 func newManager(t *testing.T, objs ...client.Object) (*manager, client.Client) {
 	t.Helper()
@@ -56,6 +56,7 @@ func seedSubnet(name string) *kubeovnv1.Subnet {
 }
 
 func TestGetNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("overlay by name", func(t *testing.T) {
 		m, _ := newManager(t, seedVpc("net1"))
 		got, err := m.GetNetwork(context.Background(), network.GetNetworkByName("net1"))
@@ -89,6 +90,7 @@ func TestGetNetwork(t *testing.T) {
 }
 
 func TestListNetworks(t *testing.T) {
+	t.Parallel()
 	t.Run("joins vpcs, vlans and subnets", func(t *testing.T) {
 		m, _ := newManager(t,
 			seedVpc("net1", "sub1"),
@@ -125,6 +127,7 @@ func TestListNetworks(t *testing.T) {
 }
 
 func TestCreateNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("overlay creates a vpc", func(t *testing.T) {
 		m, cl := newManager(t)
 		got, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{})
@@ -138,8 +141,8 @@ func TestCreateNetwork(t *testing.T) {
 		underlay := nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY
 		got, err := m.CreateNetwork(context.Background(), "vl1", &vivnfm.VirtualNetworkData{
 			NetworkType:     &underlay,
-			ProviderNetwork: ptr("provider"),
-			SegmentationId:  uptr(100),
+			ProviderNetwork: k8stest.Ptr("provider"),
+			SegmentationId:  k8stest.Ptr[uint64](100),
 		})
 		require.NoError(t, err)
 		assert.Equal(t, nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY, got.NetworkType)
@@ -148,6 +151,7 @@ func TestCreateNetwork(t *testing.T) {
 }
 
 func TestDeleteNetwork(t *testing.T) {
+	t.Parallel()
 	t.Run("overlay deletes the vpc", func(t *testing.T) {
 		m, cl := newManager(t, seedVpc("net1"))
 		require.NoError(t, m.DeleteNetwork(context.Background(), network.GetNetworkByName("net1")))
@@ -164,6 +168,7 @@ func TestDeleteNetwork(t *testing.T) {
 }
 
 func TestGetSubnet(t *testing.T) {
+	t.Parallel()
 	t.Run("by name", func(t *testing.T) {
 		m, _ := newManager(t, seedSubnet("sub1"))
 		got, err := m.GetSubnet(context.Background(), network.GetSubnetByName("sub1"))
@@ -195,6 +200,7 @@ func TestGetSubnet(t *testing.T) {
 }
 
 func TestListSubnets(t *testing.T) {
+	t.Parallel()
 	m, _ := newManager(t, seedSubnet("sub1"), seedSubnet("sub2"))
 	got, err := m.ListSubnets(context.Background())
 	require.NoError(t, err)
@@ -202,6 +208,7 @@ func TestListSubnets(t *testing.T) {
 }
 
 func TestDeleteSubnet(t *testing.T) {
+	t.Parallel()
 	nad := &netattv1.NetworkAttachmentDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: formatNetAttachName("sub1"), Namespace: testNamespace},
 	}
@@ -213,6 +220,3 @@ func TestDeleteSubnet(t *testing.T) {
 	err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: formatNetAttachName("sub1")}, &netattv1.NetworkAttachmentDefinition{})
 	assert.True(t, apierrors.IsNotFound(err), "netattach should be gone")
 }
-
-func ptr(s string) *string  { return &s }
-func uptr(u uint64) *uint64 { return &u }

@@ -9,6 +9,7 @@ import (
 	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/k8s/k8stest"
 	computemock "github.com/kube-nfv/kube-vim/internal/kubevim/compute/mock"
 	flavourmock "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/mock"
 	imagemock "github.com/kube-nfv/kube-vim/internal/kubevim/image/mock"
@@ -53,9 +54,8 @@ func newServer(t *testing.T) (*ViVnfmServer, mocks) {
 	return s, m
 }
 
-func id(v string) *nfvcommon.Identifier { return &nfvcommon.Identifier{Value: v} }
-
 func TestQueryImages(t *testing.T) {
+	t.Parallel()
 	t.Run("delegates and returns the manager list", func(t *testing.T) {
 		s, m := newServer(t)
 		m.image.EXPECT().ListImages(gomock.Any()).Return([]*vivnfm.SoftwareImageInformation{{}, {}}, nil)
@@ -64,48 +64,54 @@ func TestQueryImages(t *testing.T) {
 		assert.Len(t, resp.SoftwareImagesInformation, 2)
 	})
 
-	t.Run("wraps a manager error", func(t *testing.T) {
+	t.Run("propagates the manager error unchanged", func(t *testing.T) {
 		s, m := newServer(t)
-		m.image.EXPECT().ListImages(gomock.Any()).Return(nil, errors.New("boom"))
+		m.image.EXPECT().ListImages(gomock.Any()).Return(nil, &apperrors.ErrNotFound{Entity: "image"})
 		_, err := s.QueryImages(context.Background(), &vivnfm.QueryImagesRequest{})
-		require.Error(t, err)
+		var target *apperrors.ErrNotFound
+		assert.ErrorAs(t, err, &target)
 	})
 }
 
 func TestQueryImage(t *testing.T) {
+	t.Parallel()
 	s, m := newServer(t)
-	img := &vivnfm.SoftwareImageInformation{SoftwareImageId: id("img1")}
+	img := &vivnfm.SoftwareImageInformation{SoftwareImageId: k8stest.ID("img1")}
 	m.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(img, nil)
-	resp, err := s.QueryImage(context.Background(), &vivnfm.QueryImageRequest{SoftwareImageId: id("img1")})
+	resp, err := s.QueryImage(context.Background(), &vivnfm.QueryImageRequest{SoftwareImageId: k8stest.ID("img1")})
 	require.NoError(t, err)
 	assert.Equal(t, "img1", resp.SoftwareImageInformation.SoftwareImageId.GetValue())
 }
 
 func TestCreateComputeFlavour(t *testing.T) {
+	t.Parallel()
 	s, m := newServer(t)
-	m.flavour.EXPECT().CreateFlavour(gomock.Any(), gomock.Any()).Return(id("f1"), nil)
+	m.flavour.EXPECT().CreateFlavour(gomock.Any(), gomock.Any()).Return(k8stest.ID("f1"), nil)
 	resp, err := s.CreateComputeFlavour(context.Background(), &vivnfm.CreateComputeFlavourRequest{Flavour: &vivnfm.VirtualComputeFlavour{}})
 	require.NoError(t, err)
 	assert.Equal(t, "f1", resp.FlavourId.GetValue())
 }
 
 func TestDeleteComputeFlavour(t *testing.T) {
+	t.Parallel()
 	t.Run("success returns empty response", func(t *testing.T) {
 		s, m := newServer(t)
 		m.flavour.EXPECT().DeleteFlavour(gomock.Any(), gomock.Any()).Return(nil)
-		_, err := s.DeleteComputeFlavour(context.Background(), &vivnfm.DeleteComputeFlavourRequest{ComputeFlavourId: id("f1")})
+		_, err := s.DeleteComputeFlavour(context.Background(), &vivnfm.DeleteComputeFlavourRequest{ComputeFlavourId: k8stest.ID("f1")})
 		require.NoError(t, err)
 	})
 
-	t.Run("wraps a manager error", func(t *testing.T) {
+	t.Run("propagates the manager error unchanged", func(t *testing.T) {
 		s, m := newServer(t)
-		m.flavour.EXPECT().DeleteFlavour(gomock.Any(), gomock.Any()).Return(errors.New("boom"))
-		_, err := s.DeleteComputeFlavour(context.Background(), &vivnfm.DeleteComputeFlavourRequest{ComputeFlavourId: id("f1")})
-		require.Error(t, err)
+		m.flavour.EXPECT().DeleteFlavour(gomock.Any(), gomock.Any()).Return(&apperrors.ErrNotFound{Entity: "flavour"})
+		_, err := s.DeleteComputeFlavour(context.Background(), &vivnfm.DeleteComputeFlavourRequest{ComputeFlavourId: k8stest.ID("f1")})
+		var target *apperrors.ErrNotFound
+		assert.ErrorAs(t, err, &target)
 	})
 }
 
 func TestQueryComputeFlavour(t *testing.T) {
+	t.Parallel()
 	s, m := newServer(t)
 	m.flavour.EXPECT().GetFlavours(gomock.Any()).Return([]*vivnfm.VirtualComputeFlavour{{}, {}}, nil)
 	resp, err := s.QueryComputeFlavour(context.Background(), &vivnfm.QueryComputeFlavourRequest{})
@@ -114,6 +120,7 @@ func TestQueryComputeFlavour(t *testing.T) {
 }
 
 func TestQueryVirtualisedComputeResource(t *testing.T) {
+	t.Parallel()
 	t.Run("lists and returns compute resources", func(t *testing.T) {
 		s, m := newServer(t)
 		m.compute.EXPECT().ListComputeResources(gomock.Any()).Return([]*vivnfm.VirtualCompute{{}}, nil)
@@ -122,32 +129,36 @@ func TestQueryVirtualisedComputeResource(t *testing.T) {
 		assert.Len(t, resp.QueryResult, 1)
 	})
 
-	t.Run("wraps a manager error", func(t *testing.T) {
+	t.Run("propagates the manager error unchanged", func(t *testing.T) {
 		s, m := newServer(t)
-		m.compute.EXPECT().ListComputeResources(gomock.Any()).Return(nil, errors.New("boom"))
+		m.compute.EXPECT().ListComputeResources(gomock.Any()).Return(nil, &apperrors.ErrNotFound{Entity: "compute"})
 		_, err := s.QueryVirtualisedComputeResource(context.Background(), &vivnfm.QueryComputeRequest{})
-		require.Error(t, err)
+		var target *apperrors.ErrNotFound
+		assert.ErrorAs(t, err, &target)
 	})
 }
 
 func TestTerminateVirtualisedComputeResource(t *testing.T) {
+	t.Parallel()
 	t.Run("delegates deletion and echoes the id", func(t *testing.T) {
 		s, m := newServer(t)
 		m.compute.EXPECT().DeleteComputeResource(gomock.Any(), gomock.Any()).Return(nil)
-		resp, err := s.TerminateVirtualisedComputeResource(context.Background(), &vivnfm.TerminateComputeRequest{ComputeId: id("c1")})
+		resp, err := s.TerminateVirtualisedComputeResource(context.Background(), &vivnfm.TerminateComputeRequest{ComputeId: k8stest.ID("c1")})
 		require.NoError(t, err)
 		assert.Equal(t, "c1", resp.ComputeId.GetValue())
 	})
 
-	t.Run("wraps a manager error", func(t *testing.T) {
+	t.Run("propagates the manager error unchanged", func(t *testing.T) {
 		s, m := newServer(t)
-		m.compute.EXPECT().DeleteComputeResource(gomock.Any(), gomock.Any()).Return(errors.New("boom"))
-		_, err := s.TerminateVirtualisedComputeResource(context.Background(), &vivnfm.TerminateComputeRequest{ComputeId: id("c1")})
-		require.Error(t, err)
+		m.compute.EXPECT().DeleteComputeResource(gomock.Any(), gomock.Any()).Return(&apperrors.ErrNotFound{Entity: "compute"})
+		_, err := s.TerminateVirtualisedComputeResource(context.Background(), &vivnfm.TerminateComputeRequest{ComputeId: k8stest.ID("c1")})
+		var target *apperrors.ErrNotFound
+		assert.ErrorAs(t, err, &target)
 	})
 }
 
 func TestAllocateVirtualisedNetworkResource(t *testing.T) {
+	t.Parallel()
 	name := "net1"
 
 	t.Run("nil request is InvalidArgument", func(t *testing.T) {
@@ -206,6 +217,7 @@ func TestAllocateVirtualisedNetworkResource(t *testing.T) {
 }
 
 func TestQueryVirtualisedNetworkResource(t *testing.T) {
+	t.Parallel()
 	t.Run("nil request is InvalidArgument", func(t *testing.T) {
 		s, _ := newServer(t)
 		_, err := s.QueryVirtualisedNetworkResource(context.Background(), nil)
@@ -230,10 +242,11 @@ func TestQueryVirtualisedNetworkResource(t *testing.T) {
 }
 
 func TestTerminateVirtualisedNetworkResource(t *testing.T) {
+	t.Parallel()
 	t.Run("network deletion echoes the id", func(t *testing.T) {
 		s, m := newServer(t) // subnet path must not run when network delete succeeds
 		m.network.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any()).Return(nil)
-		resp, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: id("r1")})
+		resp, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: k8stest.ID("r1")})
 		require.NoError(t, err)
 		assert.Equal(t, "r1", resp.NetworkResourceId.GetValue())
 	})
@@ -242,7 +255,7 @@ func TestTerminateVirtualisedNetworkResource(t *testing.T) {
 		s, m := newServer(t)
 		m.network.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any()).Return(&apperrors.ErrNotFound{Entity: "network"})
 		m.network.EXPECT().DeleteSubnet(gomock.Any(), gomock.Any()).Return(nil)
-		resp, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: id("r1")})
+		resp, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: k8stest.ID("r1")})
 		require.NoError(t, err)
 		assert.Equal(t, "r1", resp.NetworkResourceId.GetValue())
 	})
@@ -250,7 +263,7 @@ func TestTerminateVirtualisedNetworkResource(t *testing.T) {
 	t.Run("hard network error does not attempt subnet deletion", func(t *testing.T) {
 		s, m := newServer(t)
 		m.network.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any()).Return(errors.New("boom"))
-		_, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: id("r1")})
+		_, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: k8stest.ID("r1")})
 		require.Error(t, err)
 	})
 
@@ -258,7 +271,7 @@ func TestTerminateVirtualisedNetworkResource(t *testing.T) {
 		s, m := newServer(t)
 		m.network.EXPECT().DeleteNetwork(gomock.Any(), gomock.Any()).Return(&apperrors.ErrNotFound{Entity: "network"})
 		m.network.EXPECT().DeleteSubnet(gomock.Any(), gomock.Any()).Return(&apperrors.ErrNotFound{Entity: "subnet"})
-		_, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: id("r1")})
+		_, err := s.TerminateVirtualisedNetworkResource(context.Background(), &vivnfm.TerminateNetworkRequest{NetworkResourceId: k8stest.ID("r1")})
 		require.Error(t, err)
 	})
 }

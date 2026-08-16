@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const testNamespace = "kube-nfv"
+const testNamespace = k8stest.TestNamespace
 
 func newManagerWithSC(t *testing.T, storageClass string, objs ...client.Object) (*cdiManager, client.Client) {
 	t.Helper()
@@ -76,6 +76,7 @@ func httpDownloadReq(name string) *admin.DownloadImageRequest {
 }
 
 func TestGetImage(t *testing.T) {
+	t.Parallel()
 	t.Run("returns seeded image", func(t *testing.T) {
 		m, _ := newManager(t, seedVis("img1"), seedDv("img1"))
 		got, err := m.GetImage(context.Background(), &nfvcommon.Identifier{Value: "uid-img1"})
@@ -100,6 +101,7 @@ func TestGetImage(t *testing.T) {
 }
 
 func TestListImages(t *testing.T) {
+	t.Parallel()
 	t.Run("returns paired vis+dv images", func(t *testing.T) {
 		m, _ := newManager(t, seedVis("img1"), seedDv("img1"), seedVis("img2"), seedDv("img2"))
 		got, err := m.ListImages(context.Background())
@@ -123,6 +125,7 @@ func TestListImages(t *testing.T) {
 }
 
 func TestDownloadImage(t *testing.T) {
+	t.Parallel()
 	t.Run("nil request is rejected", func(t *testing.T) {
 		m, _ := newManager(t)
 		_, err := m.DownloadImage(context.Background(), nil)

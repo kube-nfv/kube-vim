@@ -8,6 +8,7 @@ import (
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/k8s/k8stest"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	networkmock "github.com/kube-nfv/kube-vim/internal/kubevim/network/mock"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,7 @@ func sriovNet() *vivnfm.VirtualNetwork {
 }
 
 func TestCreateNetworkDispatch(t *testing.T) {
+	t.Parallel()
 	t.Run("sriov type routes to sriov backend", func(t *testing.T) {
 		_, sriov, m := setup(t)
 		sriovT := nfvcommon.NetworkType_NETWORK_TYPE_SRIOV
@@ -50,6 +52,7 @@ func TestCreateNetworkDispatch(t *testing.T) {
 }
 
 func TestGetNetworkDispatch(t *testing.T) {
+	t.Parallel()
 	t.Run("ovn hit does not fall through to sriov", func(t *testing.T) {
 		ovn, _, m := setup(t) // no sriov expectation: must not be called
 		ovn.EXPECT().GetNetwork(gomock.Any()).Return(&vivnfm.VirtualNetwork{}, nil)
@@ -84,6 +87,7 @@ func TestGetNetworkDispatch(t *testing.T) {
 }
 
 func TestListNetworksDispatch(t *testing.T) {
+	t.Parallel()
 	t.Run("concatenates both backends", func(t *testing.T) {
 		ovn, sriov, m := setup(t)
 		ovn.EXPECT().ListNetworks(gomock.Any()).Return([]*vivnfm.VirtualNetwork{{}, {}}, nil)
@@ -102,6 +106,7 @@ func TestListNetworksDispatch(t *testing.T) {
 }
 
 func TestDeleteNetworkDispatch(t *testing.T) {
+	t.Parallel()
 	t.Run("ovn not-found falls through to sriov", func(t *testing.T) {
 		ovn, sriov, m := setup(t)
 		ovn.EXPECT().DeleteNetwork(gomock.Any()).Return(notFound())
@@ -111,12 +116,13 @@ func TestDeleteNetworkDispatch(t *testing.T) {
 }
 
 func TestCreateSubnetDispatch(t *testing.T) {
+	t.Parallel()
 	t.Run("sriov-typed network routes subnet to sriov", func(t *testing.T) {
 		ovn, sriov, m := setup(t)
 		// composite.GetNetwork resolves via ovn first; a SR-IOV result routes the subnet to sriov.
 		ovn.EXPECT().GetNetwork(gomock.Any(), gomock.Any()).Return(sriovNet(), nil)
 		sriov.EXPECT().CreateSubnet(gomock.Any(), "sub", gomock.Any()).Return(&vivnfm.NetworkSubnet{}, nil)
-		_, err := m.CreateSubnet(context.Background(), "sub", &vivnfm.NetworkSubnetData{NetworkId: id("uid-x")})
+		_, err := m.CreateSubnet(context.Background(), "sub", &vivnfm.NetworkSubnetData{NetworkId: k8stest.ID("uid-x")})
 		require.NoError(t, err)
 	})
 
@@ -129,6 +135,7 @@ func TestCreateSubnetDispatch(t *testing.T) {
 }
 
 func TestSubnetReadsAlwaysOvn(t *testing.T) {
+	t.Parallel()
 	ovn, _, m := setup(t) // sriov must never be touched by subnet reads / mgmt network
 	ovn.EXPECT().GetSubnet(gomock.Any()).Return(&vivnfm.NetworkSubnet{}, nil)
 	ovn.EXPECT().ListSubnets(gomock.Any()).Return(nil, nil)
@@ -142,5 +149,3 @@ func TestSubnetReadsAlwaysOvn(t *testing.T) {
 	require.NoError(t, m.DeleteSubnet(context.Background()))
 	require.NoError(t, m.EnsureManagementNetwork(context.Background(), nil))
 }
-
-func id(v string) *nfvcommon.Identifier { return &nfvcommon.Identifier{Value: v} }

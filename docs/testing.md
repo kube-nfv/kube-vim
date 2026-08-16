@@ -51,9 +51,12 @@ Managers do CRUD/List through an injected `client.Client`. Tests seed a fake
 client with objects and assert real behaviour (label selectors, namespacing,
 `NotFound`). A fake is preferred over a generated mock of `client.Client` because
 it actually implements Kubernetes semantics, so tests exercise the real query
-logic rather than a hand-scripted return value. (This is what caught the
-`CreateFlavour` namespace bug: the fake genuinely filed the object under the wrong
-namespace and the later `List` missed it.)
+logic rather than a hand-scripted return value. This is what caught two latent
+namespace bugs, where a namespaced object was created without a namespace (so the
+namespace-scoped Get/List/Delete could never find it): `CreateFlavour` on the
+instancetype/preference, and `AllocateComputeResource` on the VirtualMachine.
+Every sibling create sets `.Namespace` explicitly; these two omitted it, and the
+fake client surfaced it by filing the object under `""`.
 
 The shared helper lives in `internal/k8s/k8stest`:
 
@@ -114,10 +117,13 @@ type imageManagerMock struct {
   `network/kubeovn`, `image/cdi` — Create/Get/List/Delete, ownership filtering
   (kube-nfv refuses objects it does not own), not-found mapping, and the
   `ListNetworks`/`ListImages` in-memory joins.
-- **Compute IPAM resolution (gomock network.Manager):**
-  `getSubnetIpam`/`getNetworkIpam`/`initSriovNetwork`/`initNetwork`/`initNetworks`
-  across overlay/underlay/SR-IOV × static/dynamic IPAM, plus
-  `ListComputeResources`' VM/VMI/pod join and skip-VM-without-VMI behaviour.
+- **Compute allocate + IPAM:** `AllocateComputeResource` end-to-end on a fake
+  client with the flavour/image/network managers mocked (happy path plus the
+  early validation and delegate-error branches), and the IPAM resolution
+  (`ipamResolver` in `ipam.go`: `subnetIpam`/`networkIpam`/`initSriovNetwork`/
+  `initNetwork`/`resolveInterfaces`) across overlay/underlay/SR-IOV ×
+  static/dynamic. Also `ListComputeResources`' VM/VMI/pod join and
+  skip-VM-without-VMI behaviour.
 - **Composite network dispatch (gomock):** overlay/underlay vs SR-IOV routing and
   the not-found fall-through between backends.
 - **`ViVnfmServer` adapters (gomock ×4):** validate → delegate → wrap for every
@@ -150,8 +156,8 @@ yet gated in CI. `go tool cover -html=cover.out` renders the per-line report.
 
 ## Known gaps / follow-ups
 
-- **`AllocateComputeResource`** (the full VM-build path in `compute/kubevirt`) is
-  still only partially covered; the IPAM helpers it calls are tested, the
-  end-to-end assembly is not.
+- **`AllocateComputeResource`** has happy-path + validation coverage, but the
+  user-data/cloud-init secret branch and the multi-interface (static-IP overlay,
+  end-to-end SR-IOV) assembly are not yet exercised.
 - **Gateway wiring** (`internal/gateway`) is untested.
 - **No coverage gate in CI** — the number is reported, not enforced.

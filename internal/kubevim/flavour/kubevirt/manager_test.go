@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const testNamespace = "kube-nfv"
+const testNamespace = k8stest.TestNamespace
 
 // newManager wires a flavour manager on top of a fake client seeded with objs.
 func newManager(t *testing.T, objs ...client.Object) (*manager, client.Client) {
@@ -59,6 +59,7 @@ func instantiate(meta *metav1.ObjectMeta) {
 }
 
 func TestCreateFlavour(t *testing.T) {
+	t.Parallel()
 	memQ := resource.MustParse("2Gi")
 	validFlavour := func() *vivnfm.VirtualComputeFlavour {
 		return &vivnfm.VirtualComputeFlavour{
@@ -100,6 +101,7 @@ func TestCreateFlavour(t *testing.T) {
 }
 
 func TestGetFlavour(t *testing.T) {
+	t.Parallel()
 	t.Run("returns seeded flavour", func(t *testing.T) {
 		it, pref := seedFlavour(t, "f1", 4, "4Gi")
 		m, _ := newManager(t, it, pref)
@@ -134,6 +136,7 @@ func TestGetFlavour(t *testing.T) {
 }
 
 func TestGetFlavours(t *testing.T) {
+	t.Parallel()
 	t.Run("lists only kube-nfv-owned flavours", func(t *testing.T) {
 		it1, pref1 := seedFlavour(t, "f1", 2, "2Gi")
 		it2, pref2 := seedFlavour(t, "f2", 4, "4Gi")
@@ -161,6 +164,7 @@ func TestGetFlavours(t *testing.T) {
 }
 
 func TestDeleteFlavour(t *testing.T) {
+	t.Parallel()
 	t.Run("removes instancetype and preference", func(t *testing.T) {
 		it, pref := seedFlavour(t, "f1", 2, "2Gi")
 		m, cl := newManager(t, it, pref)
