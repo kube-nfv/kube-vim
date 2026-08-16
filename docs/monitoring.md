@@ -54,8 +54,20 @@ method, host}` — kube-vim's own traffic to the Kubernetes API server.
 The `rest_client_*` counter is not emitted by kube-vim: controller-runtime
 collects it in its own package-global `metrics.Registry` (separate from the
 telemetry registry). The `/metrics` handler therefore gathers over both
-registries (`prometheus.Gatherers`); the metric names are disjoint. Request
-latency (`rest_client_request_duration_seconds`) is deliberately **not** exposed:
+registries (`prometheus.Gatherers`); the metric names are disjoint.
+
+Granularity is coarse by design. The only labels are `code` (HTTP status),
+`method` (**HTTP** verb — `GET`/`POST`/`PUT`/`PATCH`/`DELETE`) and `host`
+(apiserver). There is **no** per-endpoint attribution: no URL path, no
+resource/kind, no namespace, and no Kubernetes verb (`list`/`get`/`watch` all
+appear as `GET`). client-go omits the path deliberately to avoid the cardinality
+blow-up of object names/namespaces. So this answers API-traffic *health* —
+request rate, verb mix, error ratio by status, `409`-conflict and `429`-throttle
+rates — but not "requests against pods vs subnets vs datavolumes". Per-resource /
+per-k8s-verb attribution would need the same custom `WrapTransport` RoundTripper
+as latency (bucketing high-cardinality path segments), left as follow-up.
+
+Request latency (`rest_client_request_duration_seconds`) is deliberately **not** exposed:
 controller-runtime's `pkg/metrics` `init` claims client-go's `sync.Once`-guarded
 `metrics.Register` with only the result counter, so registering the latency
 adapters ourselves is a silent no-op. Getting latency would require a custom
