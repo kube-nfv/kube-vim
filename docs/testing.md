@@ -1,6 +1,6 @@
 # Unit Testing
 
-Status: accepted (2026-07-31)
+Status: accepted (2026-07-31), updated (2026-08-16)
 Owner: kube-vim
 Scope: unit-test framework, mocking strategy, what is and isn't tested
 
@@ -8,23 +8,29 @@ Scope: unit-test framework, mocking strategy, what is and isn't tested
 
 Unit tests use the Go stdlib `testing` package with table-driven subtests and
 [`testify`](https://github.com/stretchr/testify) (`require`/`assert`) for
-assertions. They run via `make test` (`go test -count=1 ./...`), which the CI
-`test` job invokes on every PR.
+assertions. They run via `make test` (`go test -count=1 ./...` plus a coverage
+summary), which the CI `test` job invokes on every PR.
 
-Today tests cover **pure, client-free logic only** — the `nfv⇄k8s` conversion
-helpers in each domain's `utils.go`, format/marshal functions, and error
-mapping. Domain managers (which call Kubernetes clientsets) are deliberately
-left untested until the planned move to controller-runtime clients makes them
-cleanly mockable.
+Two kinds of test double are used, one per seam:
+
+- **Kubernetes access** is tested against the controller-runtime **fake client**
+  (`sigs.k8s.io/controller-runtime/pkg/client/fake`), seeded with objects. This is
+  the controller-runtime-idiomatic way to test cache/client code, not a mock.
+- **Domain interfaces** (`network.Manager`, `flavour.Manager`, `compute.Manager`,
+  and the image query surface) are doubled with **gomock**
+  (`go.uber.org/mock`) generated mocks.
+
+Neither Ginkgo/Gomega nor envtest is used.
 
 ## Problem
 
-The repo had almost no test coverage. We needed a testing approach that:
-
-- matches how the code is actually structured (plain client-go clientsets, not
-  controller-runtime reconcilers), and
-- doesn't create throwaway scaffolding, given a planned migration to
-  controller-runtime with cached clients.
+The repo had almost no test coverage, and the most complex logic (compute IPAM
+resolution, the list joins, the gRPC adapters) was untested, so refactors were
+risky. Earlier, domain managers built their own concrete `*Clientset` fields and
+were not injectable, so they could not be faked. That blocker is gone: managers
+now receive an injected `client.Client` (and `client.Reader`) from the shared
+controller-runtime cluster (see `k8s-client-caching.md`), which makes them
+testable against the fake client.
 
 ## Decisions
 
@@ -32,60 +38,120 @@ The repo had almost no test coverage. We needed a testing approach that:
 
 The heavyweight Kubernetes controller test stack (envtest spinning up a real
 apiserver, Ginkgo/Gomega BDD) exists for **controller-runtime reconcilers**.
-kube-vim is not one — it is a stateless gRPC service over plain client-go
-clientsets. Adopting that stack would be a mismatch, so tests use the Go
-standard `testing` package with table-driven subtests, plus `testify` for terse
-`require` (fatal preconditions) / `assert` (soft checks) assertions.
+kube-vim is not one — it is a stateless gRPC service that uses controller-runtime's
+client/cache but has no controllers. Adopting that stack would be a mismatch, so
+tests use the Go standard `testing` package with table-driven `t.Run` subtests,
+plus `testify` for terse `require` (fatal preconditions) / `assert` (soft checks)
+assertions. Tests are **white-box** (same package as the code under test) so
+unexported converters and helpers can be exercised directly.
 
-Tests are **white-box** (same package as the code under test, `<file>_test.go`
-beside it) so unexported converters can be exercised directly.
+### Fake client for the Kubernetes seam (not a mock)
 
-### Scope today: pure functions only
+Managers do CRUD/List through an injected `client.Client`. Tests seed a fake
+client with objects and assert real behaviour (label selectors, namespacing,
+`NotFound`). A fake is preferred over a generated mock of `client.Client` because
+it actually implements Kubernetes semantics, so tests exercise the real query
+logic rather than a hand-scripted return value. (This is what caught the
+`CreateFlavour` namespace bug: the fake genuinely filed the object under the wrong
+namespace and the later `List` missed it.)
 
-The highest-value, lowest-cost, most stable surface is the deterministic logic
-with no Kubernetes client dependency:
+The shared helper lives in `internal/k8s/k8stest`:
 
-- `nfv⇄k8s` conversions and validation in each domain's `utils.go`
-  (`network/kubeovn`, `network/sriov`, `flavour/kubevirt`, `compute/kubevirt`),
-- format/marshal helpers (e.g. SR-IOV CNI config rendering),
-- error → gRPC/k8s mapping (`internal/errors`).
+- `k8stest.NewClient(t, objs...)` builds a fake client backed by
+  `k8s.BuildScheme()`, seeded with `objs`, with a `Create` interceptor that stamps
+  a UID and creation timestamp the way the apiserver does (the fake client does
+  not, and read-after-create paths need it).
+- `k8stest.ManagedMeta(name)` returns an `ObjectMeta` that passes both
+  `IsObjectInstantiated` (UID + ResourceVersion + non-zero CreationTimestamp) and
+  `IsObjectManagedByKubeNfv` (managed-by label). Namespace is left empty; set it
+  for namespaced kinds.
 
-These functions survive an internals refactor, so the tests are durable.
+### gomock for domain interfaces
 
-### Managers are intentionally untested (for now)
+The domain manager interfaces are plain Go interfaces (clean seams), so they are
+doubled with gomock rather than hand-written stubs. This gives type-safe,
+auto-maintained doubles with built-in call/argument assertions, which is
+worthwhile because the same mocks are reused across the compute IPAM tests, the
+composite dispatch tests, and the `ViVnfmServer` adapter tests.
 
-Domain managers hold **concrete `*Clientset` fields** built from `*rest.Config`
-inside their `NewXxx` constructors — they are not injectable, so a fake client
-cannot be substituted without a refactor.
+Mocks are generated by `//go:generate go run go.uber.org/mock/mockgen ...`
+directives on each interface and committed under a `mock/` subpackage next to the
+interface (consistent with the repo committing oapi-codegen output). `make
+generate` regenerates them via `go generate ./...`; no separate tool install is
+needed because the directive uses `go run`.
 
-Rather than refactor every manager to an injectable clientset `Interface` now,
-we wait for the planned migration to **controller-runtime + cached clients** and
-then test managers against `sigs.k8s.io/controller-runtime/pkg/client/fake`.
-Building fake-clientset plumbing against the current concrete clients would be
-thrown away by that migration, so it is explicitly avoided.
+gomock is used only for the **domain** interfaces. The Kubernetes client is never
+gomock'd — the fake client covers that seam better.
 
-The most complex untested logic is the network/IPAM resolution in
-`compute/kubevirt/manager.go` (`initNetworks`, `getNetworkIpam`,
-`getSubnetIpam`) — flagged for care until it becomes testable.
+### The image.Manager exception (gRPC embedding)
+
+`image.Manager` embeds the gRPC `admin.AdminServer`, whose forced
+`mustEmbedUnimplementedAdminServer()` method exists specifically to prevent
+external implementations. gomock cannot satisfy it (a generated mock's
+same-named method belongs to the mock package, not `admin`). This is a known
+gomock ↔ gRPC incompatibility.
+
+The fix is to keep the mockable ETSI surface separate from the un-mockable gRPC
+surface:
+
+- `image.NfvImageManager` (`GetImage`, `ListImages`) is split out and gomock'd.
+- `image.Manager` embeds `admin.AdminServer` + `NfvImageManager`.
+- Tests double `image.Manager` with a small type embedding
+  `admin.UnimplementedAdminServer` (supplies the AdminServer methods and the
+  forced `mustEmbed`) plus the `NfvImageManager` mock. The method sets are
+  disjoint, so there is no ambiguity:
+
+```go
+type imageManagerMock struct {
+    admin.UnimplementedAdminServer
+    *imagemock.MockNfvImageManager
+}
+```
+
+## What is tested
+
+- **Manager Kubernetes logic (fake client):** `flavour/kubevirt`, `network/sriov`,
+  `network/kubeovn`, `image/cdi` — Create/Get/List/Delete, ownership filtering
+  (kube-nfv refuses objects it does not own), not-found mapping, and the
+  `ListNetworks`/`ListImages` in-memory joins.
+- **Compute IPAM resolution (gomock network.Manager):**
+  `getSubnetIpam`/`getNetworkIpam`/`initSriovNetwork`/`initNetwork`/`initNetworks`
+  across overlay/underlay/SR-IOV × static/dynamic IPAM, plus
+  `ListComputeResources`' VM/VMI/pod join and skip-VM-without-VMI behaviour.
+- **Composite network dispatch (gomock):** overlay/underlay vs SR-IOV routing and
+  the not-found fall-through between backends.
+- **`ViVnfmServer` adapters (gomock ×4):** validate → delegate → wrap for every
+  reference-point method, the network allocate/query validation branches, and the
+  terminate-network → subnet fall-through.
+- **Pure logic (as before):** `nfv⇄k8s` converters in each `utils.go`,
+  format/marshal helpers, and error → gRPC/k8s mapping (`internal/errors`).
 
 ## How to add a test
 
 - Put it in `<file>_test.go` next to the code, `package <same>` (white-box).
-- Prefer a table-driven `t.Run` per case; use `require` for setup that must
-  succeed and `assert` for the actual expectations.
-- Constructing Kubernetes objects that must pass the ownership/instantiation
-  guards:
-  - `misc.IsObjectInstantiated` needs `UID`, `ResourceVersion`, and a non-zero
-    `CreationTimestamp`.
-  - `misc.IsObjectManagedByKubeNfv` needs the
-    `app.kubernetes.io/managed-by: kube-nfv` label.
-  - See `managedMeta(...)` in `internal/kubevim/network/kubeovn/utils_test.go`
-    for a reusable helper.
+- Prefer a table-driven `t.Run` per case; `require` for setup that must succeed,
+  `assert` for the actual expectations.
+- **Kubernetes seam:** build the manager with a `k8stest.NewClient(t, seed...)`
+  client (inject it as both the `client.Client` and the `client.Reader`). Build
+  seed objects with `k8stest.ManagedMeta(name)`; set `.Namespace` for namespaced
+  kinds. Assert via the same client (`cl.Get(...)`, `apierrors.IsNotFound`).
+- **Domain interface seam:** `ctrl := gomock.NewController(t)`;
+  `nm := networkmock.NewMockManager(ctrl)`; set `nm.EXPECT().GetSubnet(gomock.Any(),
+  gomock.Any()).Return(...)`. Leaving a method without an expectation asserts it is
+  not called.
+- `apperrors` types have pointer-receiver `Error()`, so match them with a typed
+  target: `var e *apperrors.ErrNotFound; assert.ErrorAs(t, err, &e)`.
 - Run one package: `go test ./internal/kubevim/network/kubeovn/ -run TestName -v`.
+
+## Coverage
+
+`make test` writes `cover.out` and prints the total. Coverage is measured but not
+yet gated in CI. `go tool cover -html=cover.out` renders the per-line report.
 
 ## Known gaps / follow-ups
 
-- **Managers, gateway wiring, and server adapters are untested** — pending the
-  controller-runtime migration for the manager layer.
-- **No coverage gate in CI.** `make test` runs but coverage is not measured or
-  enforced.
+- **`AllocateComputeResource`** (the full VM-build path in `compute/kubevirt`) is
+  still only partially covered; the IPAM helpers it calls are tested, the
+  end-to-end assembly is not.
+- **Gateway wiring** (`internal/gateway`) is untested.
+- **No coverage gate in CI** — the number is reported, not enforced.

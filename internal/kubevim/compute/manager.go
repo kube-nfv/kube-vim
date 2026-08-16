@@ -27,6 +27,8 @@ const (
 	ComputePodNameMetadataKey = "compute.kubevim.kubenfv.io/pod-name"
 )
 
+//go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
+
 type Manager interface {
 	AllocateComputeResource(context.Context, *vivnfm.AllocateComputeRequest) (*vivnfm.VirtualCompute, error)
 	GetComputeResource(context.Context, ...GetComputeOpt) (*vivnfm.VirtualCompute, error)

@@ -19,6 +19,8 @@ const (
 	K8sSubnetNetAttachNameLabel  = "network.kubevim.kubenfv.io/subnet-netattach-name"
 )
 
+//go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
+
 type Manager interface {
 	CreateNetwork(context.Context, string /*name*/, *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error)
 	GetNetwork(context.Context, ...GetNetworkOpt) (*vivnfm.VirtualNetwork, error)

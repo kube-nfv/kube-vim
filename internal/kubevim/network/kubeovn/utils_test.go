@@ -8,22 +8,16 @@ import (
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
+	"github.com/kube-nfv/kube-vim/internal/k8s/k8stest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // managedMeta returns an ObjectMeta that passes both IsObjectInstantiated and
 // IsObjectManagedByKubeNfv checks.
 func managedMeta(name string) metav1.ObjectMeta {
-	return metav1.ObjectMeta{
-		Name:              name,
-		UID:               types.UID("uid-" + name),
-		ResourceVersion:   "1",
-		CreationTimestamp: metav1.NewTime(time.Now()),
-		Labels:            map[string]string{common.K8sManagedByLabel: common.KubeNfvName},
-	}
+	return k8stest.ManagedMeta(name)
 }
 
 func TestKubeovnVpcFromNfvNetworkData(t *testing.T) {
