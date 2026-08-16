@@ -67,6 +67,11 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *vivnfm.VirtualC
 		return nil, fmt.Errorf("convert flavour to kubevirt resources: %w", err)
 	}
 
+	// Created objects must land in the configured namespace, otherwise the
+	// namespace-scoped Get/List/Delete lookups would never find them.
+	instType.Namespace = *m.cfg.Namespace
+	instPref.Namespace = *m.cfg.Namespace
+
 	createCtx, cancel := context.WithTimeout(ctx, CreateFlavourRqTimeout)
 	defer cancel()
 

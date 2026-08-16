@@ -20,14 +20,25 @@ const (
 	K8sImagePvcStorageClass = "image.kubevim.kubenfv.io/storage-class"
 )
 
+// NfvImageManager is the ETSI Vi-Vnfm image query surface. It is split out of
+// Manager so it can be mocked: Manager also embeds the gRPC admin.AdminServer,
+// whose forced mustEmbedUnimplementedAdminServer() cannot be satisfied by a
+// generated mock. Tests double Manager with a type embedding
+// admin.UnimplementedAdminServer plus a mock of this interface.
+//
+//go:generate go run go.uber.org/mock/mockgen -destination=mock/mock_manager.go -package=mock github.com/kube-nfv/kube-vim/internal/kubevim/image NfvImageManager
+type NfvImageManager interface {
+	// TODO: Change to be able to getImage by Name and source
+	GetImage(context.Context, *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error)
+	ListImages(context.Context) ([]*vivnfm.SoftwareImageInformation, error)
+}
+
 type Manager interface {
 	// Admin Api
 	admin.AdminServer
 
 	// NFV Api
-	// TODO: Change to be able to getImage by Name and source
-	GetImage(context.Context, *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error)
-	ListImages(context.Context) ([]*vivnfm.SoftwareImageInformation, error)
+	NfvImageManager
 }
 
 type SourceType string

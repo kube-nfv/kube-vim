@@ -77,7 +77,8 @@ $(LOCALBIN)/$(KUBEVIM_GATEWAY): $(LOCALBIN) FORCE
 
 .PHONY: test
 test: fmt vet
-	go test -v -count=1 ./...
+	go test -v -count=1 -coverprofile=cover.out ./...
+	@go tool cover -func=cover.out | tail -1
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

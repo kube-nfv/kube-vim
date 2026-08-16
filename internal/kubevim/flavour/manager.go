@@ -14,6 +14,8 @@ const (
 	K8sFlavourAttNameAnnotation = "flavour.kubevim.kubenfv.io/attached-name"
 )
 
+//go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
+
 type Manager interface {
 	CreateFlavour(context.Context, *vivnfm.VirtualComputeFlavour) (*nfvcommon.Identifier, error)
 	GetFlavour(context.Context, *nfvcommon.Identifier) (*vivnfm.VirtualComputeFlavour, error)
