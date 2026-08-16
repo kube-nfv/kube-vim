@@ -22,10 +22,11 @@ const (
 
 // newMetricsServer builds the Prometheus /metrics HTTP server. A
 // ReadHeaderTimeout is set to protect against slow-loris style stalls; the
-// handler streams from the OTEL-backed registry.
-func newMetricsServer(port int, registry *prometheus.Registry) *http.Server {
+// handler streams from gatherer, which fans out over both the OTEL-backed
+// registry and controller-runtime's registry (see newManager).
+func newMetricsServer(port int, gatherer prometheus.Gatherer) *http.Server {
 	mux := http.NewServeMux()
-	mux.Handle(metricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+	mux.Handle(metricsPath, promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,
 	}))
 	return &http.Server{

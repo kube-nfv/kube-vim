@@ -48,7 +48,19 @@ joined per-object. Datapoint attributes become per-series labels, which can.
 ## Emitted metrics
 
 Operational: gRPC RED (`rpc_server_*` from otelgrpc), `go_*` / `process_*`,
-`kubevim_build_info{version, go_version}`.
+`kubevim_build_info{version, go_version}`, and `rest_client_requests_total{code,
+method, host}` — kube-vim's own traffic to the Kubernetes API server.
+
+The `rest_client_*` counter is not emitted by kube-vim: controller-runtime
+collects it in its own package-global `metrics.Registry` (separate from the
+telemetry registry). The `/metrics` handler therefore gathers over both
+registries (`prometheus.Gatherers`); the metric names are disjoint. Request
+latency (`rest_client_request_duration_seconds`) is deliberately **not** exposed:
+controller-runtime's `pkg/metrics` `init` claims client-go's `sync.Once`-guarded
+`metrics.Register` with only the result counter, so registering the latency
+adapters ourselves is a silent no-op. Getting latency would require a custom
+`rest.Config.WrapTransport` RoundTripper (must skip long-lived watches) and is
+left as follow-up.
 
 Correlation (value always `1`):
 
@@ -110,7 +122,8 @@ by a 10s timeout; a backend error is logged and skipped, never failing the scrap
 - `internal/kubevim/telemetry/` — `provider.go` (OTEL MeterProvider + OTEL
   Prometheus exporter into a dedicated `prometheus.Registry` + Go/process
   collectors), `server.go` (`/metrics` `http.Server` with `ReadHeaderTimeout` +
-  graceful `Shutdown`), `info.go` (the correlation gauges), `metrics.go`
+  graceful `Shutdown`, gathering over the telemetry registry and
+  controller-runtime's `metrics.Registry`), `info.go` (the correlation gauges), `metrics.go`
   (build-info), `manager.go` (lifecycle; inert no-op provider when disabled).
 - `internal/kubevim/manager.go` — `initTelemetryManager`; the MeterProvider is
   threaded into the northbound server for otelgrpc; the metrics server runs as a
@@ -140,7 +153,7 @@ pod annotations are intentionally not emitted — the Operator ignores them.
    `--set vim.metrics.serviceMonitor.enabled=true` when running the Operator).
 2. `curl <vim-pod>:9095/metrics` → expect `kubevim_compute_info`,
    `kubevim_vnic_info`, `kubevim_network_info`, `rpc_server_*`, `go_*`,
-   `kubevim_build_info`.
+   `kubevim_build_info`, `rest_client_requests_total`.
 3. Confirm the backends export their own series (KubeVirt/kube-OVN/SR-IOV) and
    that `kubevim_compute_info.compute_name` matches the `name` label on
    `kubevirt_vmi_*` — that shared label is what the recording rules will join on.
