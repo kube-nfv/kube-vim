@@ -185,7 +185,8 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 
 	vmSpec := &kubevirtv1.VirtualMachine{
 		ObjectMeta: v1.ObjectMeta{
-			Name: vmName,
+			Name:      vmName,
+			Namespace: namespace,
 			Labels: map[string]string{
 				kubevirtv1.VirtualMachineLabel: vmName,
 				common.K8sManagedByLabel:       common.KubeNfvName,
