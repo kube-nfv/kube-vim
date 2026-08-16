@@ -154,7 +154,7 @@ network:
 
 ### Required labels and why
 
-`initNetwork` (`internal/kubevim/compute/kubevirt/manager.go`) reads
+`initNetwork` (`internal/kubevim/compute/kubevirt/ipam.go`) reads
 the following labels off the `Subnet` object on every VM creation:
 
 | Label                              | Purpose                                                       |
