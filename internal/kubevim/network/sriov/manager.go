@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
-	netatt_client "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
@@ -16,36 +15,33 @@ import (
 	"go.uber.org/zap"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type manager struct {
-	logger          *zap.Logger
-	netAttachClient *netatt_client.Clientset
-	k8sCfg          *config.K8sConfig
-	socketFile      string
+	logger *zap.Logger
+	// client serves cache-backed reads and direct writes.
+	client     client.Client
+	k8sCfg     *config.K8sConfig
+	socketFile string
 }
 
-func NewSriovNetworkManager(restConfig *rest.Config, k8sCfg *config.K8sConfig, sriovCfg *config.SriovNetworkConfig, logger *zap.Logger) (*manager, error) {
+func NewSriovNetworkManager(cl client.Client, k8sCfg *config.K8sConfig, sriovCfg *config.SriovNetworkConfig, logger *zap.Logger) (*manager, error) {
 	if k8sCfg.Namespace == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config k8s.Namespace", Reason: "can't be nil"}
 	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	netAttC, err := netatt_client.NewForConfig(restConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create multus network-attachment-definition k8s client: %w", err)
-	}
 	var socketFile string
 	if sriovCfg != nil && sriovCfg.SocketFile != nil {
 		socketFile = *sriovCfg.SocketFile
 	}
 	return &manager{
-		logger:          logger,
-		netAttachClient: netAttC,
-		k8sCfg:          k8sCfg,
-		socketFile:      socketFile,
+		logger:     logger,
+		client:     cl,
+		k8sCfg:     k8sCfg,
+		socketFile: socketFile,
 	}, nil
 }
 
@@ -92,24 +88,18 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *v
 		},
 	}
 
-	created, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Create(ctx, nad, v1.CreateOptions{})
-	if err != nil {
+	if err := m.client.Create(ctx, nad); err != nil {
 		return nil, fmt.Errorf("create SR-IOV NetworkAttachmentDefinition '%s': %w", name, err)
 	}
-	return nadToNfvNetwork(created)
+	return nadToNfvNetwork(nad)
 }
 
 func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt) (*vivnfm.VirtualNetwork, error) {
 	cfg := network.ApplyGetNetworkOpts(opts...)
 
-	labelSel := fmt.Sprintf("%s=%s,%s=%s",
-		common.K8sManagedByLabel, common.KubeNfvName,
-		network.K8sNetworkTypeLabel, nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String(),
-	)
-
 	if cfg.Name != "" {
-		nad, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Get(ctx, cfg.Name, v1.GetOptions{})
-		if err != nil {
+		nad := &netattv1.NetworkAttachmentDefinition{}
+		if err := m.client.Get(ctx, client.ObjectKey{Namespace: *m.k8sCfg.Namespace, Name: cfg.Name}, nad); err != nil {
 			if k8s_errors.IsNotFound(err) {
 				return nil, &apperrors.ErrNotFound{Entity: fmt.Sprintf("SR-IOV network '%s'", cfg.Name)}
 			}
@@ -121,8 +111,8 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 		return nadToNfvNetwork(nad)
 	}
 	if cfg.Uid != nil && cfg.Uid.Value != "" {
-		list, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).List(ctx, v1.ListOptions{LabelSelector: labelSel})
-		if err != nil {
+		list := &netattv1.NetworkAttachmentDefinitionList{}
+		if err := m.client.List(ctx, list, client.InNamespace(*m.k8sCfg.Namespace), m.sriovSelector()); err != nil {
 			return nil, fmt.Errorf("list SR-IOV NetworkAttachmentDefinitions: %w", err)
 		}
 		for i := range list.Items {
@@ -135,13 +125,17 @@ func (m *manager) GetNetwork(ctx context.Context, opts ...network.GetNetworkOpt)
 	return nil, &apperrors.ErrInvalidArgument{Field: "GetNetworkOpt", Reason: "name or uid required"}
 }
 
+// sriovSelector matches kube-nfv-owned SR-IOV NetworkAttachmentDefinitions.
+func (m *manager) sriovSelector() client.MatchingLabels {
+	return client.MatchingLabels{
+		common.K8sManagedByLabel:    common.KubeNfvName,
+		network.K8sNetworkTypeLabel: nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String(),
+	}
+}
+
 func (m *manager) ListNetworks(ctx context.Context) ([]*vivnfm.VirtualNetwork, error) {
-	labelSel := fmt.Sprintf("%s=%s,%s=%s",
-		common.K8sManagedByLabel, common.KubeNfvName,
-		network.K8sNetworkTypeLabel, nfvcommon.NetworkType_NETWORK_TYPE_SRIOV.String(),
-	)
-	list, err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).List(ctx, v1.ListOptions{LabelSelector: labelSel})
-	if err != nil {
+	list := &netattv1.NetworkAttachmentDefinitionList{}
+	if err := m.client.List(ctx, list, client.InNamespace(*m.k8sCfg.Namespace), m.sriovSelector()); err != nil {
 		return nil, fmt.Errorf("list SR-IOV NetworkAttachmentDefinitions: %w", err)
 	}
 	result := make([]*vivnfm.VirtualNetwork, 0, len(list.Items))
@@ -164,7 +158,10 @@ func (m *manager) DeleteNetwork(ctx context.Context, opts ...network.GetNetworkO
 	if net.NetworkResourceName == nil {
 		return &apperrors.ErrInvalidArgument{Field: "networkResourceName", Reason: "cannot be nil"}
 	}
-	if err := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(*m.k8sCfg.Namespace).Delete(ctx, *net.NetworkResourceName, v1.DeleteOptions{}); err != nil {
+	nad := &netattv1.NetworkAttachmentDefinition{
+		ObjectMeta: v1.ObjectMeta{Name: *net.NetworkResourceName, Namespace: *m.k8sCfg.Namespace},
+	}
+	if err := m.client.Delete(ctx, nad); err != nil {
 		return fmt.Errorf("delete SR-IOV NetworkAttachmentDefinition '%s': %w", *net.NetworkResourceName, err)
 	}
 	return nil

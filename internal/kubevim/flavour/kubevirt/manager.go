@@ -13,10 +13,8 @@ import (
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/misc"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
 	"kubevirt.io/api/instancetype/v1beta1"
-	kubevirt "kubevirt.io/client-go/kubevirt"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -29,20 +27,24 @@ const (
 )
 
 type manager struct {
-	kubevirtClient *kubevirt.Clientset
+	// client serves cache-backed reads and direct writes.
+	client client.Client
+	// apiReader is uncached (hits the apiserver directly); use only where a
+	// strongly-consistent read is required. No flavour path needs it today.
+	apiReader client.Reader
 
 	// Note: Access should be readonly otherwise it might introduce races
 	cfg *config.K8sConfig
 }
 
-func NewFlavourManager(k8sConfig *rest.Config, cfg *config.K8sConfig) (*manager, error) {
-	c, err := kubevirt.NewForConfig(k8sConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create kubevirt client: %w", err)
+func NewFlavourManager(cl client.Client, apiReader client.Reader, cfg *config.K8sConfig) (*manager, error) {
+	if cfg == nil || cfg.Namespace == nil {
+		return nil, &apperrors.ErrInvalidArgument{Field: "k8sConfig.namespace", Reason: "required"}
 	}
 	return &manager{
-		kubevirtClient: c,
-		cfg:            cfg,
+		client:    cl,
+		apiReader: apiReader,
+		cfg:       cfg,
 	}, nil
 }
 
@@ -68,13 +70,11 @@ func (m *manager) CreateFlavour(ctx context.Context, nfvFlavour *vivnfm.VirtualC
 	createCtx, cancel := context.WithTimeout(ctx, CreateFlavourRqTimeout)
 	defer cancel()
 
-	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).Create(createCtx, instType, v1.CreateOptions{})
-	if err != nil {
+	if err := m.client.Create(createCtx, instType); err != nil {
 		return nil, fmt.Errorf("create VirtualMachineInstancetype '%s' for flavour '%s': %w", instType.Name, flavourId, err)
 	}
 
-	_, err = m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).Create(createCtx, instPref, v1.CreateOptions{})
-	if err != nil {
+	if err := m.client.Create(createCtx, instPref); err != nil {
 		return nil, fmt.Errorf("create VirtualMachinePreference '%s' for flavour '%s': %w", instPref.Name, flavourId, err)
 	}
 
@@ -87,11 +87,11 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfvcommon.Identifier) (*vi
 	if id == nil || id.GetValue() == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "flavour id", Reason: "required"}
 	}
-	flavourIdSelector := fmt.Sprintf("%s=%s", flavour.K8sFlavourIdLabel, id.GetValue())
-	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).List(ctx, v1.ListOptions{
-		LabelSelector: flavourIdSelector,
-	})
-	if err != nil || instTypeList == nil {
+	idSelector := client.MatchingLabels{flavour.K8sFlavourIdLabel: id.GetValue()}
+	ns := client.InNamespace(*m.cfg.Namespace)
+
+	instTypeList := &v1beta1.VirtualMachineInstancetypeList{}
+	if err := m.client.List(ctx, instTypeList, ns, idSelector); err != nil {
 		return nil, fmt.Errorf("list VirtualMachineInstancetypes for flavour %s: %w", id.GetValue(), err)
 	}
 	if len(instTypeList.Items) == 0 {
@@ -105,12 +105,10 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfvcommon.Identifier) (*vi
 		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachineInstancetype", ObjectName: instType.Name, ObjectId: string(instType.GetUID())}
 	}
 
-	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).List(ctx, v1.ListOptions{
-		LabelSelector: flavourIdSelector,
-	})
+	instPrefList := &v1beta1.VirtualMachinePreferenceList{}
 	// It's totaly possible that instancePreference won't exists in the cluster
 	var instPref *v1beta1.VirtualMachinePreference
-	if err == nil && instPrefList != nil && len(instPrefList.Items) == 1 {
+	if err := m.client.List(ctx, instPrefList, ns, idSelector); err == nil && len(instPrefList.Items) == 1 {
 		instPref = &instPrefList.Items[0]
 		if !misc.IsObjectManagedByKubeNfv(instPref) {
 			return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachinePreference", ObjectName: instPref.Name, ObjectId: string(instPref.GetUID())}
@@ -124,17 +122,16 @@ func (m *manager) GetFlavour(ctx context.Context, id *nfvcommon.Identifier) (*vi
 }
 
 func (m *manager) GetFlavours(ctx context.Context) ([]*vivnfm.VirtualComputeFlavour, error) {
-	instTypeList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).List(ctx, v1.ListOptions{
-		LabelSelector: common.ManagedByKubeNfvSelector,
-	})
-	if err != nil || instTypeList == nil {
+	managed := client.MatchingLabels{common.K8sManagedByLabel: common.KubeNfvName}
+	ns := client.InNamespace(*m.cfg.Namespace)
+
+	instTypeList := &v1beta1.VirtualMachineInstancetypeList{}
+	if err := m.client.List(ctx, instTypeList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list VirtualMachineInstancetypes: %w", err)
 	}
 
-	instPrefList, err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).List(ctx, v1.ListOptions{
-		LabelSelector: common.ManagedByKubeNfvSelector,
-	})
-	if err != nil || instPrefList == nil {
+	instPrefList := &v1beta1.VirtualMachinePreferenceList{}
+	if err := m.client.List(ctx, instPrefList, ns, managed); err != nil {
 		return nil, fmt.Errorf("list VirtualMachinePreferences: %w", err)
 	}
 
@@ -170,17 +167,19 @@ func (m *manager) GetFlavours(ctx context.Context) ([]*vivnfm.VirtualComputeFlav
 }
 
 func (m *manager) DeleteFlavour(ctx context.Context, id *nfvcommon.Identifier) error {
-	_, err := m.GetFlavour(ctx, id)
-	if err != nil {
-		return fmt.Errorf("verify flavour '%s' exists: %w", id.Value, err)
+	ns := client.InNamespace(*m.cfg.Namespace)
+	// Delete only kube-nfv-owned objects carrying this flavour id, so a same-named
+	// object we do not own is never touched. Idempotent: deleting a missing flavour
+	// is a no-op (the preference is optional and may not exist).
+	sel := client.MatchingLabels{
+		common.K8sManagedByLabel:  common.KubeNfvName,
+		flavour.K8sFlavourIdLabel: id.GetValue(),
 	}
-	instTypeName := flavourNameFromId(id.Value)
-	if err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachineInstancetypes(*m.cfg.Namespace).Delete(ctx, instTypeName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete VirtualMachineInstancetype '%s' for flavour '%s': %w", instTypeName, id.Value, err)
+	if err := m.client.DeleteAllOf(ctx, &v1beta1.VirtualMachineInstancetype{}, ns, sel); err != nil {
+		return fmt.Errorf("delete VirtualMachineInstancetype for flavour '%s': %w", id.GetValue(), err)
 	}
-	instPrefName := flavourPreferenceNameFromId(id.Value)
-	if err := m.kubevirtClient.InstancetypeV1beta1().VirtualMachinePreferences(*m.cfg.Namespace).Delete(ctx, instPrefName, v1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("delete VirtualMachinePreference '%s' for flavour '%s': %w", instPrefName, id.Value, err)
+	if err := m.client.DeleteAllOf(ctx, &v1beta1.VirtualMachinePreference{}, ns, sel); err != nil {
+		return fmt.Errorf("delete VirtualMachinePreference for flavour '%s': %w", id.GetValue(), err)
 	}
 	return nil
 }

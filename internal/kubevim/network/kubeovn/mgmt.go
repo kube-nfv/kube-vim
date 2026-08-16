@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // EnsureManagementNetwork provisions or reconciles the shared management
@@ -104,20 +105,23 @@ func mgmtNetAttachLabels(subnetName string) map[string]string {
 }
 
 func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName string) (*kubeovnv1.Vpc, error) {
-	existing, err := m.kubeOvnClient.KubeovnV1().Vpcs().Get(ctx, vpcName, v1.GetOptions{})
+	// Uncached read: the Vpc may pre-exist without the managed-by label (so it is
+	// not in the cache) and this is exactly where we add that label.
+	existing := &kubeovnv1.Vpc{}
+	err := m.apiReader.Get(ctx, client.ObjectKey{Name: vpcName}, existing)
 	if err == nil {
 		changed, merged := misc.MergeLabels(existing.Labels, mgmtVpcLabels())
 		if !changed {
 			log.Debug("Vpc already exists with required labels")
 			return existing, nil
 		}
+		base := existing.DeepCopy()
 		existing.Labels = merged
-		updated, err := m.kubeOvnClient.KubeovnV1().Vpcs().Update(ctx, existing, v1.UpdateOptions{})
-		if err != nil {
+		if err := m.client.Patch(ctx, existing, client.MergeFrom(base)); err != nil {
 			return nil, fmt.Errorf("patch vpc labels: %w", err)
 		}
 		log.Debug("Patched Vpc labels")
-		return updated, nil
+		return existing, nil
 	}
 	if !k8s_errors.IsNotFound(err) {
 		return nil, fmt.Errorf("get vpc: %w", err)
@@ -130,21 +134,25 @@ func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName st
 		},
 		Spec: kubeovnv1.VpcSpec{},
 	}
-	created, err := m.kubeOvnClient.KubeovnV1().Vpcs().Create(ctx, vpc, v1.CreateOptions{})
-	if err != nil {
+	if err := m.client.Create(ctx, vpc); err != nil {
 		if k8s_errors.IsAlreadyExists(err) {
 			// Race: another caller created it. Re-read to get a stable UID.
-			return m.kubeOvnClient.KubeovnV1().Vpcs().Get(ctx, vpcName, v1.GetOptions{})
+			reread := &kubeovnv1.Vpc{}
+			if err := m.apiReader.Get(ctx, client.ObjectKey{Name: vpcName}, reread); err != nil {
+				return nil, fmt.Errorf("re-read vpc after AlreadyExists: %w", err)
+			}
+			return reread, nil
 		}
 		return nil, fmt.Errorf("create vpc: %w", err)
 	}
 	log.Debug("Created Vpc")
-	return created, nil
+	return vpc, nil
 }
 
 func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, vpcUID, subnetName, nadName string) error {
 	required := mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName)
-	existing, err := m.kubeOvnClient.KubeovnV1().Subnets().Get(ctx, subnetName, v1.GetOptions{})
+	existing := &kubeovnv1.Subnet{}
+	err := m.apiReader.Get(ctx, client.ObjectKey{Name: subnetName}, existing)
 	if err == nil {
 		changed, merged := misc.MergeLabels(existing.Labels, required)
 		if !changed {
@@ -152,8 +160,9 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 				zap.String("cidr", existing.Spec.CIDRBlock))
 			return nil
 		}
+		base := existing.DeepCopy()
 		existing.Labels = merged
-		if _, err := m.kubeOvnClient.KubeovnV1().Subnets().Update(ctx, existing, v1.UpdateOptions{}); err != nil {
+		if err := m.client.Patch(ctx, existing, client.MergeFrom(base)); err != nil {
 			return fmt.Errorf("patch subnet labels: %w", err)
 		}
 		log.Debug("Patched Subnet labels", zap.String("cidr", existing.Spec.CIDRBlock))
@@ -184,7 +193,7 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 	if cfg.ExcludeIps != nil && len(*cfg.ExcludeIps) > 0 {
 		sub.Spec.ExcludeIps = append([]string(nil), (*cfg.ExcludeIps)...)
 	}
-	if _, err := m.kubeOvnClient.KubeovnV1().Subnets().Create(ctx, sub, v1.CreateOptions{}); err != nil {
+	if err := m.client.Create(ctx, sub); err != nil {
 		if k8s_errors.IsAlreadyExists(err) {
 			return nil
 		}
@@ -196,16 +205,18 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 
 func (m *manager) ensureMgmtNetAttach(ctx context.Context, log *zap.Logger, subnetName, nadName, nadNamespace string) error {
 	required := mgmtNetAttachLabels(subnetName)
-	nadClient := m.netAttachClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nadNamespace)
-	existing, err := nadClient.Get(ctx, nadName, v1.GetOptions{})
+	nadKey := client.ObjectKey{Namespace: nadNamespace, Name: nadName}
+	existing := &netattv1.NetworkAttachmentDefinition{}
+	err := m.apiReader.Get(ctx, nadKey, existing)
 	if err == nil {
 		changed, merged := misc.MergeLabels(existing.Labels, required)
 		if !changed {
 			log.Debug("NetworkAttachmentDefinition already exists with required labels")
 			return nil
 		}
+		base := existing.DeepCopy()
 		existing.Labels = merged
-		if _, err := nadClient.Update(ctx, existing, v1.UpdateOptions{}); err != nil {
+		if err := m.client.Patch(ctx, existing, client.MergeFrom(base)); err != nil {
 			return fmt.Errorf("patch network-attachment-definition labels: %w", err)
 		}
 		log.Debug("Patched NetworkAttachmentDefinition labels")
@@ -225,7 +236,7 @@ func (m *manager) ensureMgmtNetAttach(ctx context.Context, log *zap.Logger, subn
 			Config: formatNetAttachConfig(nadName, nadNamespace),
 		},
 	}
-	if _, err := nadClient.Create(ctx, nad, v1.CreateOptions{}); err != nil {
+	if err := m.client.Create(ctx, nad); err != nil {
 		if k8s_errors.IsAlreadyExists(err) {
 			return nil
 		}

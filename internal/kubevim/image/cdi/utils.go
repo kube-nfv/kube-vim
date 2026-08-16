@@ -13,9 +13,8 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // TODO: Add additional image import sources
@@ -53,33 +52,34 @@ func convertToHttpDataVolumeSource(http *admin.HttpSource) (*v1beta1.DataVolumeS
 	return res, nil
 }
 
-// GetStorageClass retrieves a StorageClass by name.
+// getStorageClass retrieves a StorageClass by name.
 // If the name is "default", it returns the cluster's default StorageClass.
-func getStorageClass(ctx context.Context, name string, clientset *kubernetes.Clientset) (*storagev1.StorageClass, error) {
+// StorageClasses are cluster-scoped and not kube-nfv-owned, so this reads through
+// the uncached reader (apiReader) rather than the shared cache.
+func getStorageClass(ctx context.Context, name string, reader client.Reader) (*storagev1.StorageClass, error) {
 	if name == "" {
 		return nil, &apperrors.ErrInvalidArgument{Field: "name", Reason: "can't be empty"}
 	}
-	storageClient := clientset.StorageV1().StorageClasses()
 
 	if name != "default" {
 		// Get StorageClass by exact name
-		sc, err := storageClient.Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
+		sc := &storagev1.StorageClass{}
+		if err := reader.Get(ctx, client.ObjectKey{Name: name}, sc); err != nil {
 			return nil, fmt.Errorf("failed to get storage class %q: %w", name, err)
 		}
 		return sc, nil
 	}
 	// If "default", find the StorageClass annotated as default
-	scList, err := storageClient.List(ctx, metav1.ListOptions{})
-	if err != nil {
+	scList := &storagev1.StorageClassList{}
+	if err := reader.List(ctx, scList); err != nil {
 		return nil, fmt.Errorf("failed to list storage classes: %w", err)
 	}
 
-	for _, sc := range scList.Items {
-		annotations := sc.Annotations
+	for idx := range scList.Items {
+		annotations := scList.Items[idx].Annotations
 		if annotations["storageclass.kubernetes.io/is-default-class"] == "true" ||
 			annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true" {
-			return &sc, nil
+			return &scList.Items[idx], nil
 		}
 	}
 
