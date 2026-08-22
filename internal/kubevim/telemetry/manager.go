@@ -17,6 +17,7 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -73,11 +74,15 @@ func NewManager(cfg *config.MonitoringConfig, logger *zap.Logger, computeMgr com
 		return nil, err
 	}
 
+	// Serve our registry alongside controller-runtime's (rest_client_* for
+	// kube-vim's apiserver traffic); metric names are disjoint.
+	gatherer := prometheus.Gatherers{registry, ctrlmetrics.Registry}
+
 	return &Manager{
 		logger:   logger,
 		provider: provider,
 		sdk:      provider,
-		server:   newMetricsServer(port, registry),
+		server:   newMetricsServer(port, gatherer),
 		port:     port,
 	}, nil
 }
