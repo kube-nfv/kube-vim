@@ -22,10 +22,12 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/sriov"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/server"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/telemetry"
+	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -61,6 +63,9 @@ func NewKubeVimManager(cfg *config.Config, logger *zap.Logger) (*kubevimManager,
 	if cfg == nil {
 		return nil, &apperrors.ErrInvalidArgument{Field: "config", Reason: "cannot be nil"}
 	}
+
+	// controller-runtime logs through the package-global logr sink.
+	ctrllog.SetLogger(zapr.NewLogger(logger.Named("controller-runtime")))
 
 	var k8sConfig *rest.Config
 	if cfg.K8s.Config != nil && *cfg.K8s.Config != "" {
