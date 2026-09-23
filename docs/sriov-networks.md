@@ -68,7 +68,7 @@ SR-IOV networks use the same `VirtualNetworkData` message as OVERLAY and UNDERLA
 | Field | SR-IOV meaning |
 |---|---|
 | `networkType` | `SRIOV` |
-| `providerNetwork` | Device plugin resource name (e.g. `openshift.io/sriov_netdevice`) |
+| `providerNetwork` | Device plugin resource name (e.g. `openshift.io/sriov_netdevice`). A name without `/` gets `openshift.io/` prepended |
 | `segmentationId` | VLAN ID applied to the OVS port — `0` means untagged |
 | `bandwidth` | Ignored. ovs-cni has no per-port rate limiting; use OVS QoS if needed |
 
@@ -165,11 +165,13 @@ So the isolation guarantee is: on a provider network used for SR-IOV, the only i
 | Multus CNI | Multi-NIC support; usually bundled with the SR-IOV operator |
 | ovs-cni | Installed on each worker node (`ovs` binary in the CNI bin dir). Attaches the VF representor to OVS |
 | Open vSwitch | One OVS bridge **per PF**, with the PF uplink already attached as a port (so ovs-cni's auto-discovery resolves it) |
-| KubeVirt | SR-IOV feature gate must be enabled |
+| KubeVirt | SR-IOV binding available: GA in recent releases (e.g. v1.8.4, no gate); older releases need the `SRIOV` feature gate |
 
 > **Note:** the data path is OVS hardware offload — `switchdev` PFs + per-PF OVS bridges with uplinks attached are mandatory. ovs-cni does **not** create bridges; it only attaches representors to existing ones. Provisioning the bridges/switchdev is the cluster operator's responsibility — see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation) for the supported mechanisms and the isolation boundary. A future `NodeNetworkProfile` (Phase 2) will let kube-vim own this declaratively.
 
-### KubeVirt SR-IOV feature gate
+### KubeVirt SR-IOV feature gate (older KubeVirt only)
+
+Recent KubeVirt releases (e.g. v1.8.4) ship SR-IOV as GA and need no gate. On older releases:
 
 ```yaml
 apiVersion: kubevirt.io/v1
@@ -288,7 +290,7 @@ On the worker running the VM, the VF representor should be a port on its PF's OV
 
 ```
 ovs-vsctl list-ports <bridge>                       # expect <pf>_<vfN> alongside the uplink
-ovs-appctl dpctl/dump-flows type=offloaded          # forwarding rules in hardware
+ovs-appctl dpctl/dump-flows -m                      # look for offloaded:yes dp:tc; without -m the offloaded field is not printed
 ```
 
 ### Troubleshooting
@@ -296,7 +298,7 @@ ovs-appctl dpctl/dump-flows type=offloaded          # forwarding rules in hardwa
 | Symptom | Likely cause | Check |
 |---|---|---|
 | VM pod stuck in `Pending` | No VFs available on the node | `kubectl describe pod <virt-launcher>` → `Insufficient <resourceName>` |
-| VM starts but VF not visible inside guest | KubeVirt SRIOV feature gate disabled | Inspect `KubeVirt` CR `featureGates` |
+| VM starts but VF not visible inside guest | Older KubeVirt without the SRIOV feature gate | Inspect `KubeVirt` CR `featureGates` and the KubeVirt version |
 | VF up but no traffic / representor not on bridge | ovs-cni couldn't reach OVSDB, or the PF isn't a bridge port (auto-discovery failed) | `ovs-vsctl list-ports <bridge>`; check `socketFile`; verify the PF uplink is attached to its bridge |
 | Traffic works but not offloaded | PF not in switchdev, or `hw-offload` disabled on OVS | `ovs-vsctl get Open_vSwitch . other_config:hw-offload`; check PF `eSwitchMode` |
 | VF visible but incorrect VLAN tagging | `segmentationId` mismatch on the OVS port | Delete and recreate the SR-IOV network |
