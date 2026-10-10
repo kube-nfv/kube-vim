@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
@@ -13,6 +14,7 @@ import (
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/k8s"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	"go.uber.org/zap"
@@ -31,7 +33,11 @@ type manager struct {
 	// the cache) before labelling them.
 	apiReader client.Reader
 	k8sCfg    *config.K8sConfig
+	// cacheSyncTimeout bounds how long network create waits for the cache to see what it created.
+	cacheSyncTimeout time.Duration
 }
+
+const defaultCacheSyncTimeout = 2 * time.Second
 
 func NewKubeovnNetworkManager(cl client.Client, apiReader client.Reader, k8sCfg *config.K8sConfig, logger *zap.Logger) (*manager, error) {
 	if k8sCfg.Namespace == nil {
@@ -41,10 +47,11 @@ func NewKubeovnNetworkManager(cl client.Client, apiReader client.Reader, k8sCfg 
 		logger = zap.NewNop()
 	}
 	return &manager{
-		logger:    logger,
-		client:    cl,
-		apiReader: apiReader,
-		k8sCfg:    k8sCfg,
+		logger:           logger,
+		client:           cl,
+		apiReader:        apiReader,
+		k8sCfg:           k8sCfg,
+		cacheSyncTimeout: defaultCacheSyncTimeout,
 	}, nil
 }
 
@@ -101,6 +108,19 @@ func (m *manager) rollbackNetwork(ctx context.Context, netObj client.Object, sub
 	return errors.Join(errs...)
 }
 
+// Waits until the cache sees the network object and its subnets, so the next query (e.g. RO's
+// status refresh right after create) does not report a just-created network as missing.
+func (m *manager) waitForNetworkCached(ctx context.Context, netObj client.Object, subnets []misc.IdName) error {
+	objs := []client.Object{netObj}
+	for _, subnet := range subnets {
+		objs = append(objs,
+			&kubeovnv1.Subnet{ObjectMeta: v1.ObjectMeta{Name: subnet.Name}},
+			&netattv1.NetworkAttachmentDefinition{ObjectMeta: v1.ObjectMeta{Name: formatNetAttachName(subnet.Name), Namespace: *m.k8sCfg.Namespace}},
+		)
+	}
+	return k8s.WaitForCached(ctx, m.client, m.cacheSyncTimeout, objs...)
+}
+
 // Deletes the kubeovn subnet and its multus NetworkAttachmentDefinition by name, ignoring objects that are already gone.
 func (m *manager) deleteSubnetObjects(ctx context.Context, subnetName string) error {
 	var errs []error
@@ -135,6 +155,13 @@ func (m *manager) createOverlayNetwork(ctx context.Context, name string, network
 		}
 		return nil, err
 	}
+	if err := m.waitForNetworkCached(ctx, vpc, subnets); err != nil {
+		err = fmt.Errorf("wait for network '%s' in cache: %w", name, err)
+		if cleanupErr := m.rollbackNetwork(ctx, vpc, subnets); cleanupErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("rollback network '%s': %w", name, cleanupErr))
+		}
+		return nil, err
+	}
 
 	res, err := kubeovnVpcToNfvNetwork(vpc, misc.Identifiers(subnets))
 	if err != nil {
@@ -161,6 +188,13 @@ func (m *manager) createUnderlayNetwork(ctx context.Context, name string, networ
 	subnets, err := m.allocateL3Attributes(ctx, vnet, networkData.Layer3Attributes)
 	if err != nil {
 		err = fmt.Errorf("create vlan l3 attributes: %w", err)
+		if cleanupErr := m.rollbackNetwork(ctx, vlan, subnets); cleanupErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("rollback network '%s': %w", name, cleanupErr))
+		}
+		return nil, err
+	}
+	if err := m.waitForNetworkCached(ctx, vlan, subnets); err != nil {
+		err = fmt.Errorf("wait for network '%s' in cache: %w", name, err)
 		if cleanupErr := m.rollbackNetwork(ctx, vlan, subnets); cleanupErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("rollback network '%s': %w", name, cleanupErr))
 		}

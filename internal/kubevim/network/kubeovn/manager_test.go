@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
@@ -242,6 +243,23 @@ var staleCache = interceptor.Funcs{
 	},
 }
 
+// laggingCache misses the first Get of a kube-ovn network or subnet, then reads through.
+func laggingCache() interceptor.Funcs {
+	missed := false
+	return interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			switch obj.(type) {
+			case *kubeovnv1.Vpc, *kubeovnv1.Vlan, *kubeovnv1.Subnet:
+				if !missed {
+					missed = true
+					return apierrors.NewNotFound(kubeovnv1.Resource("lagging"), key.Name)
+				}
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}
+}
+
 func TestCreateNetworkWithStaleCache(t *testing.T) {
 	t.Parallel()
 	ns := testNamespace
@@ -253,17 +271,29 @@ func TestCreateNetworkWithStaleCache(t *testing.T) {
 		}}}
 	}
 
-	t.Run("overlay with subnet does not re-read the new vpc", func(t *testing.T) {
+	t.Run("waits until the cache sees the new network", func(t *testing.T) {
 		base := k8stest.NewClient(t)
-		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
+		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, laggingCache()), base, &config.K8sConfig{Namespace: &ns}, nil)
 		require.NoError(t, err)
 
 		got, err := m.CreateNetwork(context.Background(), "net1", data())
 		require.NoError(t, err)
 		require.Len(t, got.SubnetId, 1)
-		sub := &kubeovnv1.Subnet{}
-		require.NoError(t, base.Get(context.Background(), client.ObjectKey{Name: formatSubnetName("net1", "0")}, sub))
-		assert.Equal(t, "net1", sub.Spec.Vpc)
+		// The next cached read (RO's status refresh) must find it.
+		_, err = m.GetNetwork(context.Background(), network.GetNetworkByName("net1"))
+		require.NoError(t, err)
+	})
+
+	t.Run("cache that never catches up fails and removes the vpc", func(t *testing.T) {
+		base := k8stest.NewClient(t)
+		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
+		require.NoError(t, err)
+		m.cacheSyncTimeout = 100 * time.Millisecond
+
+		_, err = m.CreateNetwork(context.Background(), "net1", data())
+		require.Error(t, err)
+		err = base.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{})
+		assert.True(t, apierrors.IsNotFound(err), "vpc should be rolled back")
 	})
 
 	t.Run("failed subnet removes the vpc and netattach", func(t *testing.T) {

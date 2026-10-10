@@ -89,6 +89,13 @@ and hands it to subnet creation (`createSubnet`); re-reading it through the cach
 intermittently with `network not found`. Its rollback deletes the objects it created by
 name, without lookups, so a failed create leaves nothing behind.
 
+Across calls, network create does not return until the cache has observed the network,
+its subnets and their NetworkAttachmentDefinitions (`k8s.WaitForCached`, 2 s bound).
+Queries stay cached, but a client that queries right after creating (OSM RO refreshes a
+new network's status at once) never sees it missing. If the cache does not catch up in
+time, create fails and rolls back rather than return a network that queries would report
+as gone.
+
 Delete preconditions (reading an object to validate it before deleting) read from the
 cache and accept the brief eventual-consistency window. The flavour manager avoids the
 precondition entirely by deleting via a label-scoped `DeleteAllOf`, which also keeps
