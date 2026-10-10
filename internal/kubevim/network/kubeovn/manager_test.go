@@ -2,6 +2,7 @@ package kubeovn
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -17,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const testNamespace = k8stest.TestNamespace
@@ -219,4 +221,69 @@ func TestDeleteSubnet(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err), "subnet should be gone")
 	err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: formatNetAttachName("sub1")}, &netattv1.NetworkAttachmentDefinition{})
 	assert.True(t, apierrors.IsNotFound(err), "netattach should be gone")
+}
+
+// staleCache hides kube-ovn networks and subnets from reads, like an informer cache
+// that has not yet observed objects created moments ago.
+var staleCache = interceptor.Funcs{
+	Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+		switch obj.(type) {
+		case *kubeovnv1.Vpc, *kubeovnv1.Vlan, *kubeovnv1.Subnet:
+			return apierrors.NewNotFound(kubeovnv1.Resource("stale"), key.Name)
+		}
+		return c.Get(ctx, key, obj, opts...)
+	},
+	List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+		switch list.(type) {
+		case *kubeovnv1.VpcList, *kubeovnv1.VlanList, *kubeovnv1.SubnetList:
+			return nil
+		}
+		return c.List(ctx, list, opts...)
+	},
+}
+
+func TestCreateNetworkWithStaleCache(t *testing.T) {
+	t.Parallel()
+	ns := testNamespace
+	v4 := nfvcommon.IPVersion_IPV4
+	data := func() *vivnfm.VirtualNetworkData {
+		return &vivnfm.VirtualNetworkData{Layer3Attributes: []*vivnfm.NetworkSubnetData{{
+			IpVersion: &v4,
+			Cidr:      &nfvcommon.IPSubnetCIDR{Cidr: "10.10.0.0/24"},
+		}}}
+	}
+
+	t.Run("overlay with subnet does not re-read the new vpc", func(t *testing.T) {
+		base := k8stest.NewClient(t)
+		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
+		require.NoError(t, err)
+
+		got, err := m.CreateNetwork(context.Background(), "net1", data())
+		require.NoError(t, err)
+		require.Len(t, got.SubnetId, 1)
+		sub := &kubeovnv1.Subnet{}
+		require.NoError(t, base.Get(context.Background(), client.ObjectKey{Name: formatSubnetName("net1", "0")}, sub))
+		assert.Equal(t, "net1", sub.Spec.Vpc)
+	})
+
+	t.Run("failed subnet removes the vpc and netattach", func(t *testing.T) {
+		base := interceptor.NewClient(k8stest.NewClient(t), interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*kubeovnv1.Subnet); ok {
+					return errors.New("subnet rejected")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		})
+		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
+		require.NoError(t, err)
+
+		_, err = m.CreateNetwork(context.Background(), "net1", data())
+		require.Error(t, err)
+		err = base.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{})
+		assert.True(t, apierrors.IsNotFound(err), "vpc should be rolled back")
+		nads := &netattv1.NetworkAttachmentDefinitionList{}
+		require.NoError(t, base.List(context.Background(), nads, client.InNamespace(testNamespace)))
+		assert.Empty(t, nads.Items, "netattach should be rolled back")
+	})
 }

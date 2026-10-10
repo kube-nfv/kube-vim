@@ -66,10 +66,10 @@ func (m *manager) CreateNetwork(ctx context.Context, name string, networkData *v
 	return nil, fmt.Errorf("unsupported network type '%s': %w", networkData.NetworkType, apperrors.ErrUnsupported)
 }
 
-// Instantiates virtual subnet for the given network. Returns the Ids of the successfully allocated and error if some of the subnets allocation failed.
-func (m *manager) allocateL3Attributes(ctx context.Context, networkName string, l3Attributes []*vivnfm.NetworkSubnetData) ([]*nfvcommon.Identifier, error) {
-	var l3Failed error
-	subnetIds := make([]*nfvcommon.Identifier, 0, len(l3Attributes))
+// Instantiates virtual subnets for the just-created network vnet. Returns the allocated subnets, and an error if any allocation failed.
+func (m *manager) allocateL3Attributes(ctx context.Context, vnet *vivnfm.VirtualNetwork, l3Attributes []*vivnfm.NetworkSubnetData) ([]misc.IdName, error) {
+	networkName := vnet.GetNetworkResourceName()
+	subnets := make([]misc.IdName, 0, len(l3Attributes))
 
 	for idx, l3attr := range l3Attributes {
 		if l3attr.NetworkId == nil || l3attr.NetworkId.Value == "" {
@@ -78,14 +78,40 @@ func (m *manager) allocateL3Attributes(ctx context.Context, networkName string, 
 			}
 		}
 		subnetName := formatSubnetName(networkName, strconv.Itoa(idx))
-		subnet, err := m.CreateSubnet(ctx, subnetName, l3attr)
+		subnet, err := m.createSubnet(ctx, subnetName, l3attr, vnet)
 		if err != nil {
-			l3Failed = fmt.Errorf("create subnet from l3 attribute index %d for network '%s': %w", idx, networkName, err)
-			break
+			return subnets, fmt.Errorf("create subnet from l3 attribute index %d for network '%s': %w", idx, networkName, err)
 		}
-		subnetIds = append(subnetIds, subnet.ResourceId)
+		subnets = append(subnets, misc.IdName{Id: subnet.ResourceId, Name: subnetName})
 	}
-	return subnetIds, l3Failed
+	return subnets, nil
+}
+
+// Deletes the subnets and network object created by a failed network create. Works from the
+// created objects rather than lookups, since the cache may not have observed them yet.
+func (m *manager) rollbackNetwork(ctx context.Context, netObj client.Object, subnets []misc.IdName) error {
+	ctx = context.WithoutCancel(ctx)
+	var errs []error
+	for _, subnet := range subnets {
+		errs = append(errs, m.deleteSubnetObjects(ctx, subnet.Name))
+	}
+	if err := m.client.Delete(ctx, netObj); err != nil && !k8s_errors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete network object '%s': %w", netObj.GetName(), err))
+	}
+	return errors.Join(errs...)
+}
+
+// Deletes the kubeovn subnet and its multus NetworkAttachmentDefinition by name, ignoring objects that are already gone.
+func (m *manager) deleteSubnetObjects(ctx context.Context, subnetName string) error {
+	var errs []error
+	if err := m.client.Delete(ctx, &kubeovnv1.Subnet{ObjectMeta: v1.ObjectMeta{Name: subnetName}}); err != nil && !k8s_errors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete kubeovn subnet '%s': %w", subnetName, err))
+	}
+	nad := &netattv1.NetworkAttachmentDefinition{ObjectMeta: v1.ObjectMeta{Name: formatNetAttachName(subnetName), Namespace: *m.k8sCfg.Namespace}}
+	if err := m.client.Delete(ctx, nad); err != nil && !k8s_errors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete multus NetworkAttachmentDefinition for subnet '%s': %w", subnetName, err))
+	}
+	return errors.Join(errs...)
 }
 
 func (m *manager) createOverlayNetwork(ctx context.Context, name string, networkData *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
@@ -96,14 +122,21 @@ func (m *manager) createOverlayNetwork(ctx context.Context, name string, network
 	if err := m.client.Create(ctx, vpc); err != nil {
 		return nil, fmt.Errorf("create kube-ovn Vpc k8s object '%s': %w", vpc.Name, err)
 	}
-	subnetIds, err := m.allocateL3Attributes(ctx, vpc.Name, networkData.Layer3Attributes)
+	vnet, err := kubeovnVpcToNfvNetwork(vpc, nil)
 	if err != nil {
-		// Log resource cleanup error
-		m.DeleteNetwork(ctx, network.GetNetworkByName(name))
-		return nil, fmt.Errorf("create vpc l3 attributes (resources cleaned up): %w", err)
+		err = fmt.Errorf("convert kubeovn vpc '%s' (id: %s) to nfv VirtualNetwork: %w", vpc.Name, vpc.GetUID(), err)
+		return nil, errors.Join(err, m.rollbackNetwork(ctx, vpc, nil))
+	}
+	subnets, err := m.allocateL3Attributes(ctx, vnet, networkData.Layer3Attributes)
+	if err != nil {
+		err = fmt.Errorf("create vpc l3 attributes: %w", err)
+		if cleanupErr := m.rollbackNetwork(ctx, vpc, subnets); cleanupErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("rollback network '%s': %w", name, cleanupErr))
+		}
+		return nil, err
 	}
 
-	res, err := kubeovnVpcToNfvNetwork(vpc, subnetIds)
+	res, err := kubeovnVpcToNfvNetwork(vpc, misc.Identifiers(subnets))
 	if err != nil {
 		return nil, fmt.Errorf("convert kubeovn vpc '%s' (id: %s) to nfv VirtualNetwork: %w", vpc.Name, vpc.GetUID(), err)
 	}
@@ -120,14 +153,21 @@ func (m *manager) createUnderlayNetwork(ctx context.Context, name string, networ
 	if err := m.client.Create(ctx, vlan); err != nil {
 		return nil, fmt.Errorf("create kubeovn vlan '%s': %w", vlan.Name, err)
 	}
-	subnetIds, err := m.allocateL3Attributes(ctx, vlan.Name, networkData.Layer3Attributes)
+	vnet, err := kubeovnVlanToNfvNetwork(vlan, nil)
 	if err != nil {
-		// Log resource cleanup error
-		m.DeleteNetwork(ctx, network.GetNetworkByName(name))
-		return nil, fmt.Errorf("create vlan l3 attributes (resources cleaned up): %w", err)
+		err = fmt.Errorf("convert kubeovn vlan '%s' (id: %s) to nfv VirtualNetwork: %w", vlan.Name, vlan.GetUID(), err)
+		return nil, errors.Join(err, m.rollbackNetwork(ctx, vlan, nil))
+	}
+	subnets, err := m.allocateL3Attributes(ctx, vnet, networkData.Layer3Attributes)
+	if err != nil {
+		err = fmt.Errorf("create vlan l3 attributes: %w", err)
+		if cleanupErr := m.rollbackNetwork(ctx, vlan, subnets); cleanupErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("rollback network '%s': %w", name, cleanupErr))
+		}
+		return nil, err
 	}
 
-	res, err := kubeovnVlanToNfvNetwork(vlan, subnetIds)
+	res, err := kubeovnVlanToNfvNetwork(vlan, misc.Identifiers(subnets))
 	if err != nil {
 		return nil, fmt.Errorf("convert kubeovn vlan '%s' (id: %s) to nfv VirtualNetwork: %w", vlan.Name, vlan.GetUID(), err)
 	}
@@ -343,6 +383,12 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 			return nil, fmt.Errorf("get vpc by id '%s': %w", netId.Value, err)
 		}
 	}
+	return m.createSubnet(ctx, name, subnetData, vnet)
+}
+
+// Creates the kubeovn subnet and its NetworkAttachmentDefinition attached to vnet (may be nil).
+// Takes the network rather than looking it up, so it is safe for a network created moments ago.
+func (m *manager) createSubnet(ctx context.Context, name string, subnetData *vivnfm.NetworkSubnetData, vnet *vivnfm.VirtualNetwork) (*vivnfm.NetworkSubnet, error) {
 	subnet, err := kubeovnSubnetFromNfvSubnetData(name, subnetData)
 	if err != nil {
 		return nil, fmt.Errorf("create kubeovn subnet '%s' from NetworkSubnetData: %w", name, err)
@@ -392,9 +438,8 @@ func (m *manager) CreateSubnet(ctx context.Context, name string, subnetData *viv
 
 	nfvSubnet, err := nfvNetworkSubnetFromKubeovnSubnet(subnet)
 	if err != nil {
-		// Subnet deletion should also delete nettwork attachment
-		m.DeleteSubnet(ctx, network.GetSubnetByUid(misc.UIDToIdentifier(subnet.GetUID())))
-		return nil, fmt.Errorf("convert created kubeovn subnet '%s' (id: %s) to vivnfm.NetworkSubnet (subnet will be deleted): %w", subnet.GetName(), subnet.GetUID(), err)
+		err = fmt.Errorf("convert created kubeovn subnet '%s' (id: %s) to vivnfm.NetworkSubnet: %w", subnet.GetName(), subnet.GetUID(), err)
+		return nil, errors.Join(err, m.deleteSubnetObjects(context.WithoutCancel(ctx), subnet.GetName()))
 	}
 	return nfvSubnet, nil
 }

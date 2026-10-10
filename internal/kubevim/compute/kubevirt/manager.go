@@ -143,20 +143,22 @@ func (m *manager) AllocateComputeResource(ctx context.Context, req *vivnfm.Alloc
 	if err != nil {
 		return nil, fmt.Errorf("get image '%s': %w", req.GetVcImageId(), err)
 	}
-	dvs, err := initImageDataVolumes(imgInfo, flav.StorageAttributes, req.GetComputeName(), namespace)
+	requestedName := req.GetComputeName()
+	if requestedName == "" {
+		// Note(dmalovan): If multiple vm created from the same image this name will conflict. Need to implement the way how to
+		// make this name unique if it is not specified by the producer.
+		requestedName = imgInfo.Name + "-vm"
+	}
+	vmName, err := formatVmName(requestedName)
+	if err != nil {
+		return nil, fmt.Errorf("format vm name: %w", err)
+	}
+
+	dvs, err := initImageDataVolumes(imgInfo, flav.StorageAttributes, vmName, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("initialize kubevirt data volume: %w", err)
 	}
 	volumes, disks := initVolumesDisksFromDataVolumes(dvs)
-
-	var vmName string
-	if req.ComputeName == nil || *req.ComputeName == "" {
-		// Note(dmalovan): If multiple vm created from the same image this name will conflict. Need to implement the way how to
-		// make this name unique if it is not specified by the producer.
-		vmName = imgInfo.Name + "-vm"
-	} else {
-		vmName = *req.ComputeName
-	}
 
 	if req.UserData != nil {
 		volume, disk, err := m.createUserDataVolumeWithSecret(ctx, namespace, vmName, req.GetUserData())
