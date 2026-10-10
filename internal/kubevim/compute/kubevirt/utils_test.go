@@ -169,3 +169,42 @@ func TestGetInterfaceFromVm(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestFormatVmName(t *testing.T) {
+	long := "ns-with-a-very-long-name-member-vnf-index-and-an-even-longer-vdu-name-0"
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "valid name unchanged", in: "myvm", want: "myvm"},
+		{name: "uppercase lowered", in: "ret37-min-1-min-vnf-min-VM-0", want: "ret37-min-1-min-vnf-min-vm-0"},
+		{name: "invalid runs become one dash", in: "My__VM.1", want: "my-vm-1"},
+		{name: "edge dashes trimmed", in: "-_vm_-", want: "vm"},
+		{name: "nothing valid left", in: "__", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := formatVmName(tt.in)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	t.Run("long name is truncated to a unique 63-char label", func(t *testing.T) {
+		got, err := formatVmName(long)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(got), 63)
+		other, err := formatVmName(long + "1")
+		require.NoError(t, err)
+		assert.NotEqual(t, got, other)
+		again, err := formatVmName(long)
+		require.NoError(t, err)
+		assert.Equal(t, got, again, "must be deterministic")
+	})
+}

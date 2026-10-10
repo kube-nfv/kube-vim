@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strconv"
+	"strings"
 
 	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
@@ -299,4 +301,35 @@ func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfvcommo
 	default:
 		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
 	}
+}
+
+// maxVmNameLen is the DNS-1123 label limit; the VM name is also used as a label value.
+const maxVmNameLen = 63
+
+// formatVmName turns a caller-supplied compute name into a valid DNS-1123 label: lowercase,
+// runs of other characters collapsed to '-', edges trimmed. Names over the limit are
+// truncated and suffixed with a hash of the original so they stay unique.
+func formatVmName(name string) (string, error) {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	res := strings.Trim(b.String(), "-")
+	if res == "" {
+		return "", &apperrors.ErrInvalidArgument{Field: "compute name", Reason: fmt.Sprintf("'%s' has no characters valid in a Kubernetes name", name)}
+	}
+	if len(res) > maxVmNameLen {
+		h := fnv.New32a()
+		h.Write([]byte(name))
+		suffix := fmt.Sprintf("-%08x", h.Sum32())
+		res = strings.TrimRight(res[:maxVmNameLen-len(suffix)], "-") + suffix
+	}
+	return res, nil
 }

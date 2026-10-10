@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -154,6 +155,25 @@ func TestAllocateComputeResource(t *testing.T) {
 		assert.Equal(t, "img1", vm.Labels[image.K8sImageIdLabel])
 		require.Len(t, vm.Spec.DataVolumeTemplates, 1)
 		assert.Equal(t, "myvm-boot-dv", vm.Spec.DataVolumeTemplates[0].Name)
+	})
+
+	t.Run("caller name is sanitised for every derived object", func(t *testing.T) {
+		m, mocks := newComputeManager(t, podOnlyVMI("my-vm"))
+		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(kubevirtFlavour(), nil)
+		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(readyImage(), nil)
+		req := allocateReq()
+		req.ComputeName = k8stest.Ptr("My_VM")
+		noCloud := vivnfm.UserData_NO_CLOUD
+		req.UserData = &vivnfm.UserData{Content: "#cloud-config", Method: &noCloud}
+
+		got, err := m.AllocateComputeResource(context.Background(), req)
+		require.NoError(t, err)
+		assert.Equal(t, "my-vm", got.GetComputeName())
+		vm := &kubevirtv1.VirtualMachine{}
+		require.NoError(t, m.client.Get(context.Background(), client.ObjectKey{Namespace: k8stest.TestNamespace, Name: "my-vm"}, vm))
+		require.Len(t, vm.Spec.DataVolumeTemplates, 1)
+		assert.Equal(t, "my-vm-boot-dv", vm.Spec.DataVolumeTemplates[0].Name)
+		require.NoError(t, m.client.Get(context.Background(), client.ObjectKey{Namespace: k8stest.TestNamespace, Name: "my-vm" + KubevirtVmCloudInitSecretSuffix}, &corev1.Secret{}))
 	})
 
 	t.Run("nil request is rejected", func(t *testing.T) {
