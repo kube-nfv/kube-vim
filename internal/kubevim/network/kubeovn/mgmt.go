@@ -63,7 +63,7 @@ func (m *manager) EnsureManagementNetwork(ctx context.Context, cfg *config.Manag
 		return fmt.Errorf("ensure management vpc '%s': %w", vpcName, err)
 	}
 	vpcUID := string(vpc.GetUID())
-	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, vpcUID, subnetName, nadName); err != nil {
+	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, vpcUID, subnetName, nadName, nadNamespace); err != nil {
 		return fmt.Errorf("ensure management subnet '%s': %w", subnetName, err)
 	}
 	if err := m.ensureMgmtNetAttach(ctx, log, subnetName, nadName, nadNamespace); err != nil {
@@ -149,7 +149,7 @@ func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName st
 	return vpc, nil
 }
 
-func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, vpcUID, subnetName, nadName string) error {
+func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, vpcUID, subnetName, nadName, nadNamespace string) error {
 	required := mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName)
 	existing := &kubeovnv1.Subnet{}
 	err := m.apiReader.Get(ctx, client.ObjectKey{Name: subnetName}, existing)
@@ -184,7 +184,7 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 			EnableDHCP:  true,
 			GatewayType: "distributed",
 			NatOutgoing: true,
-			Provider:    "ovn",
+			Provider:    formatNetAttachKubeOvnProvider(nadName, nadNamespace),
 		},
 	}
 	if cfg.Gateway != nil && *cfg.Gateway != "" {

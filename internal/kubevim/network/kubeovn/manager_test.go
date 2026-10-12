@@ -2,6 +2,7 @@ package kubeovn
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -315,5 +316,47 @@ func TestCreateNetworkWithStaleCache(t *testing.T) {
 		nads := &netattv1.NetworkAttachmentDefinitionList{}
 		require.NoError(t, base.List(context.Background(), nads, client.InNamespace(testNamespace)))
 		assert.Empty(t, nads.Items, "netattach should be rolled back")
+	})
+}
+
+// Kube-OVN binds an attachment to the subnet whose provider equals the NAD's provider.
+func TestSubnetProviderMatchesNetAttach(t *testing.T) {
+	t.Parallel()
+	assertProviderMatches := func(t *testing.T, cl client.Client, subnetName, nadName string) {
+		t.Helper()
+		subnet := &kubeovnv1.Subnet{}
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: subnetName}, subnet))
+		nad := &netattv1.NetworkAttachmentDefinition{}
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: nadName, Namespace: testNamespace}, nad))
+		var cfg struct {
+			Provider string `json:"provider"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(nad.Spec.Config), &cfg))
+		assert.Equal(t, cfg.Provider, subnet.Spec.Provider)
+	}
+
+	t.Run("CreateSubnet", func(t *testing.T) {
+		m, cl := newManager(t, seedVpc("net1"))
+		v4 := nfvcommon.IPVersion_IPV4
+		_, err := m.CreateSubnet(context.Background(), "sub1", &vivnfm.NetworkSubnetData{
+			NetworkId: &nfvcommon.Identifier{Value: "net1"},
+			IpVersion: &v4,
+			Cidr:      &nfvcommon.IPSubnetCIDR{Cidr: "10.0.0.0/24"},
+		})
+		require.NoError(t, err)
+		assertProviderMatches(t, cl, "sub1", formatNetAttachName("sub1"))
+	})
+
+	t.Run("EnsureManagementNetwork", func(t *testing.T) {
+		m, cl := newManager(t)
+		ns := testNamespace
+		require.NoError(t, m.EnsureManagementNetwork(context.Background(), &config.ManagementNetworkConfig{
+			Enabled:               k8stest.Ptr(true),
+			Name:                  k8stest.Ptr("mgmt"),
+			Cidr:                  k8stest.Ptr("10.240.0.0/24"),
+			NetAttachDefName:      k8stest.Ptr("mgmt-netattach"),
+			NetAttachDefNamespace: &ns,
+		}))
+		assertProviderMatches(t, cl, formatSubnetName("mgmt", "0"), "mgmt-netattach")
 	})
 }

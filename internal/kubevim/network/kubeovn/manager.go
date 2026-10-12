@@ -456,7 +456,7 @@ func (m *manager) createSubnet(ctx context.Context, name string, subnetData *viv
 	if err := m.client.Create(ctx, nad); err != nil {
 		return nil, fmt.Errorf("create multus network-attachment-definition for subnet '%s': %w", subnet.GetName(), err)
 	}
-	subnet.Spec.Provider = "ovn"
+	subnet.Spec.Provider = formatNetAttachKubeOvnProvider(netAttachName, *m.k8sCfg.Namespace)
 	subnet.Labels[network.K8sSubnetNetAttachNameLabel] = netAttachName
 
 	cleanupNetAttach := func() error {
