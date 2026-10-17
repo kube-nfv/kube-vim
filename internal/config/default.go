@@ -17,3 +17,7 @@ func IsServerTlsConfigured(cfg *TlsServerConfig) bool {
 		cfg.Cert != nil && *cfg.Cert != "" &&
 		cfg.Key != nil && *cfg.Key != ""
 }
+
+func IsClientTlsEnabled(cfg *TlsClientConfig) bool {
+	return cfg != nil && cfg.Enabled != nil && *cfg.Enabled
+}

@@ -42,7 +42,9 @@ rules:
   resources:
   - secrets
   verbs:
-  - "*"
+  - create
+  - update
+  - delete
 - apiGroups:
   - ""
   resources:

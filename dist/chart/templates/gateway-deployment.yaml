@@ -31,7 +31,8 @@ spec:
         {{- include "kube-vim.imagePullSecrets" . | nindent 8 }}
         {{- end }}
       {{- end }}
-      serviceAccountName: {{ include "kube-vim.serviceAccountName" . }}
+      serviceAccountName: {{ include "kube-vim.gateway.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.gateway.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -48,6 +49,16 @@ spec:
         - name: config
           mountPath: /etc/kube-vim-gateway
           readOnly: true
+        {{- if .Values.gateway.tls.secretName }}
+        - name: tls
+          mountPath: /etc/kube-vim-gateway/tls
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.vim.enabled .Values.vim.tls.secretName }}
+        - name: kubevim-tls
+          mountPath: /etc/kube-vim-gateway/kubevim-tls
+          readOnly: true
+        {{- end }}
         {{- with .Values.gateway.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
@@ -56,6 +67,19 @@ spec:
       - name: config
         configMap:
           name: {{ include "kube-vim.gateway.name" . }}-config
+      {{- if .Values.gateway.tls.secretName }}
+      - name: tls
+        secret:
+          secretName: {{ .Values.gateway.tls.secretName }}
+      {{- end }}
+      {{- if and .Values.vim.enabled .Values.vim.tls.secretName }}
+      - name: kubevim-tls
+        secret:
+          secretName: {{ .Values.vim.tls.secretName }}
+          items:
+          - key: ca.crt
+            path: ca.crt
+      {{- end }}
       {{- with .Values.gateway.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

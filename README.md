@@ -130,7 +130,9 @@ schema is defined by OpenAPI 3.0 in [`configs/`](configs):
 
 Key defaults: vim gRPC on `:50051`, gateway REST on `:8080`. See
 [`dist/chart/values.yaml`](dist/chart/values.yaml) for the full set of knobs (images,
-RBAC, service types, ingress, management/underlay network).
+RBAC, service types, ingress, management/underlay network). TLS is off by default; set
+`vim.tls.secretName` and `gateway.tls.secretName` to `kubernetes.io/tls` Secrets to enable
+it (see [TLS](docs/tls.md)).
 
 ## API & reference points
 

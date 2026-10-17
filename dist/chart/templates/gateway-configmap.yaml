@@ -11,7 +11,15 @@ data:
     {{- $config := .Values.gateway.config | deepCopy }}
     {{- if .Values.vim.enabled }}
     {{- $vimUrl := printf "%s:%d" (include "kube-vim.vim.name" .) (.Values.vim.config.service.server.port | int) }}
-    {{- $_ := set $config "kubevim" (dict "url" $vimUrl) }}
+    {{- $_ := mergeOverwrite $config (dict "kubevim" (dict "url" $vimUrl)) }}
+    {{- if .Values.vim.tls.secretName }}
+    {{- $tls := dict "enabled" true "rootCAs" (list "/etc/kube-vim-gateway/kubevim-tls/ca.crt") "serverName" (include "kube-vim.vim.name" .) }}
+    {{- $_ := mergeOverwrite $config (dict "kubevim" (dict "tls" $tls)) }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.gateway.tls.secretName }}
+    {{- $tls := dict "cert" "/etc/kube-vim-gateway/tls/tls.crt" "key" "/etc/kube-vim-gateway/tls/tls.key" }}
+    {{- $_ := mergeOverwrite $config (dict "service" (dict "server" (dict "tls" $tls))) }}
     {{- end }}
     {{- toYaml $config | nindent 4 }}
 {{- end }}

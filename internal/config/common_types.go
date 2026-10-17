@@ -46,6 +46,10 @@ type Port = int
 // connection to a server using TLS. It controls aspects such as certificate validation,
 // server verification, and root certificate authorities used in the validation process."
 type TlsClientConfig struct {
+	// Enabled "Enables TLS for the connection. If false, the connection is plaintext and the
+	// other TLS settings are ignored."
+	Enabled *bool `json:"enabled,omitempty"`
+
 	// InsecureSkipVerify "InsecureSkipVerify controls whether a client verifies the server's
 	// certificate chain and host name. If InsecureSkipVerify is true, crypto/tls
 	// accepts any certificate presented by the server and any host name in that
