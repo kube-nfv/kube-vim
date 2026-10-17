@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type kubeVimGateway struct {
@@ -39,18 +38,17 @@ func NewKubeVimGateway(cfg *config.Config, logger *zap.Logger) (*kubeVimGateway,
 
 func (g *kubeVimGateway) Start(ctx context.Context) error {
 	connAddr := *g.cfg.Kubevim.Url
+	creds, err := kubevimTransportCredentials(g.cfg.Kubevim.Tls)
+	if err != nil {
+		return fmt.Errorf("kubevim connection TLS credentials: %w", err)
+	}
 	opts := []grpc.DialOption{
 		// Add connection backoff configuration
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: 5 * time.Second,
 		}),
-	}
-	// TODO: Add TLS verification
-	if *g.cfg.Kubevim.Tls.InsecureSkipVerify {
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	} else {
-		return fmt.Errorf("kubevim secure connection not supported yet: %w", apperrors.ErrUnsupported)
+		grpc.WithTransportCredentials(creds),
 	}
 
 	conn, err := grpc.NewClient(connAddr, opts...)

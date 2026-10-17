@@ -9,6 +9,7 @@ import (
 
 	admin "github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
@@ -62,7 +63,7 @@ func NewNorthboundServer(
 			},
 		),
 	}
-	if cfg.Tls != nil {
+	if common.IsServerTlsConfigured(cfg.Tls) {
 		creds, err := credentials.NewServerTLSFromFile(*cfg.Tls.Cert, *cfg.Tls.Key)
 		if err != nil {
 			return nil, fmt.Errorf("initialize server TLS credentials from file: %w", err)

@@ -76,6 +76,12 @@ components:
         connection to a server using TLS. It controls aspects such as certificate validation,
         server verification, and root certificate authorities used in the validation process."
       properties:
+        enabled:
+          type: boolean
+          default: false
+          description: |
+            "Enables TLS for the connection. If false, the connection is plaintext and the
+            other TLS settings are ignored."
         insecureSkipVerify:
           type: boolean
           description: |

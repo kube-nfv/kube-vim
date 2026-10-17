@@ -67,6 +67,12 @@ vim:
     portName: grpc
     annotations: {}
 
+  # TLS for the gRPC server. secretName names a kubernetes.io/tls Secret with
+  # tls.crt, tls.key and ca.crt (cert-manager layout); its certificate must cover
+  # the vim service name. Also enables TLS on the gateway's connection to vim.
+  tls:
+    secretName: ""
+
   config:
     service:
       logLevel: "debug"
@@ -144,6 +150,11 @@ gateway:
     targetPort: ""  # Uses config.service.server.port if empty
     portName: http
     annotations: {}
+
+  # TLS for the gateway HTTPS listener. secretName names a kubernetes.io/tls
+  # Secret with tls.crt and tls.key.
+  tls:
+    secretName: ""
 
   ingress:
     enabled: false
