@@ -44,6 +44,17 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Gateway service account; it has no RBAC bindings
+*/}}
+{{- define "kube-vim.gateway.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- include "kube-vim.gateway.name" . }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
 VIM component name - always returns "kube-vim"
 */}}
 {{- define "kube-vim.vim.name" -}}

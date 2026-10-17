@@ -8,5 +8,10 @@ metadata:
     {{- include "kube-vim.vim.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    {{- toYaml .Values.vim.config | nindent 4 }}
+    {{- $config := .Values.vim.config | deepCopy }}
+    {{- if .Values.vim.tls.secretName }}
+    {{- $tls := dict "cert" "/etc/kube-vim/tls/tls.crt" "key" "/etc/kube-vim/tls/tls.key" }}
+    {{- $_ := mergeOverwrite $config (dict "service" (dict "server" (dict "tls" $tls))) }}
+    {{- end }}
+    {{- toYaml $config | nindent 4 }}
 {{- end }}

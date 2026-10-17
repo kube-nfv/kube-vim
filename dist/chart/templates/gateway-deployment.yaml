@@ -31,7 +31,8 @@ spec:
         {{- include "kube-vim.imagePullSecrets" . | nindent 8 }}
         {{- end }}
       {{- end }}
-      serviceAccountName: {{ include "kube-vim.serviceAccountName" . }}
+      serviceAccountName: {{ include "kube-vim.gateway.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.gateway.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
