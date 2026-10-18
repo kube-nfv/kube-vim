@@ -2,6 +2,8 @@ package errors
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,6 +34,11 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 		return status.Error(codes.AlreadyExists, err.Error())
 	}
 
+	var unauthenticatedErr *ErrUnauthenticated
+	if errors.As(err, &unauthenticatedErr) {
+		return status.Error(codes.Unauthenticated, bearerChallenge(unauthenticatedErr.Reason))
+	}
+
 	var permissionDeniedErr *ErrPermissionDenied
 	if errors.As(err, &permissionDeniedErr) {
 		return status.Error(codes.PermissionDenied, err.Error())
@@ -50,6 +57,15 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 
 	// Return nil if this is not a common error (let other converters handle it)
 	return nil
+}
+
+// bearerChallenge formats an RFC 6750 WWW-Authenticate challenge; the gateway copies it into that header.
+func bearerChallenge(reason string) string {
+	if reason == "" {
+		return `Bearer realm="kube-vim"`
+	}
+	desc := strings.NewReplacer(`"`, "'", `\`, "/").Replace(reason)
+	return fmt.Sprintf(`Bearer realm="kube-vim", error="invalid_token", error_description="%s"`, desc)
 }
 
 func init() {

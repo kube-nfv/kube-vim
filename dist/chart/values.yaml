@@ -73,6 +73,18 @@ vim:
   tls:
     secretName: ""
 
+  # OAuth 2.0 bearer token authentication of API requests (see docs/auth.md).
+  # Rendered into config.service.server.auth. issuerCASecretName names a Secret
+  # whose ca.crt signs the issuer's TLS certificate. Requires TLS on vim and the
+  # gateway unless allowInsecureTransport is set.
+  auth:
+    enabled: false
+    issuer: ""
+    audience: kube-vim
+    signingAlgorithms: []
+    issuerCASecretName: ""
+    allowInsecureTransport: false
+
   config:
     service:
       logLevel: "debug"

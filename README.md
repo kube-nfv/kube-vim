@@ -132,7 +132,9 @@ Key defaults: vim gRPC on `:50051`, gateway REST on `:8080`. See
 [`dist/chart/values.yaml`](dist/chart/values.yaml) for the full set of knobs (images,
 RBAC, service types, ingress, management/underlay network). TLS is off by default; set
 `vim.tls.secretName` and `gateway.tls.secretName` to `kubernetes.io/tls` Secrets to enable
-it (see [TLS](docs/tls.md)).
+it (see [TLS](docs/tls.md)). OAuth 2.0 authentication is off by default; set `vim.auth`
+to an OIDC issuer and audience to require a bearer token on every request (see
+[Authentication](docs/auth.md)).
 
 ## API & reference points
 

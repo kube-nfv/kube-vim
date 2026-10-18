@@ -17,6 +17,7 @@ import (
 func SetViperDefaults(podNamespace string) {
 	viper.SetDefault("service.logLevel", "info")
 	viper.SetDefault("service.server.port", 50051)
+	viper.SetDefault("service.server.auth.enabled", false)
 
 	viper.SetDefault("image.storageClass", "default")
 

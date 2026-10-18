@@ -66,6 +66,29 @@ func (e *ErrPermissionDenied) Error() string {
 	return fmt.Sprintf("access denied to %s", e.Resource)
 }
 
+// ErrUnauthenticated for requests without valid credentials
+type ErrUnauthenticated struct {
+	// Reason is returned to the client; empty when no credentials were sent.
+	Reason string
+	// Err is the cause; logged, never returned to the client.
+	Err error
+}
+
+func (e *ErrUnauthenticated) Error() string {
+	msg := "unauthenticated"
+	if e.Reason != "" {
+		msg += ": " + e.Reason
+	}
+	if e.Err != nil {
+		msg += ": " + e.Err.Error()
+	}
+	return msg
+}
+
+func (e *ErrUnauthenticated) Unwrap() error {
+	return e.Err
+}
+
 // ErrK8sObjectNotInstantiated indicates that the object is not from Kubernetes
 type ErrK8sObjectNotInstantiated struct {
 	ObjectType string

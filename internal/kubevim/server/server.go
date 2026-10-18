@@ -12,6 +12,7 @@ import (
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/auth"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
@@ -44,24 +45,34 @@ func NewNorthboundServer(
 	imageMgr image.Manager,
 	networkManager network.Manager,
 	flavourManager flavour.Manager,
-	computeManager compute.Manager) (*NorthboundServer, error) {
-	// TODO: Add Security
+	computeManager compute.Manager,
+	authn auth.Authenticator) (*NorthboundServer, error) {
+	unary := []grpc.UnaryServerInterceptor{
+		// Error conversion interceptor (first to convert errors)
+		func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+			return errorConversionInterceptor(ctx, req, info, handler)
+		},
+	}
+	var stream []grpc.StreamServerInterceptor
+	if authn != nil {
+		// Auth before logging so requests are logged with their client
+		unary = append(unary, auth.UnaryServerInterceptor(authn, log))
+		stream = append(stream, streamErrorConversionInterceptor, auth.StreamServerInterceptor(authn, log))
+	} else {
+		log.Warn("Authentication is disabled. Kubevim gRPC server accepts unauthenticated requests!")
+	}
+	// Logging interceptor (last to log the handler result)
+	unary = append(unary, func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		return loggingInterceptor(ctx, req, info, handler, log)
+	})
 	opts := []grpc.ServerOption{
 		// Emits per-RPC RED metrics through meterProvider (a no-op provider when
 		// monitoring is disabled). No trace exporter is configured, so spans are
 		// no-ops.
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(meterProvider))),
 		grpc.ConnectionTimeout(ConnectionTimeout),
-		grpc.ChainUnaryInterceptor(
-			// Error conversion interceptor (first to convert errors)
-			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-				return errorConversionInterceptor(ctx, req, info, handler)
-			},
-			// Logging interceptor (second to log converted errors)
-			func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-				return loggingInterceptor(ctx, req, info, handler, log)
-			},
-		),
+		grpc.ChainUnaryInterceptor(unary...),
+		grpc.ChainStreamInterceptor(stream...),
 	}
 	if common.IsServerTlsConfigured(cfg.Tls) {
 		creds, err := credentials.NewServerTLSFromFile(*cfg.Tls.Cert, *cfg.Tls.Key)
@@ -135,6 +146,14 @@ func errorConversionInterceptor(ctx context.Context, req any, info *grpc.UnarySe
 	return resp, nil
 }
 
+// streamErrorConversionInterceptor converts application errors of streaming RPCs to gRPC status errors
+func streamErrorConversionInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := handler(srv, ss); err != nil {
+		return apperrors.ToGRPCError(err)
+	}
+	return nil
+}
+
 func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler, log *zap.Logger) (resp any, err error) {
 	// Retrieve the client IP address
 	var clientIP string
@@ -142,6 +161,9 @@ func loggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo
 		if addr, ok := p.Addr.(*net.TCPAddr); ok {
 			clientIP = addr.IP.String()
 		}
+	}
+	if p := auth.PrincipalFromContext(ctx); p != nil {
+		log = log.With(zap.String("Client", p.ClientID))
 	}
 	log.Info("New incoming request", zap.String("Request", info.FullMethod), zap.String("IP", clientIP))
 	start := time.Now()

@@ -58,3 +58,5 @@ Certificates are read once at startup. After a Secret rotates, restart the pods
 
 The chart's TLS values need a gateway image that knows `kubevim.tls.enabled`; older
 images ignore it, connect in plaintext and fail against a TLS vim.
+
+Bearer token authentication builds on this; see [Authentication](auth.md).
