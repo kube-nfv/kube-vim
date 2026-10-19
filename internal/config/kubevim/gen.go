@@ -20,6 +20,30 @@ const (
 	Exists TolerationOperator = "Exists"
 )
 
+// AuthConfig OAuth 2.0 / OIDC authentication of API requests (ETSI GS NFV-SOL 013 clause 8).
+// Clients send a JWT access token as "Authorization: Bearer"; kube-vim validates it
+// against the issuer's JWKS, found through OIDC discovery.
+type AuthConfig struct {
+	// AllowInsecureTransport Allow auth without server TLS and with an http issuer. Tokens then cross the
+	// network in the clear; use only on a trusted network such as cluster ClusterIP.
+	AllowInsecureTransport *bool `json:"allowInsecureTransport,omitempty"`
+
+	// Audience Expected 'aud' claim value. Required when enabled.
+	Audience *string `json:"audience,omitempty"`
+
+	// Enabled Require a valid access token on every request. Default off.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Issuer Issuer URL; must match the token's 'iss' claim. Required when enabled.
+	Issuer *string `json:"issuer,omitempty"`
+
+	// IssuerCA Path to a PEM CA bundle for the issuer's TLS certificate. Defaults to the host root CAs.
+	IssuerCA *string `json:"issuerCA,omitempty"`
+
+	// SigningAlgorithms Accepted JWS signing algorithms. Defaults to RS256.
+	SigningAlgorithms *[]string `json:"signingAlgorithms,omitempty"`
+}
+
 // ComputeConfig Configuration for compute resource scheduling.
 type ComputeConfig struct {
 	// NodeSelector Node selector labels for VM placement.
@@ -161,6 +185,11 @@ type NetworkConfig struct {
 
 // ServerConfig Kube-vim Server configuration.
 type ServerConfig struct {
+	// Auth OAuth 2.0 / OIDC authentication of API requests (ETSI GS NFV-SOL 013 clause 8).
+	// Clients send a JWT access token as "Authorization: Bearer"; kube-vim validates it
+	// against the issuer's JWKS, found through OIDC discovery.
+	Auth *AuthConfig `json:"auth,omitempty"`
+
 	// Port "A TCP port number specifies the endpoint for network communication on the service.
 	// Port numbers range from 1 to 65535, with the lower range (1-1023) typically reserved for well-known services and system processes.
 	// It is important to choose a port within the allowed range that does not conflict with other services running on the host.

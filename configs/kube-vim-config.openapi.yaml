@@ -39,6 +39,40 @@ components:
         tls:
           $ref: './common.openapi.yaml#/components/schemas/tlsServerConfig'
           description: "Kube-vim gRPC service TLS configuration."
+        auth:
+          $ref: '#/components/schemas/AuthConfig'
+          description: "OAuth 2.0 bearer token authentication of API requests."
+    AuthConfig:
+      type: object
+      description: |
+        OAuth 2.0 / OIDC authentication of API requests (ETSI GS NFV-SOL 013 clause 8).
+        Clients send a JWT access token as "Authorization: Bearer"; kube-vim validates it
+        against the issuer's JWKS, found through OIDC discovery.
+      properties:
+        enabled:
+          type: boolean
+          default: false
+          description: "Require a valid access token on every request. Default off."
+        issuer:
+          type: string
+          description: "Issuer URL; must match the token's 'iss' claim. Required when enabled."
+        audience:
+          type: string
+          description: "Expected 'aud' claim value. Required when enabled."
+        signingAlgorithms:
+          type: array
+          items:
+            type: string
+          description: "Accepted JWS signing algorithms. Defaults to RS256."
+        issuerCA:
+          type: string
+          description: "Path to a PEM CA bundle for the issuer's TLS certificate. Defaults to the host root CAs."
+        allowInsecureTransport:
+          type: boolean
+          default: false
+          description: |
+            Allow auth without server TLS and with an http issuer. Tokens then cross the
+            network in the clear; use only on a trusted network such as cluster ClusterIP.
     K8sConfig:
       type: object
       description: "Configuration related to Kubernetes operations."

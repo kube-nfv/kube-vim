@@ -13,5 +13,17 @@ data:
     {{- $tls := dict "cert" "/etc/kube-vim/tls/tls.crt" "key" "/etc/kube-vim/tls/tls.key" }}
     {{- $_ := mergeOverwrite $config (dict "service" (dict "server" (dict "tls" $tls))) }}
     {{- end }}
+    {{- with .Values.vim.auth }}
+    {{- if .enabled }}
+    {{- if and $.Values.gateway.enabled (not $.Values.gateway.tls.secretName) (not .allowInsecureTransport) }}
+    {{- fail "vim.auth.enabled requires gateway.tls.secretName, or bearer tokens reach the gateway in plaintext; set vim.auth.allowInsecureTransport to allow it" }}
+    {{- end }}
+    {{- $auth := dict "enabled" true "issuer" (required "vim.auth.issuer is required when vim.auth.enabled" .issuer) "audience" (required "vim.auth.audience is required when vim.auth.enabled" .audience) "signingAlgorithms" .signingAlgorithms "allowInsecureTransport" .allowInsecureTransport }}
+    {{- if .issuerCASecretName }}
+    {{- $_ := set $auth "issuerCA" "/etc/kube-vim/idp-ca/ca.crt" }}
+    {{- end }}
+    {{- $_ := mergeOverwrite $config (dict "service" (dict "server" (dict "auth" $auth))) }}
+    {{- end }}
+    {{- end }}
     {{- toYaml $config | nindent 4 }}
 {{- end }}

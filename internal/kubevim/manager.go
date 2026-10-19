@@ -3,10 +3,13 @@ package kubevim
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/k8s"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/auth"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/auth/oidc"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	kubevirt_compute "github.com/kube-nfv/kube-vim/internal/kubevim/compute/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
@@ -36,6 +39,8 @@ const (
 	k8sClientQPS   = 50
 	k8sClientBurst = 100
 	k8sUserAgent   = "kube-vim"
+	// authDiscoveryTimeout bounds OIDC discovery of the auth issuer at startup.
+	authDiscoveryTimeout = 30 * time.Second
 )
 
 // Main kubevim object. It is stand as a mediator between different kubevim components like
@@ -261,8 +266,17 @@ func (m *kubevimManager) initNorthboundServer(cfg *config.ServerConfig) error {
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "ServiceConfig", Reason: "cannot be nil"}
 	}
+	var authn auth.Authenticator
+	if auth.Enabled(cfg.Auth) {
+		ctx, cancel := context.WithTimeout(context.Background(), authDiscoveryTimeout)
+		defer cancel()
+		var err error
+		if authn, err = oidc.NewAuthenticator(ctx, cfg); err != nil {
+			return fmt.Errorf("create authenticator: %w", err)
+		}
+	}
 	var err error
-	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.telemetryMgr.MeterProvider(), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr)
+	m.nbServer, err = server.NewNorthboundServer(cfg, m.logger.Named("NorthboundServer"), m.telemetryMgr.MeterProvider(), m.imageMgr, m.networkMgr, m.flavourMgr, m.computeMgr, authn)
 	if err != nil {
 		return fmt.Errorf("initialize NorthboundServer: %w", err)
 	}

@@ -55,6 +55,18 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 			expectedMsg:  "access denied to flavour: not managed by kube-nfv",
 		},
 		{
+			name:         "Unauthenticated without credentials",
+			inputError:   &ErrUnauthenticated{},
+			expectedCode: codes.Unauthenticated,
+			expectedMsg:  `Bearer realm="kube-vim"`,
+		},
+		{
+			name:         "Unauthenticated with reason hides the cause",
+			inputError:   fmt.Errorf("authenticate: %w", &ErrUnauthenticated{Reason: `token "x" expired`, Err: errors.New("secret detail")}),
+			expectedCode: codes.Unauthenticated,
+			expectedMsg:  `Bearer realm="kube-vim", error="invalid_token", error_description="token 'x' expired"`,
+		},
+		{
 			name:         "K8sObjectNotInstantiated",
 			inputError:   &ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype"},
 			expectedCode: codes.InvalidArgument,
