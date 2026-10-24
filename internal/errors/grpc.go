@@ -1,11 +1,17 @@
 package errors
 
 import (
+	"strings"
 	"sync"
 
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// ErrorDomain is the ErrorInfo domain of every kube-vim error.
+const ErrorDomain = "kubevim.kubenfv.io"
 
 // ErrorConverter is an interface for module-specific error converters
 type ErrorConverter interface {
@@ -46,5 +52,17 @@ func ToGRPCError(err error) error {
 	mu.RUnlock()
 
 	// All other errors become Internal
-	return status.Errorf(codes.Internal, "%v", err)
+	return reasonStatus(codes.Internal, commonv1.ErrorReason_ERROR_REASON_INTERNAL, err.Error())
+}
+
+// reasonStatus builds a gRPC status error with an ErrorInfo detail carrying the v1 error reason.
+func reasonStatus(code codes.Code, reason commonv1.ErrorReason, msg string) error {
+	st, err := status.New(code, msg).WithDetails(&errdetails.ErrorInfo{
+		Reason: strings.TrimPrefix(reason.String(), "ERROR_REASON_"),
+		Domain: ErrorDomain,
+	})
+	if err != nil {
+		return status.Error(code, msg)
+	}
+	return st.Err()
 }

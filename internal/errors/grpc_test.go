@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,40 +14,46 @@ import (
 
 func TestToGRPCError_StructuredErrors(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputError   error
-		expectedCode codes.Code
-		expectedMsg  string
+		name           string
+		inputError     error
+		expectedCode   codes.Code
+		expectedMsg    string
+		expectedReason string
 	}{
 		{
-			name:         "NotFoundError with entity and identifier",
-			inputError:   &ErrNotFound{Entity: "flavour", Identifier: "abc123"},
-			expectedCode: codes.NotFound,
-			expectedMsg:  "flavour 'abc123' not found",
+			name:           "NotFoundError with entity and identifier",
+			inputError:     &ErrNotFound{Entity: "flavour", Identifier: "abc123"},
+			expectedCode:   codes.NotFound,
+			expectedMsg:    "flavour 'abc123' not found",
+			expectedReason: "NOT_FOUND",
 		},
 		{
-			name:         "NotFoundError with entity only",
-			inputError:   &ErrNotFound{Entity: "flavour"},
-			expectedCode: codes.NotFound,
-			expectedMsg:  "flavour not found",
+			name:           "NotFoundError with entity only",
+			inputError:     &ErrNotFound{Entity: "flavour"},
+			expectedCode:   codes.NotFound,
+			expectedMsg:    "flavour not found",
+			expectedReason: "NOT_FOUND",
 		},
 		{
-			name:         "InvalidArgumentError with field and reason",
-			inputError:   &ErrInvalidArgument{Field: "flavour id", Reason: "required"},
-			expectedCode: codes.InvalidArgument,
-			expectedMsg:  "invalid flavour id: required",
+			name:           "InvalidArgumentError with field and reason",
+			inputError:     &ErrInvalidArgument{Field: "flavour id", Reason: "required"},
+			expectedCode:   codes.InvalidArgument,
+			expectedMsg:    "invalid flavour id: required",
+			expectedReason: "VALIDATION_FAILED",
 		},
 		{
-			name:         "InvalidArgumentError with field only",
-			inputError:   &ErrInvalidArgument{Field: "flavour"},
-			expectedCode: codes.InvalidArgument,
-			expectedMsg:  "invalid flavour",
+			name:           "InvalidArgumentError with field only",
+			inputError:     &ErrInvalidArgument{Field: "flavour"},
+			expectedCode:   codes.InvalidArgument,
+			expectedMsg:    "invalid flavour",
+			expectedReason: "VALIDATION_FAILED",
 		},
 		{
-			name:         "AlreadyExistsError with entity and identifier",
-			inputError:   &ErrAlreadyExists{Entity: "flavour", Identifier: "xyz789"},
-			expectedCode: codes.AlreadyExists,
-			expectedMsg:  "flavour 'xyz789' already exists",
+			name:           "AlreadyExistsError is internal",
+			inputError:     &ErrAlreadyExists{Entity: "flavour", Identifier: "xyz789"},
+			expectedCode:   codes.Internal,
+			expectedMsg:    "flavour 'xyz789' already exists",
+			expectedReason: "INTERNAL",
 		},
 		{
 			name:         "PermissionDeniedError with resource and reason",
@@ -67,22 +74,60 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 			expectedMsg:  `Bearer realm="kube-vim", error="invalid_token", error_description="token 'x' expired"`,
 		},
 		{
-			name:         "K8sObjectNotInstantiated",
-			inputError:   &ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype"},
-			expectedCode: codes.InvalidArgument,
-			expectedMsg:  "VirtualMachineInstancetype is not from Kubernetes (likely created manually)",
+			name:           "K8sObjectNotInstantiated",
+			inputError:     &ErrK8sObjectNotInstantiated{ObjectType: "VirtualMachineInstancetype"},
+			expectedCode:   codes.Internal,
+			expectedMsg:    "VirtualMachineInstancetype is not from Kubernetes (likely created manually)",
+			expectedReason: "INTERNAL",
 		},
 		{
-			name:         "K8sObjectNotManagedByKubeNfv",
-			inputError:   &ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachineInstancetype", ObjectName: "test-vm", ObjectId: "uid-123"},
-			expectedCode: codes.PermissionDenied,
-			expectedMsg:  "VirtualMachineInstancetype 'test-vm' (uid: uid-123) not managed by kube-nfv",
+			name:           "K8sObjectNotManagedByKubeNfv",
+			inputError:     &ErrK8sObjectNotManagedByKubeNfv{ObjectType: "VirtualMachineInstancetype", ObjectName: "test-vm", ObjectId: "uid-123"},
+			expectedCode:   codes.NotFound,
+			expectedMsg:    "VirtualMachineInstancetype 'test-vm' (uid: uid-123) not managed by kube-nfv",
+			expectedReason: "NOT_FOUND",
 		},
 		{
-			name:         "Untyped error - not implemented",
-			inputError:   ErrNotImplemented,
-			expectedCode: codes.Unimplemented,
-			expectedMsg:  "not implemented",
+			name:           "Untyped error - not implemented",
+			inputError:     ErrNotImplemented,
+			expectedCode:   codes.Unimplemented,
+			expectedMsg:    "not implemented",
+			expectedReason: "NOT_IMPLEMENTED",
+		},
+		{
+			name:           "Untyped error - unsupported field",
+			inputError:     fmt.Errorf("cpu topology: %w", ErrUnsupported),
+			expectedCode:   codes.InvalidArgument,
+			expectedMsg:    "cpu topology: unsupported",
+			expectedReason: "UNSUPPORTED_FIELD",
+		},
+		{
+			name:           "Untyped error - invalid filter",
+			inputError:     fmt.Errorf("%w: unknown attribute", ErrInvalidFilter),
+			expectedCode:   codes.InvalidArgument,
+			expectedMsg:    "invalid filter: unknown attribute",
+			expectedReason: "INVALID_FILTER",
+		},
+		{
+			name:           "K8s timeout is backend unavailable",
+			inputError:     k8serrors.NewTimeoutError("etcd", 1),
+			expectedCode:   codes.Unavailable,
+			expectedMsg:    "Timeout: etcd",
+			expectedReason: "BACKEND_UNAVAILABLE",
+		},
+		{
+			name:           "K8s forbidden is internal",
+			inputError:     k8serrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "x", errors.New("rbac")),
+			expectedCode:   codes.Internal,
+			expectedMsg:    `secrets "x" is forbidden: rbac`,
+			expectedReason: "INTERNAL",
+		},
+		{
+			name:           "Unknown error is internal",
+			inputError:     errors.New("boom"),
+			expectedCode:   codes.Internal,
+			expectedMsg:    "boom",
+			expectedReason: "INTERNAL",
 		},
 	}
 
@@ -106,8 +151,22 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 			if st.Message() != tt.expectedMsg {
 				t.Errorf("ToGRPCError() message = %q, want %q", st.Message(), tt.expectedMsg)
 			}
+
+			if got := errorReason(st); got != tt.expectedReason {
+				t.Errorf("ToGRPCError() reason = %q, want %q", got, tt.expectedReason)
+			}
 		})
 	}
+}
+
+// errorReason returns the ErrorInfo reason of st, or "" when it has none.
+func errorReason(st *status.Status) string {
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.Domain == ErrorDomain {
+			return info.Reason
+		}
+	}
+	return ""
 }
 
 func TestToGRPCError_WrappedStructuredErrors(t *testing.T) {

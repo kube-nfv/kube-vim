@@ -9,14 +9,17 @@ Scope: `internal/errors`, gRPC server interceptor, manager/adapter conventions
 Manager and adapter code returns **typed, structural errors** from
 `internal/errors` (imported as `apperrors`), never raw `status.Error`. A single
 gRPC server interceptor converts whatever bubbles up into a gRPC status code
-exactly once, at the northbound edge. Conversion is table-driven through a small
+exactly once, at the northbound edge. Every status except authentication and
+authorisation errors carries a `google.rpc.ErrorInfo` detail whose `reason` is a
+value of the kube-vim-api v1 `ErrorReason` enum (domain `kubevim.kubenfv.io`);
+the reason, not the gRPC code, decides the REST status. Conversion is table-driven through a small
 registry of pluggable `ErrorConverter`s (a common one and a Kubernetes one), so a
 new error family is added in one place without touching the interceptor.
 
 Two error shapes coexist:
 
-- **Untyped sentinels** (`ErrNotImplemented`, `ErrUnsupported`, `ErrInternal`) for
-  cases that carry no extra data, matched with `errors.Is`.
+- **Untyped sentinels** (`ErrNotImplemented`, `ErrUnsupported`, `ErrInvalidFilter`,
+  `ErrInternal`) for cases that carry no extra data, matched with `errors.Is`.
 - **Typed structural errors** (`ErrNotFound`, `ErrInvalidArgument`,
   `ErrAlreadyExists`, `ErrPermissionDenied`, and the two K8s-ownership errors) that
   carry fields (entity, identifier, field, reason, ...), matched with `errors.As`.
@@ -37,8 +40,8 @@ once:
 2. **Callers need meaningful gRPC codes.** An NFVO (OSM) driving the Or-Vi /
    Vi-Vnfm reference points must be able to tell "you asked for something that does
    not exist" (`NotFound`) from "your request is malformed" (`InvalidArgument`) from
-   "kube-vim refuses to touch that object" (`PermissionDenied`). Collapsing
-   everything to `Internal` is useless to the caller.
+   "this field is not supported" (`InvalidArgument` with reason `UNSUPPORTED_FIELD`).
+   Collapsing everything to `Internal` is useless to the caller.
 
 So the mapping from a domain error to a gRPC status has to happen somewhere, but
 not inside every manager and not repeated in every RPC handler.
@@ -54,6 +57,7 @@ data-less cases:
 var (
     ErrNotImplemented = errors.New("not implemented")
     ErrUnsupported    = errors.New("unsupported")
+    ErrInvalidFilter  = errors.New("invalid filter")
     ErrInternal       = errors.New("internal")
 )
 ```
@@ -73,7 +77,7 @@ pointer-receiver `Error()`:
 The two K8s-ownership errors back the load-bearing "kube-vim refuses objects it
 does not own" guard: lookups filter on the managed-by label and raise
 `ErrK8sObjectNotManagedByKubeNfv` when an object exists but was not created by
-kube-vim.
+kube-vim. To the client such an object does not exist (`NOT_FOUND`).
 
 ### The converter registry
 
@@ -110,8 +114,12 @@ Each converter returns `nil` for errors it does not recognize, and the two handl
 3. Otherwise walk the registered converters; return the first non-nil result. Both
    converters use `errors.As` / `errors.Is`, so a wrapped error deep in a
    `%w` chain is still matched.
-4. Anything unrecognized becomes `codes.Internal` (`status.Errorf(codes.Internal,
-   "%v", err)`). It never returns nil for a non-nil error.
+4. Anything unrecognized becomes `codes.Internal` with reason `INTERNAL`. It never
+   returns nil for a non-nil error.
+
+Converters build statuses with `reasonStatus(code, reason, msg)`, which attaches the
+`ErrorInfo` detail (reason is the `ErrorReason` value name without its
+`ERROR_REASON_` prefix).
 
 ### Where conversion happens
 
@@ -133,23 +141,29 @@ grpc-gateway rules; no second conversion layer exists.
 
 ## Code-to-gRPC mapping
 
-| Error | gRPC code |
-|---|---|
-| `ErrNotFound` | `NotFound` |
-| `ErrInvalidArgument` | `InvalidArgument` |
-| `ErrAlreadyExists` | `AlreadyExists` |
-| `ErrPermissionDenied` | `PermissionDenied` |
-| `ErrNotImplemented` | `Unimplemented` |
-| `ErrUnsupported` | `Unimplemented` |
-| `ErrInternal` | `Internal` |
-| `ErrK8sObjectNotInstantiated` | `InvalidArgument` |
-| `ErrK8sObjectNotManagedByKubeNfv` | `PermissionDenied` |
-| apimachinery `IsNotFound` | `NotFound` |
-| apimachinery `IsAlreadyExists` | `AlreadyExists` |
-| apimachinery `IsInvalid` / `IsBadRequest` | `InvalidArgument` |
-| apimachinery `IsForbidden` | `PermissionDenied` |
-| apimachinery `IsUnauthorized` | `Unauthenticated` |
-| anything else | `Internal` |
+| Error | gRPC code | Reason |
+|---|---|---|
+| `ErrNotFound` | `NotFound` | `NOT_FOUND` |
+| `ErrInvalidArgument` | `InvalidArgument` | `VALIDATION_FAILED` |
+| `ErrUnsupported` | `InvalidArgument` | `UNSUPPORTED_FIELD` |
+| `ErrInvalidFilter` | `InvalidArgument` | `INVALID_FILTER` |
+| `ErrNotImplemented` | `Unimplemented` | `NOT_IMPLEMENTED` |
+| `ErrAlreadyExists` | `Internal` | `INTERNAL` |
+| `ErrInternal` | `Internal` | `INTERNAL` |
+| `ErrUnauthenticated` | `Unauthenticated` | none |
+| `ErrPermissionDenied` | `PermissionDenied` | none |
+| `ErrK8sObjectNotInstantiated` | `Internal` | `INTERNAL` |
+| `ErrK8sObjectNotManagedByKubeNfv` | `NotFound` | `NOT_FOUND` |
+| apimachinery `IsNotFound` | `NotFound` | `NOT_FOUND` |
+| apimachinery `IsInvalid` / `IsBadRequest` | `InvalidArgument` | `VALIDATION_FAILED` |
+| apimachinery `IsServiceUnavailable` / `IsTimeout` / `IsServerTimeout` / `IsTooManyRequests` | `Unavailable` | `BACKEND_UNAVAILABLE` |
+| apimachinery `IsAlreadyExists` / `IsForbidden` / `IsUnauthorized` | `Internal` | `INTERNAL` |
+| anything else | `Internal` | `INTERNAL` |
+
+Kube-vim generates every Kubernetes name and uses its own credentials, so an
+apimachinery AlreadyExists, Forbidden or Unauthorized is a kube-vim fault, not a
+client error. `Unauthenticated` and `PermissionDenied` are reserved for the
+client's token and scopes.
 
 ## Conventions for contributors
 
@@ -170,7 +184,7 @@ grpc-gateway rules; no second conversion layer exists.
 
 ## Testing
 
-`internal/errors/grpc_test.go` is table-driven over `(error -> expected code)`,
+`internal/errors/grpc_test.go` is table-driven over `(error -> expected code, reason)`,
 covering the typed errors, the sentinels, the apimachinery predicates, wrapped
 (`%w`) chains, and the "already a gRPC status is preserved" path. Because the
 converters are pure functions the mapping is unit-tested without a server; the
@@ -179,10 +193,7 @@ the right status end to end.
 
 ## Known gaps / follow-ups
 
-- **`ErrAlreadyExists` is defined and wired but not yet emitted by managers** —
-  duplicate creates currently surface as the apimachinery `IsAlreadyExists` path
-  instead. Both map to `AlreadyExists`, so the wire behaviour is already correct;
-  the typed error is available when a manager wants to raise it explicitly.
-- **No structured error details.** Errors map to a code plus a message string;
-  they do not attach `google.rpc.ErrorInfo` / status details. Fine for the current
-  callers; revisit if a client needs machine-readable reason codes.
+- **No typed errors for `RESOURCE_IN_USE` and `INVALID_STATE`.** Nothing raises
+  them yet; add the type and its converter arm with the first manager that needs one.
+- **The gateway still maps the gRPC code, not the reason,** through the standard
+  grpc-gateway rules, until it has a ProblemDetails error handler.
