@@ -97,7 +97,7 @@ make kind-delete
 
 ## Build
 
-Requires **Go 1.25+** and Docker.
+Requires **Go 1.26+** and Docker.
 
 ```bash
 make build          # compile bin/kube-vim and bin/gateway
