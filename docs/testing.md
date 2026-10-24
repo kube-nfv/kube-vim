@@ -64,6 +64,10 @@ The shared helper lives in `internal/k8s/k8stest`:
   `k8s.BuildScheme()`, seeded with `objs`, with a `Create` interceptor that stamps
   a UID and creation timestamp the way the apiserver does (the fake client does
   not, and read-after-create paths need it).
+- `k8stest.NewIndexedClient(t, indexes, objs...)` is the same client with the
+  domain's `k8s.LabelIndex` list registered, for managers that look objects up by
+  identifier (`client.MatchingFields`); the fake client rejects a field lookup
+  without its index.
 - `k8stest.ManagedMeta(name)` returns an `ObjectMeta` that passes both
   `IsObjectInstantiated` (UID + ResourceVersion + non-zero CreationTimestamp) and
   `IsObjectManagedByKubeNfv` (managed-by label). Namespace is left empty; set it
