@@ -135,7 +135,10 @@ grpc.ChainUnaryInterceptor(
 ```
 
 The logging interceptor sits second on purpose: it logs the converted status, not
-the raw internal error. On the REST side the gateway (`internal/gateway`) is a
+the raw internal error. Request validation (`validation.UnaryServerInterceptor`)
+runs inside it, after authentication: a request that breaks the API's protovalidate
+rules fails with `ErrInvalidArgument` (`VALIDATION_FAILED`) before reaching a
+handler. On the REST side the gateway (`internal/gateway`) is a
 grpc-gateway proxy, so the gRPC status maps to an HTTP status through the standard
 grpc-gateway rules; no second conversion layer exists.
 
