@@ -9,6 +9,7 @@ import (
 var (
 	ErrNotImplemented = errors.New("not implemented")
 	ErrUnsupported    = errors.New("unsupported")
+	ErrInvalidFilter  = errors.New("invalid filter")
 	ErrInternal       = errors.New("internal")
 )
 

@@ -3,8 +3,8 @@ package errors
 import (
 	"errors"
 
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -20,29 +20,28 @@ func (c *K8sErrorConverter) ConvertToGrpcError(err error) error {
 	// Check for kube-nfv specific k8s errors
 	var k8sNotInstantiated *ErrK8sObjectNotInstantiated
 	if errors.As(err, &k8sNotInstantiated) {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return reasonStatus(codes.Internal, commonv1.ErrorReason_ERROR_REASON_INTERNAL, err.Error())
 	}
 
+	// Objects kube-vim does not own are invisible to clients.
 	var k8sNotManaged *ErrK8sObjectNotManagedByKubeNfv
 	if errors.As(err, &k8sNotManaged) {
-		return status.Error(codes.PermissionDenied, err.Error())
+		return reasonStatus(codes.NotFound, commonv1.ErrorReason_ERROR_REASON_NOT_FOUND, err.Error())
 	}
 
 	// Check for standard K8s API errors anywhere in the chain
 	if k8serrors.IsNotFound(err) {
-		return status.Error(codes.NotFound, err.Error())
-	}
-	if k8serrors.IsAlreadyExists(err) {
-		return status.Error(codes.AlreadyExists, err.Error())
+		return reasonStatus(codes.NotFound, commonv1.ErrorReason_ERROR_REASON_NOT_FOUND, err.Error())
 	}
 	if k8serrors.IsInvalid(err) || k8serrors.IsBadRequest(err) {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return reasonStatus(codes.InvalidArgument, commonv1.ErrorReason_ERROR_REASON_VALIDATION_FAILED, err.Error())
 	}
-	if k8serrors.IsForbidden(err) {
-		return status.Error(codes.PermissionDenied, err.Error())
+	if k8serrors.IsServiceUnavailable(err) || k8serrors.IsTimeout(err) || k8serrors.IsServerTimeout(err) || k8serrors.IsTooManyRequests(err) {
+		return reasonStatus(codes.Unavailable, commonv1.ErrorReason_ERROR_REASON_BACKEND_UNAVAILABLE, err.Error())
 	}
-	if k8serrors.IsUnauthorized(err) {
-		return status.Error(codes.Unauthenticated, err.Error())
+	// AlreadyExists, Forbidden and Unauthorized come from kube-vim's own names and credentials.
+	if k8serrors.IsAlreadyExists(err) || k8serrors.IsForbidden(err) || k8serrors.IsUnauthorized(err) {
+		return reasonStatus(codes.Internal, commonv1.ErrorReason_ERROR_REASON_INTERNAL, err.Error())
 	}
 
 	// Return nil if this is not a k8s error (let other converters handle it)

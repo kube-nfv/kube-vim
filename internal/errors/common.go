@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -21,17 +22,18 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 	// Check for common structured errors
 	var notFoundErr *ErrNotFound
 	if errors.As(err, &notFoundErr) {
-		return status.Error(codes.NotFound, err.Error())
+		return reasonStatus(codes.NotFound, commonv1.ErrorReason_ERROR_REASON_NOT_FOUND, err.Error())
 	}
 
 	var invalidArgErr *ErrInvalidArgument
 	if errors.As(err, &invalidArgErr) {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return reasonStatus(codes.InvalidArgument, commonv1.ErrorReason_ERROR_REASON_VALIDATION_FAILED, err.Error())
 	}
 
+	// Kube-vim generates every Kubernetes name, so a clash is an internal error.
 	var alreadyExistsErr *ErrAlreadyExists
 	if errors.As(err, &alreadyExistsErr) {
-		return status.Error(codes.AlreadyExists, err.Error())
+		return reasonStatus(codes.Internal, commonv1.ErrorReason_ERROR_REASON_INTERNAL, err.Error())
 	}
 
 	var unauthenticatedErr *ErrUnauthenticated
@@ -46,13 +48,16 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 
 	// Check for common untyped errors anywhere in the chain
 	if errors.Is(err, ErrNotImplemented) {
-		return status.Error(codes.Unimplemented, err.Error())
+		return reasonStatus(codes.Unimplemented, commonv1.ErrorReason_ERROR_REASON_NOT_IMPLEMENTED, err.Error())
 	}
 	if errors.Is(err, ErrUnsupported) {
-		return status.Error(codes.Unimplemented, err.Error())
+		return reasonStatus(codes.InvalidArgument, commonv1.ErrorReason_ERROR_REASON_UNSUPPORTED_FIELD, err.Error())
+	}
+	if errors.Is(err, ErrInvalidFilter) {
+		return reasonStatus(codes.InvalidArgument, commonv1.ErrorReason_ERROR_REASON_INVALID_FILTER, err.Error())
 	}
 	if errors.Is(err, ErrInternal) {
-		return status.Error(codes.Internal, err.Error())
+		return reasonStatus(codes.Internal, commonv1.ErrorReason_ERROR_REASON_INTERNAL, err.Error())
 	}
 
 	// Return nil if this is not a common error (let other converters handle it)
