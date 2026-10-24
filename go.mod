@@ -1,6 +1,6 @@
 module github.com/kube-nfv/kube-vim
 
-go 1.25.1
+go 1.26.0
 
 replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912
 
