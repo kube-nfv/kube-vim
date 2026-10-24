@@ -69,6 +69,18 @@ objects, with two deliberate exceptions:
 | Pod | yes | namespace only, no label filter | virt-launcher pods carry kubevirt labels, not managed-by; hot path (launcher info and every scrape) |
 | StorageClass (cluster-scoped) | no | read via apiReader | not owned and read rarely; keeps a cluster-wide StorageClass watch off the cache |
 
+### Lookup by identifier
+
+Every v1 resource identifier is a UUID kube-vim generates and stores in a
+per-domain ID label on each backing object (`flavour.kubevim.kubenfv.io/id` etc.).
+The API server cannot get an object by label, and a cached label-selector list
+scans the whole namespace, so each domain declares a `k8s.LabelIndex` per backing
+type and ID label. The composition root registers them with `k8s.IndexLabels` on
+the cluster's field indexer before the cache starts, and lookups use
+`client.MatchingFields{<id label>: id}`, which the cache answers from the index.
+Lookups by identifier through `GetAPIReader()` cannot use the index; they keep a
+label selector.
+
 ### Read-after-write policy
 
 Cache reads are eventually consistent: a write reaches the cache only when the watch

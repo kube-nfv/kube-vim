@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/kube-nfv/kube-vim/internal/k8s"
 	"github.com/stretchr/testify/require"
@@ -22,9 +21,6 @@ import (
 
 // TestNamespace is the namespace managers are configured with across tests.
 const TestNamespace = "kube-nfv"
-
-// ID builds an ETSI Identifier, the most common test fixture argument.
-func ID(v string) *nfvcommon.Identifier { return &nfvcommon.Identifier{Value: v} }
 
 // Ptr returns a pointer to v, for the many optional (pointer) proto fields.
 func Ptr[T any](v T) *T { return &v }
@@ -50,10 +46,21 @@ var AssignMetaOnCreate = interceptor.Funcs{
 // cache-backed client and the uncached apiReader.
 func NewClient(t *testing.T, objs ...client.Object) client.WithWatch {
 	t.Helper()
+	return NewIndexedClient(t, nil, objs...)
+}
+
+// NewIndexedClient is NewClient with the label indexes a manager looks objects up by,
+// as the composition root registers them on the cache.
+func NewIndexedClient(t *testing.T, indexes []k8s.LabelIndex, objs ...client.Object) client.WithWatch {
+	t.Helper()
 	scheme, err := k8s.BuildScheme()
 	require.NoError(t, err)
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithInterceptorFuncs(AssignMetaOnCreate).Build()
+	b := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
+		WithInterceptorFuncs(AssignMetaOnCreate)
+	for _, i := range indexes {
+		b = b.WithIndex(i.Obj, i.Label, i.Extract)
+	}
+	return b.Build()
 }
 
 // ManagedMeta returns an ObjectMeta that passes both IsObjectInstantiated (UID +
