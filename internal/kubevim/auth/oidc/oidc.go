@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -77,6 +78,7 @@ func (a *authenticator) Verify(ctx context.Context, rawToken string) (*auth.Prin
 	var claims struct {
 		ClientID string `json:"client_id"`
 		Azp      string `json:"azp"`
+		Scope    string `json:"scope"`
 	}
 	if err := token.Claims(&claims); err != nil {
 		return nil, &apperrors.ErrUnauthenticated{Reason: "invalid token", Err: err}
@@ -85,6 +87,7 @@ func (a *authenticator) Verify(ctx context.Context, rawToken string) (*auth.Prin
 		ClientID: cmp.Or(claims.ClientID, claims.Azp, token.Subject),
 		Subject:  token.Subject,
 		Issuer:   token.Issuer,
+		Scopes:   strings.Fields(claims.Scope),
 	}, nil
 }
 

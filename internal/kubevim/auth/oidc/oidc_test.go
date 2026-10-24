@@ -121,8 +121,12 @@ func TestVerify(t *testing.T) {
 		name       string
 		token      func() string
 		wantClient string
+		wantScopes []string
 		wantReason string
 	}{
+		{name: "scope claim", wantClient: "service-account-osm", wantScopes: []string{"flavour:v1:query", "image:v1:query"}, token: func() string {
+			return sign(t, jose.RS256, key, "k1", idp.claims(map[string]any{"scope": "flavour:v1:query  image:v1:query"}))
+		}},
 		{name: "client_id claim", wantClient: "osm-ro", token: func() string {
 			return sign(t, jose.RS256, key, "k1", idp.claims(map[string]any{"client_id": "osm-ro", "azp": "other"}))
 		}},
@@ -166,6 +170,7 @@ func TestVerify(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantClient, p.ClientID)
+			assert.ElementsMatch(t, tt.wantScopes, p.Scopes)
 			assert.Equal(t, "service-account-osm", p.Subject)
 			assert.Equal(t, idp.srv.URL, p.Issuer)
 		})

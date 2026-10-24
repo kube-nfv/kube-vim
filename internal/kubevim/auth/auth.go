@@ -11,6 +11,8 @@ type Principal struct {
 	ClientID string
 	Subject  string
 	Issuer   string
+	// Scopes are the OAuth 2.0 scopes the token grants.
+	Scopes []string
 }
 
 // Authenticator validates an OAuth 2.0 access token.

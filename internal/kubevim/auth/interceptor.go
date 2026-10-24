@@ -10,10 +10,10 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// UnaryServerInterceptor rejects requests without a valid bearer token and puts the Principal in the context.
+// UnaryServerInterceptor rejects requests without a valid bearer token carrying the RPC's scopes and puts the Principal in the context.
 func UnaryServerInterceptor(a Authenticator, log *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		ctx, err := authenticate(ctx, a)
+		ctx, err := authenticate(ctx, a, info.FullMethod)
 		if err != nil {
 			log.Warn("Request rejected", zap.String("Request", info.FullMethod), zap.Error(err))
 			return nil, err
@@ -25,7 +25,7 @@ func UnaryServerInterceptor(a Authenticator, log *zap.Logger) grpc.UnaryServerIn
 // StreamServerInterceptor is the streaming counterpart of UnaryServerInterceptor.
 func StreamServerInterceptor(a Authenticator, log *zap.Logger) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx, err := authenticate(ss.Context(), a)
+		ctx, err := authenticate(ss.Context(), a, info.FullMethod)
 		if err != nil {
 			log.Warn("Request rejected", zap.String("Request", info.FullMethod), zap.Error(err))
 			return err
@@ -34,13 +34,16 @@ func StreamServerInterceptor(a Authenticator, log *zap.Logger) grpc.StreamServer
 	}
 }
 
-func authenticate(ctx context.Context, a Authenticator) (context.Context, error) {
+func authenticate(ctx context.Context, a Authenticator, fullMethod string) (context.Context, error) {
 	token, err := bearerToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 	p, err := a.Verify(ctx, token)
 	if err != nil {
+		return nil, err
+	}
+	if err := authorize(p, fullMethod); err != nil {
 		return nil, err
 	}
 	return NewContext(ctx, p), nil
