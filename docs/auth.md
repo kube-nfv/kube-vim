@@ -1,6 +1,6 @@
 # Authentication
 
-Status: implemented (OAuth 2.0 bearer JWT, authentication only)
+Status: implemented (OAuth 2.0 bearer JWT, one SOL 013 scope per operation)
 
 ## Problem
 
@@ -29,9 +29,14 @@ What SOL 013 clause 8 asks of kube-vim:
   discovery (`<issuer>/.well-known/openid-configuration`) and checks signature, `iss`,
   `aud` and `exp`. Any OAuth 2.0 / OIDC provider that issues JWT access tokens works
   (Keycloak, Dex, Okta, Entra ID); there is no provider-specific code.
-- **Authentication only.** A valid token for the configured issuer and audience gets full
-  access, admin API included. Isolation comes from a dedicated audience per kube-vim and
-  the IdP's client policy. SOL 013 scopes come with the per-interface v1 API.
+- **One scope per operation, checked by kube-vim.** Each v1 RPC declares the scope it
+  needs (`<api>:v1:<permission>`, e.g. `compute:v1:allocate`) in its
+  `openapiv3_operation` security option in kube-vim-api. kube-vim reads it from the proto
+  registry at request time and rejects a token without that scope with
+  `PermissionDenied` (403); the scopes are never listed in kube-vim. The token's scopes
+  come from its `scope` claim (space-separated, RFC 9068). An NFVO is typically granted
+  every scope, a VNFM every scope except `image:v1:{add,update,delete}`; the IdP's client
+  policy grants them. RPCs that declare no scope (gRPC reflection) need only a valid token.
 - **Plain bearer for now.** RFC 8705 certificate-bound tokens need mutual TLS from the
   client through the gateway; OSM RO does not support it yet.
 - **kube-vim validates, the gateway passes through.** grpc-gateway forwards the HTTP
@@ -48,14 +53,16 @@ What SOL 013 clause 8 asks of kube-vim:
   Kubernetes restarts it. Keys are fetched again when a token carries an unknown `kid`, so
   IdP key rotation needs no restart.
 
-Not done yet: RFC 7662 introspection for opaque tokens (Keystone OAuth2), SOL 013 scopes
-and roles, RFC 8705 certificate-bound tokens, the ETSI GS NFV-SEC 022 NFV access token
-profile, configurable clock skew.
+Not done yet: RFC 7662 introspection for opaque tokens (Keystone OAuth2), `:readonly`
+scopes and roles, an RFC 6750 `insufficient_scope` challenge on 403, scopes from an
+`scp` array claim, RFC 8705 certificate-bound tokens, the ETSI GS NFV-SEC 022 NFV access
+token profile, configurable clock skew.
 
 ## Design
 
-- `internal/kubevim/auth`: the `Authenticator` interface, `Principal`, context helpers and
-  the unary and stream interceptors. The stream interceptor covers gRPC reflection.
+- `internal/kubevim/auth`: the `Authenticator` interface, `Principal`, context helpers,
+  the unary and stream interceptors and the scope check (`authorize`, `scope.go`). The
+  stream interceptor covers gRPC reflection.
 - `internal/kubevim/auth/oidc`: the JWT/JWKS implementation on `coreos/go-oidc`.
   `NewAuthenticator` also runs the startup checks.
 - `internal/kubevim/server.NewNorthboundServer` chains error conversion, then auth, then
@@ -63,7 +70,8 @@ profile, configurable clock skew.
 - The client is identified by the first claim present among `client_id` (RFC 9068),
   `azp` and `sub`. It is logged as `Client` on every request; managers do not use it yet.
 - `apperrors.ErrUnauthenticated` maps to `codes.Unauthenticated`. Its `Reason` goes to the
-  client; its `Err` (the validation detail) is only logged.
+  client; its `Err` (the validation detail) is only logged. A missing scope is
+  `apperrors.ErrPermissionDenied`, mapped to `codes.PermissionDenied`.
 
 Challenges returned in `WWW-Authenticate`:
 
