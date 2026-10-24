@@ -18,6 +18,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	vivnfmserver "github.com/kube-nfv/kube-vim/internal/kubevim/server/grpc/vivnfm"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/validation"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
@@ -61,10 +62,10 @@ func NewNorthboundServer(
 	} else {
 		log.Warn("Authentication is disabled. Kubevim gRPC server accepts unauthenticated requests!")
 	}
-	// Logging interceptor (last to log the handler result)
+	// Logging interceptor (wraps validation so rejected requests are logged)
 	unary = append(unary, func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 		return loggingInterceptor(ctx, req, info, handler, log)
-	})
+	}, validation.UnaryServerInterceptor())
 	opts := []grpc.ServerOption{
 		// Emits per-RPC RED metrics through meterProvider (a no-op provider when
 		// monitoring is disabled). No trace exporter is configured, so spans are
