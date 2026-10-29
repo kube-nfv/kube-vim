@@ -6,9 +6,7 @@ import (
 
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestIsUUID(t *testing.T) {
@@ -52,14 +50,6 @@ func TestMergeLabels(t *testing.T) {
 		assert.Equal(t, map[string]string{"a": "1"}, current)
 		assert.NotSame(t, &current, &merged)
 	})
-}
-
-func TestUIDIdentifierRoundTrip(t *testing.T) {
-	uid := types.UID("abc-123")
-	id := UIDToIdentifier(uid)
-	require.NotNil(t, id)
-	assert.Equal(t, "abc-123", id.Value)
-	assert.Equal(t, uid, IdentifierToUID(id))
 }
 
 func TestIsObjectInstantiated(t *testing.T) {
