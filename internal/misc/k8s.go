@@ -4,7 +4,6 @@ import (
 	"io"
 	"time"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	kubevimconfig "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -12,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // MergeLabels merges required into current. Returns (changed, merged) where
@@ -32,31 +30,6 @@ func MergeLabels(current, required map[string]string) (bool, map[string]string) 
 		}
 	}
 	return changed, merged
-}
-
-func UIDToIdentifier(uid types.UID) *nfvcommon.Identifier {
-	return &nfvcommon.Identifier{
-		Value: string(uid),
-	}
-}
-
-func IdentifierToUID(identifier *nfvcommon.Identifier) types.UID {
-	return types.UID(identifier.Value)
-}
-
-// IdName pairs a resource Identifier with the name of its Kubernetes object.
-type IdName struct {
-	Id   *nfvcommon.Identifier
-	Name string
-}
-
-// Identifiers returns the Identifiers of items, in order.
-func Identifiers(items []IdName) []*nfvcommon.Identifier {
-	ids := make([]*nfvcommon.Identifier, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.Id)
-	}
-	return ids
 }
 
 func IsObjectInstantiated(obj metav1.Object) bool {
