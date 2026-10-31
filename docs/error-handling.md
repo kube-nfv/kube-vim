@@ -151,6 +151,7 @@ grpc-gateway rules; no second conversion layer exists.
 | `ErrUnsupported` | `InvalidArgument` | `UNSUPPORTED_FIELD` |
 | `ErrInvalidFilter` | `InvalidArgument` | `INVALID_FILTER` |
 | `ErrNotImplemented` | `Unimplemented` | `NOT_IMPLEMENTED` |
+| `ErrInvalidState` | `FailedPrecondition` | `INVALID_STATE` |
 | `ErrAlreadyExists` | `Internal` | `INTERNAL` |
 | `ErrInternal` | `Internal` | `INTERNAL` |
 | `ErrUnauthenticated` | `Unauthenticated` | none |
@@ -196,7 +197,7 @@ the right status end to end.
 
 ## Known gaps / follow-ups
 
-- **No typed errors for `RESOURCE_IN_USE` and `INVALID_STATE`.** Nothing raises
-  them yet; add the type and its converter arm with the first manager that needs one.
+- **No typed error for `RESOURCE_IN_USE`.** Nothing raises it yet; add the type and
+  its converter arm with the first manager that needs one.
 - **The gateway still maps the gRPC code, not the reason,** through the standard
   grpc-gateway rules, until it has a ProblemDetails error handler.
