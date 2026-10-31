@@ -2,100 +2,57 @@ package kubevirt
 
 import (
 	"testing"
-	"time"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
-	common "github.com/kube-nfv/kube-vim/internal/config"
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"google.golang.org/protobuf/proto"
 )
 
-func TestFlavourNameIdRoundTrip(t *testing.T) {
-	name := flavourNameFromId("abc")
-	assert.Equal(t, "flavour-abc", name)
-	assert.Equal(t, "flavour-pref-abc", flavourPreferenceNameFromId("abc"))
-
-	id, err := idFromFlavourName(name)
-	require.NoError(t, err)
-	assert.Equal(t, "abc", id)
-}
-
-func TestIdFromFlavourNameErrors(t *testing.T) {
-	_, err := idFromFlavourName("badprefix-abc")
-	assert.Error(t, err)
-
-	_, err = idFromFlavourName("flavour-")
-	assert.Error(t, err)
-}
-
-func newNfvFlavour() *vivnfm.VirtualComputeFlavour {
-	mem := resource.MustParse("2Gi")
-	return &vivnfm.VirtualComputeFlavour{
-		VirtualCpu:    &vivnfm.VirtualCpuData{NumVirtualCpu: 4},
-		VirtualMemory: &vivnfm.VirtualMemoryData{VirtualMemSize: &mem},
+func TestCheckSupported(t *testing.T) {
+	unsupported := map[string]func(f *flavourv1.Flavour){
+		"cpu architecture": func(f *flavourv1.Flavour) {
+			f.VirtualCpu.CpuArchitecture = commonv1.CpuArchitecture_CPU_ARCHITECTURE_X86_64
+		},
+		"cpu pinning":      func(f *flavourv1.Flavour) { f.VirtualCpu.VirtualCpuPinning = &flavourv1.VirtualCpuPinningData{} },
+		"cpu topology":     func(f *flavourv1.Flavour) { f.VirtualCpu.Topology = &flavourv1.CpuTopology{} },
+		"oversubscription": func(f *flavourv1.Flavour) { f.VirtualMemory.VirtualMemOversubscriptionPolicy = "2:1" },
+		"numa":             func(f *flavourv1.Flavour) { f.VirtualMemory.NumaEnabled = proto.Bool(false) },
+		"hugepages":        func(f *flavourv1.Flavour) { f.VirtualMemory.HugepageSize = "1Gi" },
 	}
-}
-
-func TestKubeVirtInstanceTypePreferencesFromNfvFlavour(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		instType, pref, err := kubeVirtInstanceTypePreferencesFromNfvFlavour("abc", newNfvFlavour())
-		require.NoError(t, err)
-		assert.Equal(t, "flavour-abc", instType.Name)
-		assert.Equal(t, "flavour-pref-abc", pref.Name)
-		assert.Equal(t, uint32(4), instType.Spec.CPU.Guest)
-		assert.Equal(t, "2Gi", instType.Spec.Memory.Guest.String())
-		assert.Equal(t, common.KubeNfvName, instType.Labels[common.K8sManagedByLabel])
-	})
-
-	errCases := map[string]*vivnfm.VirtualComputeFlavour{
-		"nil flavour": nil,
-		"nil cpu":     {VirtualMemory: &vivnfm.VirtualMemoryData{}},
-		"nil memory":  {VirtualCpu: &vivnfm.VirtualCpuData{NumVirtualCpu: 1}},
-		"zero cpu":    {VirtualCpu: &vivnfm.VirtualCpuData{NumVirtualCpu: 0}, VirtualMemory: &vivnfm.VirtualMemoryData{}},
-	}
-	for name, flavour := range errCases {
+	for name, set := range unsupported {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := kubeVirtInstanceTypePreferencesFromNfvFlavour("abc", flavour)
-			assert.Error(t, err)
+			f := newFlavour()
+			set(f)
+			assert.ErrorIs(t, checkSupported(f), apperrors.ErrUnsupported)
 		})
 	}
+	assert.NoError(t, checkSupported(newFlavour()))
 }
 
-// TestFlavourRoundTrip converts an nfv flavour to kubevirt objects and back,
-// asserting the essential attributes survive the round trip.
+// TestFlavourRoundTrip stores a flavour in kubevirt objects and reads it back unchanged.
 func TestFlavourRoundTrip(t *testing.T) {
-	instType, pref, err := kubeVirtInstanceTypePreferencesFromNfvFlavour("abc", newNfvFlavour())
+	in := newFlavour()
+	in.FlavourId = "ignored"
+	instType, pref, err := kubeVirtObjects("abc", in)
 	require.NoError(t, err)
+	assert.Equal(t, "flavour-abc", instType.Name)
+	assert.Equal(t, "flavour-pref-abc", pref.Name)
 
-	// nfvFlavourFromKubeVirtInstanceTypePreferences requires instantiated objects.
-	instantiate := func(m *metav1.ObjectMeta) {
-		m.UID = types.UID("uid-" + m.Name)
-		m.ResourceVersion = "1"
-		m.CreationTimestamp = metav1.NewTime(time.Now())
-	}
-	instantiate(&instType.ObjectMeta)
-	instantiate(&pref.ObjectMeta)
-
-	got, err := nfvFlavourFromKubeVirtInstanceTypePreferences("abc", instType, pref)
+	got, err := flavourFromInstancetype(instType)
 	require.NoError(t, err)
-	assert.Equal(t, "abc", got.FlavourId.GetValue())
-	assert.Equal(t, uint32(4), got.VirtualCpu.NumVirtualCpu)
-	require.NotNil(t, got.VirtualMemory.VirtualMemSize)
-	assert.Equal(t, "2Gi", got.VirtualMemory.VirtualMemSize.String())
+	assert.Equal(t, "abc", got.FlavourId)
+	assert.Equal(t, in.VirtualMemory.VirtualMemSize, got.VirtualMemory.VirtualMemSize)
+	assert.Equal(t, in.VirtualCpu.NumVirtualCpu, got.VirtualCpu.NumVirtualCpu)
+	assert.Equal(t, "osm", got.Metadata["owner"])
 }
 
-func TestNfvFlavourFromKubeVirtErrors(t *testing.T) {
-	t.Run("nil instancetype", func(t *testing.T) {
-		_, err := nfvFlavourFromKubeVirtInstanceTypePreferences("abc", nil, nil)
-		assert.Error(t, err)
-	})
-	t.Run("not instantiated", func(t *testing.T) {
-		instType, _, err := kubeVirtInstanceTypePreferencesFromNfvFlavour("abc", newNfvFlavour())
-		require.NoError(t, err)
-		_, err = nfvFlavourFromKubeVirtInstanceTypePreferences("abc", instType, nil)
-		assert.Error(t, err)
-	})
+func TestKubeVirtObjectsInvalidMemory(t *testing.T) {
+	f := newFlavour()
+	f.VirtualMemory.VirtualMemSize = "lots"
+	_, _, err := kubeVirtObjects("abc", f)
+	var target *apperrors.ErrInvalidArgument
+	assert.ErrorAs(t, err, &target)
 }

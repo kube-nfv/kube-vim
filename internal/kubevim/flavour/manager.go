@@ -3,23 +3,24 @@ package flavour
 import (
 	"context"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
 )
 
 const (
-	K8sFlavourIdLabel           = "flavour.kubevim.kubenfv.io/id"
-	K8sFlavourSourceLabel       = "flavour.kubevim.kubenfv.io/source"
-	K8sVolumesAnnotation        = "flavour.kubevim.kubenfv.io/volumes"
-	K8sFlavourAttNameAnnotation = "flavour.kubevim.kubenfv.io/attached-name"
+	K8sFlavourIdLabel = "flavour.kubevim.kubenfv.io/id"
+	// K8sFlavourAnnotation holds the flavour as the consumer created it (protojson, without its id).
+	K8sFlavourAnnotation = "flavour.kubevim.kubenfv.io/flavour"
+
+	// Metadata keys kube-vim adds to a flavour: the KubeVirt objects compute uses to run it.
+	InstancetypeMetadataKey = "kubevim.kubenfv.io/instancetype"
+	PreferenceMetadataKey   = "kubevim.kubenfv.io/preference"
 )
 
 //go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
 
 type Manager interface {
-	CreateFlavour(context.Context, *vivnfm.VirtualComputeFlavour) (*nfvcommon.Identifier, error)
-	GetFlavour(context.Context, *nfvcommon.Identifier) (*vivnfm.VirtualComputeFlavour, error)
-	// TODO: Add Filter
-	GetFlavours(context.Context) ([]*vivnfm.VirtualComputeFlavour, error)
-	DeleteFlavour(context.Context, *nfvcommon.Identifier) error
+	CreateFlavour(context.Context, *flavourv1.Flavour) (*flavourv1.Flavour, error)
+	GetFlavour(ctx context.Context, flavourId string) (*flavourv1.Flavour, error)
+	ListFlavours(context.Context) ([]*flavourv1.Flavour, error)
+	DeleteFlavour(ctx context.Context, flavourId string) error
 }

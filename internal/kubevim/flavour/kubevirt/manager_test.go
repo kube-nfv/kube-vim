@@ -3,10 +3,8 @@ package kubevirt
 import (
 	"context"
 	"testing"
-	"time"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -15,9 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"kubevirt.io/api/instancetype/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,166 +22,140 @@ const testNamespace = k8stest.TestNamespace
 // newManager wires a flavour manager on top of a fake client seeded with objs.
 func newManager(t *testing.T, objs ...client.Object) (*manager, client.Client) {
 	t.Helper()
-	cl := k8stest.NewClient(t, objs...)
+	cl := k8stest.NewIndexedClient(t, IdIndexes, objs...)
 	ns := testNamespace
 	m, err := NewFlavourManager(cl, cl, &config.K8sConfig{Namespace: &ns})
 	require.NoError(t, err)
 	return m, cl
 }
 
-// seedFlavour builds a valid, instantiated, kube-nfv-owned instancetype +
-// preference pair for the given flavour id, ready to seed into the fake client.
-func seedFlavour(t *testing.T, id string, cpu uint32, mem string) (*v1beta1.VirtualMachineInstancetype, *v1beta1.VirtualMachinePreference) {
-	t.Helper()
-	memQ := resource.MustParse(mem)
-	nfv := &vivnfm.VirtualComputeFlavour{
-		VirtualCpu:    &vivnfm.VirtualCpuData{NumVirtualCpu: cpu},
-		VirtualMemory: &vivnfm.VirtualMemoryData{VirtualMemSize: &memQ},
+func newFlavour() *flavourv1.Flavour {
+	return &flavourv1.Flavour{
+		FlavourName:   "small",
+		VirtualCpu:    &flavourv1.VirtualCpuData{NumVirtualCpu: 2},
+		VirtualMemory: &flavourv1.VirtualMemoryData{VirtualMemSize: "2048Mi"},
+		Metadata:      map[string]string{"owner": "osm"},
 	}
-	instType, instPref, err := kubeVirtInstanceTypePreferencesFromNfvFlavour(id, nfv)
-	require.NoError(t, err)
-	// The converter builds a template object; instantiate it as the apiserver
-	// would (namespace + UID + CreationTimestamp) so IsObjectInstantiated passes.
-	instantiate(&instType.ObjectMeta)
-	instantiate(&instPref.ObjectMeta)
-	return instType, instPref
 }
 
-func instantiate(meta *metav1.ObjectMeta) {
-	meta.Namespace = testNamespace
-	meta.UID = types.UID("uid-" + meta.Name)
-	meta.CreationTimestamp = metav1.NewTime(time.Now())
+// create stores a flavour through m and returns its id.
+func create(t *testing.T, m *manager) string {
+	t.Helper()
+	f, err := m.CreateFlavour(context.Background(), newFlavour())
+	require.NoError(t, err)
+	return f.FlavourId
 }
 
 func TestCreateFlavour(t *testing.T) {
 	t.Parallel()
-	memQ := resource.MustParse("2Gi")
-	validFlavour := func() *vivnfm.VirtualComputeFlavour {
-		return &vivnfm.VirtualComputeFlavour{
-			VirtualCpu:    &vivnfm.VirtualCpuData{NumVirtualCpu: 2},
-			VirtualMemory: &vivnfm.VirtualMemoryData{VirtualMemSize: &memQ},
-		}
-	}
-
-	t.Run("generates id and persists instancetype+preference", func(t *testing.T) {
+	t.Run("persists instancetype and preference", func(t *testing.T) {
 		m, cl := newManager(t)
-		id, err := m.CreateFlavour(context.Background(), validFlavour())
+		f, err := m.CreateFlavour(context.Background(), newFlavour())
 		require.NoError(t, err)
-		require.NotEmpty(t, id.GetValue())
+		require.NotEmpty(t, f.FlavourId)
+		assert.Equal(t, "small", f.FlavourName)
+		assert.Equal(t, "2048Mi", f.VirtualMemory.VirtualMemSize)
+		assert.Equal(t, map[string]string{
+			"owner":                         "osm",
+			flavour.InstancetypeMetadataKey: flavourNameFromId(f.FlavourId),
+			flavour.PreferenceMetadataKey:   flavourPreferenceNameFromId(f.FlavourId),
+		}, f.Metadata)
 
 		it := &v1beta1.VirtualMachineInstancetype{}
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourNameFromId(id.GetValue())}, it))
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourNameFromId(f.FlavourId)}, it))
 		assert.Equal(t, common.KubeNfvName, it.Labels[common.K8sManagedByLabel])
-		assert.Equal(t, id.GetValue(), it.Labels[flavour.K8sFlavourIdLabel])
+		assert.Equal(t, f.FlavourId, it.Labels[flavour.K8sFlavourIdLabel])
+		assert.Equal(t, uint32(2), it.Spec.CPU.Guest)
+		assert.Equal(t, "2Gi", it.Spec.Memory.Guest.String())
 
 		pref := &v1beta1.VirtualMachinePreference{}
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourPreferenceNameFromId(id.GetValue())}, pref))
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourPreferenceNameFromId(f.FlavourId)}, pref))
 	})
 
-	t.Run("honours caller-provided flavour id", func(t *testing.T) {
+	t.Run("unsupported field is rejected", func(t *testing.T) {
 		m, _ := newManager(t)
-		f := validFlavour()
-		f.FlavourId = &nfvcommon.Identifier{Value: "my-id"}
-		id, err := m.CreateFlavour(context.Background(), f)
-		require.NoError(t, err)
-		assert.Equal(t, "my-id", id.GetValue())
-	})
-
-	t.Run("nil flavour is rejected", func(t *testing.T) {
-		m, _ := newManager(t)
-		_, err := m.CreateFlavour(context.Background(), nil)
-		var target *apperrors.ErrInvalidArgument
-		assert.ErrorAs(t, err, &target)
+		f := newFlavour()
+		f.VirtualMemory.HugepageSize = "2Mi"
+		_, err := m.CreateFlavour(context.Background(), f)
+		assert.ErrorIs(t, err, apperrors.ErrUnsupported)
 	})
 }
 
 func TestGetFlavour(t *testing.T) {
 	t.Parallel()
-	t.Run("returns seeded flavour", func(t *testing.T) {
-		it, pref := seedFlavour(t, "f1", 4, "4Gi")
-		m, _ := newManager(t, it, pref)
-		got, err := m.GetFlavour(context.Background(), &nfvcommon.Identifier{Value: "f1"})
-		require.NoError(t, err)
-		assert.Equal(t, "f1", got.FlavourId.GetValue())
-		assert.Equal(t, uint32(4), got.VirtualCpu.NumVirtualCpu)
-	})
-
-	t.Run("nil id is rejected", func(t *testing.T) {
+	t.Run("returns the created flavour unchanged", func(t *testing.T) {
 		m, _ := newManager(t)
-		_, err := m.GetFlavour(context.Background(), nil)
-		var target *apperrors.ErrInvalidArgument
-		assert.ErrorAs(t, err, &target)
+		id := create(t, m)
+		got, err := m.GetFlavour(context.Background(), id)
+		require.NoError(t, err)
+		assert.Equal(t, id, got.FlavourId)
+		assert.Equal(t, "small", got.FlavourName)
+		assert.Equal(t, "2048Mi", got.VirtualMemory.VirtualMemSize)
 	})
 
 	t.Run("missing flavour is ErrNotFound", func(t *testing.T) {
 		m, _ := newManager(t)
-		_, err := m.GetFlavour(context.Background(), &nfvcommon.Identifier{Value: "nope"})
+		_, err := m.GetFlavour(context.Background(), "nope")
 		var target *apperrors.ErrNotFound
 		assert.ErrorAs(t, err, &target)
 	})
 
 	t.Run("flavour owned by someone else is rejected", func(t *testing.T) {
-		it, _ := seedFlavour(t, "f1", 2, "2Gi")
-		delete(it.Labels, common.K8sManagedByLabel)
-		m, _ := newManager(t, it)
-		_, err := m.GetFlavour(context.Background(), &nfvcommon.Identifier{Value: "f1"})
+		foreign := foreignInstancetype(t, "f1")
+		m, _ := newManager(t, foreign)
+		_, err := m.GetFlavour(context.Background(), "f1")
 		var target *apperrors.ErrK8sObjectNotManagedByKubeNfv
 		assert.ErrorAs(t, err, &target)
 	})
 }
 
-func TestGetFlavours(t *testing.T) {
+func TestListFlavours(t *testing.T) {
 	t.Parallel()
-	t.Run("lists only kube-nfv-owned flavours", func(t *testing.T) {
-		it1, pref1 := seedFlavour(t, "f1", 2, "2Gi")
-		it2, pref2 := seedFlavour(t, "f2", 4, "4Gi")
-		foreign, _ := seedFlavour(t, "f3", 8, "8Gi")
-		delete(foreign.Labels, common.K8sManagedByLabel)
+	m, _ := newManager(t, foreignInstancetype(t, "f3"))
+	ids := map[string]bool{create(t, m): true, create(t, m): true}
 
-		m, _ := newManager(t, it1, pref1, it2, pref2, foreign)
-		got, err := m.GetFlavours(context.Background())
-		require.NoError(t, err)
-		require.Len(t, got, 2)
-
-		ids := map[string]bool{}
-		for _, f := range got {
-			ids[f.FlavourId.GetValue()] = true
-		}
-		assert.Equal(t, map[string]bool{"f1": true, "f2": true}, ids)
-	})
-
-	t.Run("empty cluster returns no flavours", func(t *testing.T) {
-		m, _ := newManager(t)
-		got, err := m.GetFlavours(context.Background())
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
+	got, err := m.ListFlavours(context.Background())
+	require.NoError(t, err)
+	listed := map[string]bool{}
+	for _, f := range got {
+		listed[f.FlavourId] = true
+	}
+	assert.Equal(t, ids, listed)
 }
 
 func TestDeleteFlavour(t *testing.T) {
 	t.Parallel()
 	t.Run("removes instancetype and preference", func(t *testing.T) {
-		it, pref := seedFlavour(t, "f1", 2, "2Gi")
-		m, cl := newManager(t, it, pref)
-		require.NoError(t, m.DeleteFlavour(context.Background(), &nfvcommon.Identifier{Value: "f1"}))
+		m, cl := newManager(t)
+		id := create(t, m)
+		require.NoError(t, m.DeleteFlavour(context.Background(), id))
 
-		err := cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: it.Name}, &v1beta1.VirtualMachineInstancetype{})
+		err := cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourNameFromId(id)}, &v1beta1.VirtualMachineInstancetype{})
 		assert.True(t, apierrors.IsNotFound(err), "instancetype should be gone")
-		err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: pref.Name}, &v1beta1.VirtualMachinePreference{})
+		err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: flavourPreferenceNameFromId(id)}, &v1beta1.VirtualMachinePreference{})
 		assert.True(t, apierrors.IsNotFound(err), "preference should be gone")
 	})
 
-	t.Run("deleting a missing flavour is a no-op", func(t *testing.T) {
+	t.Run("missing flavour is ErrNotFound", func(t *testing.T) {
 		m, _ := newManager(t)
-		assert.NoError(t, m.DeleteFlavour(context.Background(), &nfvcommon.Identifier{Value: "nope"}))
+		var target *apperrors.ErrNotFound
+		assert.ErrorAs(t, m.DeleteFlavour(context.Background(), "nope"), &target)
 	})
 
 	t.Run("does not delete a flavour owned by someone else", func(t *testing.T) {
-		it, _ := seedFlavour(t, "f1", 2, "2Gi")
-		delete(it.Labels, common.K8sManagedByLabel)
-		m, cl := newManager(t, it)
-		require.NoError(t, m.DeleteFlavour(context.Background(), &nfvcommon.Identifier{Value: "f1"}))
-		// Foreign object must survive the label-scoped delete.
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: it.Name}, &v1beta1.VirtualMachineInstancetype{}))
+		foreign := foreignInstancetype(t, "f1")
+		m, cl := newManager(t, foreign)
+		assert.Error(t, m.DeleteFlavour(context.Background(), "f1"))
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: foreign.Name}, &v1beta1.VirtualMachineInstancetype{}))
 	})
+}
+
+// foreignInstancetype is a flavour instancetype for id without the managed-by label.
+func foreignInstancetype(t *testing.T, id string) *v1beta1.VirtualMachineInstancetype {
+	t.Helper()
+	instType, _, err := kubeVirtObjects(id, newFlavour())
+	require.NoError(t, err)
+	instType.Namespace = testNamespace
+	delete(instType.Labels, common.K8sManagedByLabel)
+	return instType
 }

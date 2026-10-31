@@ -13,8 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	apis "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -43,10 +42,10 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 }
 
 // CreateFlavour mocks base method.
-func (m *MockManager) CreateFlavour(arg0 context.Context, arg1 *vivnfm.VirtualComputeFlavour) (*apis.Identifier, error) {
+func (m *MockManager) CreateFlavour(arg0 context.Context, arg1 *flavourv1.Flavour) (*flavourv1.Flavour, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateFlavour", arg0, arg1)
-	ret0, _ := ret[0].(*apis.Identifier)
+	ret0, _ := ret[0].(*flavourv1.Flavour)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -58,45 +57,45 @@ func (mr *MockManagerMockRecorder) CreateFlavour(arg0, arg1 any) *gomock.Call {
 }
 
 // DeleteFlavour mocks base method.
-func (m *MockManager) DeleteFlavour(arg0 context.Context, arg1 *apis.Identifier) error {
+func (m *MockManager) DeleteFlavour(ctx context.Context, flavourId string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteFlavour", arg0, arg1)
+	ret := m.ctrl.Call(m, "DeleteFlavour", ctx, flavourId)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteFlavour indicates an expected call of DeleteFlavour.
-func (mr *MockManagerMockRecorder) DeleteFlavour(arg0, arg1 any) *gomock.Call {
+func (mr *MockManagerMockRecorder) DeleteFlavour(ctx, flavourId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFlavour", reflect.TypeOf((*MockManager)(nil).DeleteFlavour), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFlavour", reflect.TypeOf((*MockManager)(nil).DeleteFlavour), ctx, flavourId)
 }
 
 // GetFlavour mocks base method.
-func (m *MockManager) GetFlavour(arg0 context.Context, arg1 *apis.Identifier) (*vivnfm.VirtualComputeFlavour, error) {
+func (m *MockManager) GetFlavour(ctx context.Context, flavourId string) (*flavourv1.Flavour, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFlavour", arg0, arg1)
-	ret0, _ := ret[0].(*vivnfm.VirtualComputeFlavour)
+	ret := m.ctrl.Call(m, "GetFlavour", ctx, flavourId)
+	ret0, _ := ret[0].(*flavourv1.Flavour)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetFlavour indicates an expected call of GetFlavour.
-func (mr *MockManagerMockRecorder) GetFlavour(arg0, arg1 any) *gomock.Call {
+func (mr *MockManagerMockRecorder) GetFlavour(ctx, flavourId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlavour", reflect.TypeOf((*MockManager)(nil).GetFlavour), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlavour", reflect.TypeOf((*MockManager)(nil).GetFlavour), ctx, flavourId)
 }
 
-// GetFlavours mocks base method.
-func (m *MockManager) GetFlavours(arg0 context.Context) ([]*vivnfm.VirtualComputeFlavour, error) {
+// ListFlavours mocks base method.
+func (m *MockManager) ListFlavours(arg0 context.Context) ([]*flavourv1.Flavour, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFlavours", arg0)
-	ret0, _ := ret[0].([]*vivnfm.VirtualComputeFlavour)
+	ret := m.ctrl.Call(m, "ListFlavours", arg0)
+	ret0, _ := ret[0].([]*flavourv1.Flavour)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetFlavours indicates an expected call of GetFlavours.
-func (mr *MockManagerMockRecorder) GetFlavours(arg0 any) *gomock.Call {
+// ListFlavours indicates an expected call of ListFlavours.
+func (mr *MockManagerMockRecorder) ListFlavours(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlavours", reflect.TypeOf((*MockManager)(nil).GetFlavours), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFlavours", reflect.TypeOf((*MockManager)(nil).ListFlavours), arg0)
 }
