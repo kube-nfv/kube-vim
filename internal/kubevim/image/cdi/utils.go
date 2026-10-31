@@ -4,52 +4,127 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
-	"github.com/kube-nfv/kube-vim-api/pkg/apis"
-	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
-	"github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	imagev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/image/v1"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/misc"
-	v1 "k8s.io/api/core/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	storagev1 "k8s.io/api/storage/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// TODO: Add additional image import sources
-func importSourceTypeFromImageSource(imgSource *admin.ImageSource) (*v1beta1.ImportSourceType, error) {
-	if imgSource == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "imageSource", Reason: "can't be nil"}
+// checkSupported rejects image fields outside the source that kube-vim does not apply yet.
+func checkSupported(img *imagev1.Image) error {
+	unsupported := ""
+	switch {
+	case img.GetImportPolicy() == imagev1.ImportPolicy_IMPORT_POLICY_ON_FIRST_USE:
+		unsupported = "importPolicy"
+	case img.GetFirmware() != imagev1.Firmware_FIRMWARE_UNSPECIFIED:
+		unsupported = "firmware"
+	case img.GetDiskBus() != imagev1.DiskBus_DISK_BUS_UNSPECIFIED:
+		unsupported = "diskBus"
+	case img.GetMinDisk() != "":
+		unsupported = "minDisk"
+	case img.GetMinRam() != "":
+		unsupported = "minRam"
 	}
-	res := &v1beta1.ImportSourceType{}
-	var err error
-
-	switch imgSource.Type {
-	case admin.ImageSourceType_HTTP:
-		if res.HTTP, err = convertToHttpDataVolumeSource(imgSource.Http); err != nil {
-			return nil, fmt.Errorf("convert to http data volume source: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("unknown imageSource type '%s': %w", imgSource.Type, apperrors.ErrUnsupported)
+	if unsupported != "" {
+		return fmt.Errorf("%s: %w", unsupported, apperrors.ErrUnsupported)
 	}
-	return res, nil
+	return nil
 }
 
-// TODO: Also add secrets from HTTP population
-func convertToHttpDataVolumeSource(http *admin.HttpSource) (*v1beta1.DataVolumeSourceHTTP, error) {
-	if http == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "httpSource", Reason: "can't be nil"}
+// storedImage returns the consumer's fields of img as kept in the annotation: no id, outputs or input-only fields.
+func storedImage(img *imagev1.Image, src image.Source) *imagev1.Image {
+	return &imagev1.Image{
+		Name:         img.GetName(),
+		Provider:     img.GetProvider(),
+		Version:      img.GetVersion(),
+		Metadata:     img.GetMetadata(),
+		Source:       src.Stored(img.GetSource()),
+		ImportPolicy: imagev1.ImportPolicy_IMPORT_POLICY_EAGER,
 	}
-	res := &v1beta1.DataVolumeSourceHTTP{}
-	res.URL = http.GetUrl()
+}
 
-	extraHeaders := make([]string, 0, len(http.Headers))
-	for hdr, val := range http.Headers {
-		extraHeaders = append(extraHeaders, fmt.Sprintf("%s: %s", hdr, val))
+func marshalImage(img *imagev1.Image) (string, error) {
+	raw, err := protojson.Marshal(img)
+	if err != nil {
+		return "", fmt.Errorf("marshal image: %w", err)
 	}
-	res.ExtraHeaders = extraHeaders
-	return res, nil
+	return string(raw), nil
+}
+
+// imageFromCdi returns the image vis carries, with its id, outputs from dv and kube-vim metadata keys.
+func imageFromCdi(vis *v1beta1.VolumeImportSource, dv *v1beta1.DataVolume) (*imagev1.Image, error) {
+	raw, ok := vis.Annotations[image.K8sImageAnnotation]
+	if !ok {
+		return nil, fmt.Errorf("VolumeImportSource '%s' has no '%s' annotation: %w", vis.Name, image.K8sImageAnnotation, apperrors.ErrInternal)
+	}
+	img := &imagev1.Image{}
+	if err := protojson.Unmarshal([]byte(raw), img); err != nil {
+		return nil, fmt.Errorf("unmarshal image of VolumeImportSource '%s': %w", vis.Name, err)
+	}
+	img.ImageId = vis.Labels[image.K8sImageIdLabel]
+	img.CreatedAt = timestamppb.New(vis.CreationTimestamp.Time)
+	img.UpdatedAt = img.CreatedAt
+	if t := misc.GetLastUpdateTime(dv); t != nil {
+		img.UpdatedAt = timestamppb.New(*t)
+	}
+	img.Status = imageStatus(dv.Status.Phase)
+	switch img.Status {
+	case imagev1.ImageStatus_IMAGE_STATUS_IMPORTING:
+		img.Progress = progressPercent(dv.Status.Progress)
+	case imagev1.ImageStatus_IMAGE_STATUS_AVAILABLE:
+		if dv.Spec.Storage != nil {
+			img.Size = dv.Spec.Storage.Resources.Requests.Storage().String()
+		}
+	case imagev1.ImageStatus_IMAGE_STATUS_FAILED:
+		img.StatusDetail = runningMessage(dv)
+	}
+	if img.Metadata == nil {
+		img.Metadata = map[string]string{}
+	}
+	img.Metadata[image.PvcMetadataKey] = dv.Name
+	return img, nil
+}
+
+// imageStatus maps a DataVolume phase to an image status.
+func imageStatus(phase v1beta1.DataVolumePhase) imagev1.ImageStatus {
+	switch phase {
+	case v1beta1.Succeeded:
+		return imagev1.ImageStatus_IMAGE_STATUS_AVAILABLE
+	case v1beta1.Failed:
+		return imagev1.ImageStatus_IMAGE_STATUS_FAILED
+	case v1beta1.ImportScheduled, v1beta1.ImportInProgress:
+		return imagev1.ImageStatus_IMAGE_STATUS_IMPORTING
+	case v1beta1.UploadScheduled, v1beta1.UploadReady:
+		return imagev1.ImageStatus_IMAGE_STATUS_UPLOAD_PENDING
+	default:
+		return imagev1.ImageStatus_IMAGE_STATUS_PENDING
+	}
+}
+
+// progressPercent parses CDI progress ("45.67%"); 0 when it is not a percentage.
+func progressPercent(p v1beta1.DataVolumeProgress) int32 {
+	v, err := strconv.ParseFloat(strings.TrimSuffix(string(p), "%"), 64)
+	if err != nil {
+		return 0
+	}
+	return int32(v)
+}
+
+// runningMessage returns the message of dv's Running condition, which carries the import failure.
+func runningMessage(dv *v1beta1.DataVolume) string {
+	for _, c := range dv.Status.Conditions {
+		if c.Type == v1beta1.DataVolumeRunning {
+			return c.Message
+		}
+	}
+	return ""
 }
 
 // getStorageClass retrieves a StorageClass by name.
@@ -84,85 +159,4 @@ func getStorageClass(ctx context.Context, name string, reader client.Reader) (*s
 	}
 
 	return nil, &apperrors.ErrNotFound{Entity: "storageClass", Identifier: "default"}
-}
-
-func nfvImageFromCdiDataVolumeVis(dv *v1beta1.DataVolume, vis *v1beta1.VolumeImportSource) (*vivnfm.SoftwareImageInformation, error) {
-	if dv == nil || vis == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "dataVolume or volumeImportSource", Reason: "can't be nil"}
-	}
-	if !misc.IsObjectInstantiated(dv) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: dv.Kind, Identifier: dv.Name}
-	}
-	if !misc.IsObjectInstantiated(vis) {
-		return nil, &apperrors.ErrK8sObjectNotInstantiated{ObjectType: vis.Kind, Identifier: vis.Name}
-	}
-	if !misc.IsObjectManagedByKubeNfv(dv) {
-		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: dv.Kind, ObjectName: dv.Name, ObjectId: string(dv.GetUID())}
-	}
-	if !misc.IsObjectManagedByKubeNfv(vis) {
-		return nil, &apperrors.ErrK8sObjectNotManagedByKubeNfv{ObjectType: vis.Kind, ObjectName: vis.Name, ObjectId: string(vis.GetUID())}
-	}
-
-	imgId := misc.UIDToIdentifier(vis.GetUID())
-	imgName := vis.GetName()
-	srcTypeName, err := sourceNameFromImportSourceType(vis.Spec.Source)
-	if err != nil {
-		return nil, fmt.Errorf("get sourceName from ImportSourceType: %w", err)
-	}
-
-	metadata := map[string]string{
-		image.K8sImageIdLabel: imgId.GetValue(),
-		image.K8sSourceLabel:  string(srcTypeName),
-		K8sDataVolumeIdLabel:  string(dv.GetUID()),
-		K8sDataVolumePhase:    string(dv.Status.Phase),
-	}
-
-	for _, dvCond := range dv.Status.Conditions {
-		switch dvCond.Type {
-		case v1beta1.DataVolumeBound:
-			if dvCond.Status == v1.ConditionTrue {
-				metadata[image.K8sIsImageBoundToPvc] = "true"
-			} else {
-				metadata[image.K8sIsImageBoundToPvc] = "false"
-			}
-		}
-	}
-	crtTime := misc.ConvertToProtoTimestamp(misc.GetCreationTimestamp(vis))
-	updtTime := crtTime
-	lstUpdtTime := misc.GetLastUpdateTime(dv)
-	if lstUpdtTime != nil {
-		updtTime = misc.ConvertToProtoTimestamp(*lstUpdtTime)
-	}
-
-	// TODO: For now each image is uploaded
-	isUploaded := true
-	status := "ready"
-
-	metadata[image.K8sIsUploadLabel] = strconv.FormatBool(isUploaded)
-
-	res := &vivnfm.SoftwareImageInformation{
-		SoftwareImageId: imgId,
-		Name:            imgName,
-		CreatedAt:       crtTime,
-		UpdatedAt:       updtTime,
-		Size:            dv.Spec.Storage.Resources.Requests.Storage(),
-		Status:          status,
-		Metadata: &apis.Metadata{
-			Fields: metadata,
-		},
-	}
-	return res, nil
-}
-
-func sourceNameFromImportSourceType(source *v1beta1.ImportSourceType) (image.SourceType, error) {
-	if source == nil {
-		return "", &apperrors.ErrInvalidArgument{Field: "source", Reason: "can't be nil"}
-	}
-	if source.HTTP != nil {
-		if source.HTTP.CertConfigMap != "" || source.HTTP.SecretRef != "" {
-			return image.HTTPS, nil
-		}
-		return image.HTTP, nil
-	}
-	return "", fmt.Errorf("unsupported source: %w", apperrors.ErrUnsupported)
 }

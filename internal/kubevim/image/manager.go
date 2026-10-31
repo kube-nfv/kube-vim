@@ -2,60 +2,45 @@ package image
 
 import (
 	"context"
-	"fmt"
-	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
-	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	imagev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/image/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 const (
-	K8sImageIdLabel  = "image.kubevim.kubenfv.io/id"
-	K8sSourceLabel   = "image.kubevim.kubenfv.io/source"
-	K8sIsUploadLabel = "image.kubevim.kubenfv.io/uploaded"
+	K8sImageIdLabel = "image.kubevim.kubenfv.io/id"
+	// K8sImageAnnotation holds the image as the consumer created it (protojson, without its id and input-only fields).
+	K8sImageAnnotation = "image.kubevim.kubenfv.io/image"
 
-	K8sSourceUrlAnnotation  = "image.kubevim.kubenfv.io/source-url"
-	K8sIsImageBoundToPvc    = "image.kubevim.kubenfv.io/is-pvc-bound"
-	K8sImagePvcStorageClass = "image.kubevim.kubenfv.io/storage-class"
+	// PvcMetadataKey is the metadata key kube-vim adds to an image: the PVC compute clones boot disks from.
+	PvcMetadataKey = "kubevim.kubenfv.io/pvc"
 )
 
-// NfvImageManager is the ETSI Vi-Vnfm image query surface. It is split out of
-// Manager so it can be mocked: Manager also embeds the gRPC admin.AdminServer,
-// whose forced mustEmbedUnimplementedAdminServer() cannot be satisfied by a
-// generated mock. Tests double Manager with a type embedding
-// admin.UnimplementedAdminServer plus a mock of this interface.
-//
-//go:generate go run go.uber.org/mock/mockgen -destination=mock/mock_manager.go -package=mock github.com/kube-nfv/kube-vim/internal/kubevim/image NfvImageManager
-type NfvImageManager interface {
-	// TODO: Change to be able to getImage by Name and source
-	GetImage(context.Context, *nfvcommon.Identifier) (*vivnfm.SoftwareImageInformation, error)
-	ListImages(context.Context) ([]*vivnfm.SoftwareImageInformation, error)
-}
+//go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
 
 type Manager interface {
-	// Admin Api
-	admin.AdminServer
-
-	// NFV Api
-	NfvImageManager
+	CreateImage(context.Context, *imagev1.Image) (*imagev1.Image, error)
+	GetImage(ctx context.Context, imageId string) (*imagev1.Image, error)
+	ListImages(context.Context) ([]*imagev1.Image, error)
 }
 
-type SourceType string
+// Source is one kind of image source (an ImageSource oneof member), imported into the cluster through CDI.
+type Source interface {
+	// ImportSource returns the CDI import source for src; ErrUnsupported for fields it does not handle.
+	ImportSource(ctx context.Context, src *imagev1.ImageSource) (*cdiv1beta1.ImportSourceType, error)
+	// Stored returns src as kept and returned to clients, without input-only fields.
+	Stored(src *imagev1.ImageSource) *imagev1.ImageSource
+}
 
-const (
-	HTTP    SourceType = "http"
-	HTTPS              = "https"
-	Unknown            = ""
-)
-
-func SourceTypeFromString(sourceTypeStr string) (SourceType, error) {
-	switch sourceTypeStr {
-	case string(HTTPS):
-		return HTTPS, nil
-	case string(HTTP):
-		return HTTP, nil
-	default:
-		return Unknown, fmt.Errorf("unknown source type '%s': %w", sourceTypeStr, apperrors.ErrUnsupported)
+// SourceKind returns the name of the ImageSource oneof member set in src (e.g. "http"), or "" when none is.
+func SourceKind(src *imagev1.ImageSource) string {
+	if src == nil {
+		return ""
 	}
+	m := src.ProtoReflect()
+	f := m.WhichOneof(m.Descriptor().Oneofs().ByName("source"))
+	if f == nil {
+		return ""
+	}
+	return string(f.Name())
 }
