@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/google/uuid"
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	common "github.com/kube-nfv/kube-vim/internal/config"
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/misc"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,11 +64,11 @@ func (m *manager) EnsureManagementNetwork(ctx context.Context, cfg *config.Manag
 	if err != nil {
 		return fmt.Errorf("ensure management vpc '%s': %w", vpcName, err)
 	}
-	vpcUID := string(vpc.GetUID())
-	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, vpcUID, subnetName, nadName, nadNamespace); err != nil {
+	networkId := vpc.Labels[network.K8sNetworkIdLabel]
+	if err := m.ensureMgmtSubnet(ctx, log, cfg, vpcName, networkId, subnetName, nadName, nadNamespace); err != nil {
 		return fmt.Errorf("ensure management subnet '%s': %w", subnetName, err)
 	}
-	if err := m.ensureMgmtNetAttach(ctx, log, subnetName, nadName, nadNamespace); err != nil {
+	if err := m.ensureMgmtNetAttach(ctx, log, networkId, nadName, nadNamespace); err != nil {
 		return fmt.Errorf("ensure management network-attachment-definition '%s/%s': %w", nadNamespace, nadName, err)
 	}
 
@@ -74,49 +76,62 @@ func (m *manager) EnsureManagementNetwork(ctx context.Context, cfg *config.Manag
 	return nil
 }
 
-func mgmtVpcLabels() map[string]string {
-	return map[string]string{
-		common.K8sManagedByLabel: common.KubeNfvName,
+// idOrNew returns the id in labels[key], or a new one when there is none, so ids survive restarts.
+func idOrNew(labels map[string]string, key string) string {
+	if id := labels[key]; id != "" {
+		return id
 	}
+	return uuid.NewString()
 }
 
-func mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName string) map[string]string {
-	labels := map[string]string{
-		common.K8sManagedByLabel:            common.KubeNfvName,
-		network.K8sSubnetNameLabel:          subnetName,
-		network.K8sSubnetNetAttachNameLabel: nadName,
-		network.K8sNetworkNameLabel:         vpcName,
-		network.K8sNetworkTypeLabel:         nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY.String(),
-	}
-	// vpcUID is empty only on transient Vpc states where Create returned a
-	// partially-populated object; skip the label so we don't write an empty
-	// value. The next reconcile pass will fill it in.
-	if vpcUID != "" {
-		labels[network.K8sNetworkIdLabel] = vpcUID
-	}
+func mgmtVpcLabels(networkId string) map[string]string {
+	labels := networkLabels(networkId)
+	labels[network.K8sManagementNetworkLabel] = "true"
 	return labels
 }
 
-func mgmtNetAttachLabels(subnetName string) map[string]string {
-	return map[string]string{
-		common.K8sManagedByLabel:   common.KubeNfvName,
-		network.K8sSubnetNameLabel: subnetName,
+func mgmtVpcAnnotations(vpcName string) (map[string]string, error) {
+	return networkAnnotations(&networkv1.Network{NetworkName: vpcName, NetworkType: networkv1.NetworkType_NETWORK_TYPE_GENEVE})
+}
+
+func mgmtSubnetLabels(networkId, subnetId string) map[string]string {
+	labels := networkLabels(networkId)
+	labels[network.K8sSubnetIdIPv4Label] = subnetId
+	return labels
+}
+
+func mgmtSubnetAnnotations(cidr string) (map[string]string, error) {
+	raw, err := protojson.Marshal(&networkv1.Subnet{Data: &networkv1.SubnetData{IpVersion: commonv1.IpVersion_IP_VERSION_IPV4, Cidr: cidr}})
+	if err != nil {
+		return nil, fmt.Errorf("marshal management subnet: %w", err)
 	}
+	return map[string]string{network.K8sSubnetIPv4Annotation: string(raw)}, nil
+}
+
+// mergeMeta merges required labels and annotations into obj; it reports whether anything changed.
+func mergeMeta(obj v1.Object, labels, annotations map[string]string) bool {
+	labelsChanged, mergedLabels := misc.MergeLabels(obj.GetLabels(), labels)
+	annotationsChanged, mergedAnnotations := misc.MergeLabels(obj.GetAnnotations(), annotations)
+	obj.SetLabels(mergedLabels)
+	obj.SetAnnotations(mergedAnnotations)
+	return labelsChanged || annotationsChanged
 }
 
 func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName string) (*kubeovnv1.Vpc, error) {
+	annotations, err := mgmtVpcAnnotations(vpcName)
+	if err != nil {
+		return nil, err
+	}
 	// Uncached read: the Vpc may pre-exist without the managed-by label (so it is
 	// not in the cache) and this is exactly where we add that label.
 	existing := &kubeovnv1.Vpc{}
-	err := m.apiReader.Get(ctx, client.ObjectKey{Name: vpcName}, existing)
+	err = m.apiReader.Get(ctx, client.ObjectKey{Name: vpcName}, existing)
 	if err == nil {
-		changed, merged := misc.MergeLabels(existing.Labels, mgmtVpcLabels())
-		if !changed {
+		base := existing.DeepCopy()
+		if !mergeMeta(existing, mgmtVpcLabels(idOrNew(existing.Labels, network.K8sNetworkIdLabel)), annotations) {
 			log.Debug("Vpc already exists with required labels")
 			return existing, nil
 		}
-		base := existing.DeepCopy()
-		existing.Labels = merged
 		if err := m.client.Patch(ctx, existing, client.MergeFrom(base)); err != nil {
 			return nil, fmt.Errorf("patch vpc labels: %w", err)
 		}
@@ -129,8 +144,9 @@ func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName st
 
 	vpc := &kubeovnv1.Vpc{
 		ObjectMeta: v1.ObjectMeta{
-			Name:   vpcName,
-			Labels: mgmtVpcLabels(),
+			Name:        vpcName,
+			Labels:      mgmtVpcLabels(uuid.NewString()),
+			Annotations: annotations,
 		},
 		Spec: kubeovnv1.VpcSpec{},
 	}
@@ -149,19 +165,21 @@ func (m *manager) ensureMgmtVpc(ctx context.Context, log *zap.Logger, vpcName st
 	return vpc, nil
 }
 
-func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, vpcUID, subnetName, nadName, nadNamespace string) error {
-	required := mgmtSubnetLabels(vpcName, vpcUID, subnetName, nadName)
+func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *config.ManagementNetworkConfig, vpcName, networkId, subnetName, nadName, nadNamespace string) error {
 	existing := &kubeovnv1.Subnet{}
 	err := m.apiReader.Get(ctx, client.ObjectKey{Name: subnetName}, existing)
 	if err == nil {
-		changed, merged := misc.MergeLabels(existing.Labels, required)
-		if !changed {
+		// The subnet spec is never changed, so the stored subnet follows its CIDR rather than cfg.
+		annotations, err := mgmtSubnetAnnotations(existing.Spec.CIDRBlock)
+		if err != nil {
+			return err
+		}
+		base := existing.DeepCopy()
+		if !mergeMeta(existing, mgmtSubnetLabels(networkId, idOrNew(existing.Labels, network.K8sSubnetIdIPv4Label)), annotations) {
 			log.Debug("Subnet already exists with required labels",
 				zap.String("cidr", existing.Spec.CIDRBlock))
 			return nil
 		}
-		base := existing.DeepCopy()
-		existing.Labels = merged
 		if err := m.client.Patch(ctx, existing, client.MergeFrom(base)); err != nil {
 			return fmt.Errorf("patch subnet labels: %w", err)
 		}
@@ -172,10 +190,15 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 		return fmt.Errorf("get subnet: %w", err)
 	}
 
+	annotations, err := mgmtSubnetAnnotations(*cfg.Cidr)
+	if err != nil {
+		return err
+	}
 	sub := &kubeovnv1.Subnet{
 		ObjectMeta: v1.ObjectMeta{
-			Name:   subnetName,
-			Labels: required,
+			Name:        subnetName,
+			Labels:      mgmtSubnetLabels(networkId, uuid.NewString()),
+			Annotations: annotations,
 		},
 		Spec: kubeovnv1.SubnetSpec{
 			Vpc:         vpcName,
@@ -203,8 +226,8 @@ func (m *manager) ensureMgmtSubnet(ctx context.Context, log *zap.Logger, cfg *co
 	return nil
 }
 
-func (m *manager) ensureMgmtNetAttach(ctx context.Context, log *zap.Logger, subnetName, nadName, nadNamespace string) error {
-	required := mgmtNetAttachLabels(subnetName)
+func (m *manager) ensureMgmtNetAttach(ctx context.Context, log *zap.Logger, networkId, nadName, nadNamespace string) error {
+	required := withNicType(networkLabels(networkId), network.NicTypeBridge)
 	nadKey := client.ObjectKey{Namespace: nadNamespace, Name: nadName}
 	existing := &netattv1.NetworkAttachmentDefinition{}
 	err := m.apiReader.Get(ctx, nadKey, existing)

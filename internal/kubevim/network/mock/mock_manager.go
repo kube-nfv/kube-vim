@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
-	network "github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -44,71 +43,32 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 }
 
 // CreateNetwork mocks base method.
-func (m *MockManager) CreateNetwork(arg0 context.Context, arg1 string, arg2 *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error) {
+func (m *MockManager) CreateNetwork(arg0 context.Context, arg1 *networkv1.Network) (*networkv1.Network, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateNetwork", arg0, arg1, arg2)
-	ret0, _ := ret[0].(*vivnfm.VirtualNetwork)
+	ret := m.ctrl.Call(m, "CreateNetwork", arg0, arg1)
+	ret0, _ := ret[0].(*networkv1.Network)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateNetwork indicates an expected call of CreateNetwork.
-func (mr *MockManagerMockRecorder) CreateNetwork(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockManagerMockRecorder) CreateNetwork(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetwork", reflect.TypeOf((*MockManager)(nil).CreateNetwork), arg0, arg1, arg2)
-}
-
-// CreateSubnet mocks base method.
-func (m *MockManager) CreateSubnet(arg0 context.Context, arg1 string, arg2 *vivnfm.NetworkSubnetData) (*vivnfm.NetworkSubnet, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSubnet", arg0, arg1, arg2)
-	ret0, _ := ret[0].(*vivnfm.NetworkSubnet)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateSubnet indicates an expected call of CreateSubnet.
-func (mr *MockManagerMockRecorder) CreateSubnet(arg0, arg1, arg2 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSubnet", reflect.TypeOf((*MockManager)(nil).CreateSubnet), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetwork", reflect.TypeOf((*MockManager)(nil).CreateNetwork), arg0, arg1)
 }
 
 // DeleteNetwork mocks base method.
-func (m *MockManager) DeleteNetwork(arg0 context.Context, arg1 ...network.GetNetworkOpt) error {
+func (m *MockManager) DeleteNetwork(ctx context.Context, networkId string) error {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "DeleteNetwork", varargs...)
+	ret := m.ctrl.Call(m, "DeleteNetwork", ctx, networkId)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteNetwork indicates an expected call of DeleteNetwork.
-func (mr *MockManagerMockRecorder) DeleteNetwork(arg0 any, arg1 ...any) *gomock.Call {
+func (mr *MockManagerMockRecorder) DeleteNetwork(ctx, networkId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNetwork", reflect.TypeOf((*MockManager)(nil).DeleteNetwork), varargs...)
-}
-
-// DeleteSubnet mocks base method.
-func (m *MockManager) DeleteSubnet(arg0 context.Context, arg1 ...network.GetSubnetOpt) error {
-	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "DeleteSubnet", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteSubnet indicates an expected call of DeleteSubnet.
-func (mr *MockManagerMockRecorder) DeleteSubnet(arg0 any, arg1 ...any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSubnet", reflect.TypeOf((*MockManager)(nil).DeleteSubnet), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNetwork", reflect.TypeOf((*MockManager)(nil).DeleteNetwork), ctx, networkId)
 }
 
 // EnsureManagementNetwork mocks base method.
@@ -126,50 +86,40 @@ func (mr *MockManagerMockRecorder) EnsureManagementNetwork(arg0, arg1 any) *gomo
 }
 
 // GetNetwork mocks base method.
-func (m *MockManager) GetNetwork(arg0 context.Context, arg1 ...network.GetNetworkOpt) (*vivnfm.VirtualNetwork, error) {
+func (m *MockManager) GetNetwork(ctx context.Context, networkId string) (*networkv1.Network, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "GetNetwork", varargs...)
-	ret0, _ := ret[0].(*vivnfm.VirtualNetwork)
+	ret := m.ctrl.Call(m, "GetNetwork", ctx, networkId)
+	ret0, _ := ret[0].(*networkv1.Network)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetNetwork indicates an expected call of GetNetwork.
-func (mr *MockManagerMockRecorder) GetNetwork(arg0 any, arg1 ...any) *gomock.Call {
+func (mr *MockManagerMockRecorder) GetNetwork(ctx, networkId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetwork", reflect.TypeOf((*MockManager)(nil).GetNetwork), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetwork", reflect.TypeOf((*MockManager)(nil).GetNetwork), ctx, networkId)
 }
 
 // GetSubnet mocks base method.
-func (m *MockManager) GetSubnet(arg0 context.Context, arg1 ...network.GetSubnetOpt) (*vivnfm.NetworkSubnet, error) {
+func (m *MockManager) GetSubnet(ctx context.Context, subnetId string) (*networkv1.Subnet, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "GetSubnet", varargs...)
-	ret0, _ := ret[0].(*vivnfm.NetworkSubnet)
+	ret := m.ctrl.Call(m, "GetSubnet", ctx, subnetId)
+	ret0, _ := ret[0].(*networkv1.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetSubnet indicates an expected call of GetSubnet.
-func (mr *MockManagerMockRecorder) GetSubnet(arg0 any, arg1 ...any) *gomock.Call {
+func (mr *MockManagerMockRecorder) GetSubnet(ctx, subnetId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubnet", reflect.TypeOf((*MockManager)(nil).GetSubnet), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubnet", reflect.TypeOf((*MockManager)(nil).GetSubnet), ctx, subnetId)
 }
 
 // ListNetworks mocks base method.
-func (m *MockManager) ListNetworks(arg0 context.Context) ([]*vivnfm.VirtualNetwork, error) {
+func (m *MockManager) ListNetworks(arg0 context.Context) ([]*networkv1.Network, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListNetworks", arg0)
-	ret0, _ := ret[0].([]*vivnfm.VirtualNetwork)
+	ret0, _ := ret[0].([]*networkv1.Network)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -181,10 +131,10 @@ func (mr *MockManagerMockRecorder) ListNetworks(arg0 any) *gomock.Call {
 }
 
 // ListSubnets mocks base method.
-func (m *MockManager) ListSubnets(arg0 context.Context) ([]*vivnfm.NetworkSubnet, error) {
+func (m *MockManager) ListSubnets(arg0 context.Context) ([]*networkv1.Subnet, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListSubnets", arg0)
-	ret0, _ := ret[0].([]*vivnfm.NetworkSubnet)
+	ret0, _ := ret[0].([]*networkv1.Subnet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

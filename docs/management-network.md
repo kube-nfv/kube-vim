@@ -112,12 +112,12 @@ per-NS resources.
 ### Architecture
 
 * Kube-vim creates the trio once at startup if it does not exist. If it
-  exists, kube-vim verifies labels and patches any missing ones.
-* All labels follow kube-vim's existing conventions
-  (`K8sManagedByLabel`, `K8sSubnetNameLabel`, `K8sSubnetNetAttachNameLabel`,
-  `K8sNetworkNameLabel`, `K8sNetworkTypeLabel`) so the rest of the kube-vim
-  code path treats the management network identically to any other kube-vim
-  managed network.
+  exists, kube-vim verifies labels and annotations and patches any missing ones.
+* The trio carries the labels and annotations of any kube-vim network (managed-by,
+  network ID, IPv4 subnet ID, the stored network and subnet), so it is listed and
+  read like any other network. Its IDs are generated on first creation and kept
+  across restarts. The Vpc is also labelled `network.kubevim.kubenfv.io/management`,
+  and deleting the management network through the API is refused.
 * OSM RO discovers the network via its existing `management_network_name`
   VIM-config knob. The kubevim RO connector's `get_network_list` already
   supports filtering by name; no Python code changes are required.
