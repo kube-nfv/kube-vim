@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/zapr"
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/k8s"
@@ -16,10 +17,6 @@ import (
 	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	cdiimmage "github.com/kube-nfv/kube-vim/internal/kubevim/image/cdi"
-	//"github.com/kube-nfv/kube-vim/internal/kubevim/image/glance"
-	//http_im "github.com/kube-nfv/kube-vim/internal/kubevim/image/http"
-	//"github.com/kube-nfv/kube-vim/internal/kubevim/image/local"
-	"github.com/go-logr/zapr"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/composite"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
@@ -188,34 +185,6 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig, k8sCfg *confi
 		return fmt.Errorf("initialize kubevirt cdi image manager: %w", err)
 	}
 	return nil
-	/*
-		cdiCtrl, err := image.NewCdiController(k8sConfig)
-		if err != nil {
-			return fmt.Errorf("initialize kubevirt cdi controller: %w", err)
-		}
-		if cfg.Http != nil {
-			m.imageMgr, err = http_im.NewHttpImageManager(cdiCtrl, cfg.Http)
-			if err != nil {
-				return fmt.Errorf("initialize HTTP image manager: %w", err)
-			}
-			return nil
-		}
-		if cfg.Local != nil {
-			m.imageMgr, err = local.NewLocalImageManager(cfg.Local)
-			if err != nil {
-				return fmt.Errorf("initialize Local image manager: %w", err)
-			}
-			return nil
-		}
-		if cfg.Glance != nil {
-			m.imageMgr, err = glance.NewGlanceImageManager(cfg.Glance)
-			if err != nil {
-				return fmt.Errorf("initialize Glance image manager: %w", err)
-			}
-			return nil
-		}
-		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "no valid image manager configuration found (http, local, or glance required)"}
-	*/
 }
 
 func (m *kubevimManager) initNetworkManager(k8sCfg *config.K8sConfig) error {
