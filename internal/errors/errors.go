@@ -41,6 +41,17 @@ func (e *ErrInvalidArgument) Error() string {
 	return fmt.Sprintf("invalid %s", e.Field)
 }
 
+// ErrInvalidState for a resource whose state does not allow the operation
+type ErrInvalidState struct {
+	Entity     string
+	Identifier string
+	Reason     string
+}
+
+func (e *ErrInvalidState) Error() string {
+	return fmt.Sprintf("%s '%s' %s", e.Entity, e.Identifier, e.Reason)
+}
+
 // ErrAlreadyExists for cases where entity and identifier matter
 type ErrAlreadyExists struct {
 	Entity     string

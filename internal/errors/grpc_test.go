@@ -49,6 +49,13 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 			expectedReason: "VALIDATION_FAILED",
 		},
 		{
+			name:           "InvalidStateError",
+			inputError:     &ErrInvalidState{Entity: "software image", Identifier: "img1", Reason: "is not available (status IMPORTING)"},
+			expectedCode:   codes.FailedPrecondition,
+			expectedMsg:    "software image 'img1' is not available (status IMPORTING)",
+			expectedReason: "INVALID_STATE",
+		},
+		{
 			name:           "AlreadyExistsError is internal",
 			inputError:     &ErrAlreadyExists{Entity: "flavour", Identifier: "xyz789"},
 			expectedCode:   codes.Internal,

@@ -30,6 +30,11 @@ func (c *CommonErrorConverter) ConvertToGrpcError(err error) error {
 		return reasonStatus(codes.InvalidArgument, commonv1.ErrorReason_ERROR_REASON_VALIDATION_FAILED, err.Error())
 	}
 
+	var invalidStateErr *ErrInvalidState
+	if errors.As(err, &invalidStateErr) {
+		return reasonStatus(codes.FailedPrecondition, commonv1.ErrorReason_ERROR_REASON_INVALID_STATE, err.Error())
+	}
+
 	// Kube-vim generates every Kubernetes name, so a clash is an internal error.
 	var alreadyExistsErr *ErrAlreadyExists
 	if errors.As(err, &alreadyExistsErr) {
