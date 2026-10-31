@@ -154,14 +154,13 @@ network:
 
 ### Required labels and why
 
-`initNetwork` (`internal/kubevim/compute/kubevirt/ipam.go`) reads
-the following labels off the `Subnet` object on every VM creation:
+VM creation finds a network's objects by its ID label (`network.Manager.Attachment`):
 
 | Label                              | Purpose                                                       |
 |------------------------------------|---------------------------------------------------------------|
 | `app.kubernetes.io/managed-by`     | Ownership guard; kube-vim refuses unmanaged objects.          |
-| `network.kubevim.kubenfv.io/subnet-net-attach-name` | Tells kube-vim which `NetworkAttachmentDefinition` corresponds to this subnet. There is no naming convention fallback. |
-| `network.kubevim.kubenfv.io/subnet-name` | Used as the `logical_switch` annotation value on the VM pod. Without it, kube-OVN falls back to `ovn-default` and the VM lands on the wrong subnet. |
+| `network.kubevim.kubenfv.io/network-id` | On the Vpc, Subnet and NAD: finds the network's objects. Without it on the Subnet, the VM pod gets no `logical_switch` annotation and kube-OVN puts it on `ovn-default`. |
+| `network.kubevim.kubenfv.io/nic-type: bridge` | On the NAD: the attachment bridged interfaces use. |
 
 The `K8sNetworkNameLabel`, `K8sNetworkIdLabel`, and `K8sNetworkTypeLabel`
 labels are written too but are informational — `nfvNetworkSubnetFromKubeovnSubnet`

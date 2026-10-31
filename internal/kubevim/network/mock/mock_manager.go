@@ -15,6 +15,7 @@ import (
 
 	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
+	network "github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -40,6 +41,21 @@ func NewMockManager(ctrl *gomock.Controller) *MockManager {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
+}
+
+// Attachment mocks base method.
+func (m *MockManager) Attachment(ctx context.Context, networkId, nicType string) (*network.Attachment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Attachment", ctx, networkId, nicType)
+	ret0, _ := ret[0].(*network.Attachment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Attachment indicates an expected call of Attachment.
+func (mr *MockManagerMockRecorder) Attachment(ctx, networkId, nicType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attachment", reflect.TypeOf((*MockManager)(nil).Attachment), ctx, networkId, nicType)
 }
 
 // CreateNetwork mocks base method.

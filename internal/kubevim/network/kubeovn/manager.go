@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -287,6 +288,33 @@ func (m *manager) GetSubnet(ctx context.Context, subnetId string) (*networkv1.Su
 		return nil, fmt.Errorf("%d kube-ovn subnets carry subnet id '%s': %w", len(subnets.Items), subnetId, apperrors.ErrInternal)
 	}
 	return nil, &apperrors.ErrNotFound{Entity: "subnet", Identifier: subnetId}
+}
+
+func (m *manager) Attachment(ctx context.Context, networkId string, nicType string) (*network.Attachment, error) {
+	objs, err := m.getNetworkObjects(ctx, networkId)
+	if err != nil {
+		return nil, err
+	}
+	res := &network.Attachment{}
+	for _, nad := range objs.nads {
+		if nad.Labels[network.K8sNicTypeLabel] == nicType {
+			res.NetAttachName = nad.Name
+		}
+	}
+	if res.NetAttachName == "" {
+		reason := "has no subnets; it takes only SRIOV interfaces"
+		if nicType == network.NicTypeSriov {
+			reason = "has no sriov settings"
+		}
+		return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("network '%s'", networkId), Reason: reason}
+	}
+	if objs.subnet != nil {
+		res.Cidrs = strings.Split(objs.subnet.Spec.CIDRBlock, ",")
+		if nicType == network.NicTypeBridge {
+			res.LogicalSwitch = objs.subnet.Name
+		}
+	}
+	return res, nil
 }
 
 func (m *manager) ListSubnets(ctx context.Context) ([]*networkv1.Subnet, error) {
