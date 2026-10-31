@@ -236,6 +236,9 @@ func (m *kubevimManager) initNetworkManager(k8sCfg *config.K8sConfig) error {
 }
 
 func (m *kubevimManager) initFlavourManager(cfg *config.K8sConfig) error {
+	if err := k8s.IndexLabels(context.Background(), m.cluster.GetFieldIndexer(), kubevirt_flavour.IdIndexes...); err != nil {
+		return fmt.Errorf("index flavours: %w", err)
+	}
 	var err error
 	m.flavourMgr, err = kubevirt_flavour.NewFlavourManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg)
 	if err != nil {
