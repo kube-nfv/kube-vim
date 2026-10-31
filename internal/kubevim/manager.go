@@ -17,6 +17,7 @@ import (
 	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	cdiimmage "github.com/kube-nfv/kube-vim/internal/kubevim/image/cdi"
+	httpsource "github.com/kube-nfv/kube-vim/internal/kubevim/image/source/http"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/composite"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
@@ -179,8 +180,12 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig, k8sCfg *confi
 	if cfg == nil {
 		return &apperrors.ErrInvalidArgument{Field: "imageConfig", Reason: "cannot be nil"}
 	}
+	if err := k8s.IndexLabels(context.Background(), m.cluster.GetFieldIndexer(), cdiimmage.IdIndexes...); err != nil {
+		return fmt.Errorf("index images: %w", err)
+	}
 	var err error
-	m.imageMgr, err = cdiimmage.NewCDIImageManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg, k8sCfg)
+	sources := map[string]image.Source{httpsource.Kind: httpsource.New()}
+	m.imageMgr, err = cdiimmage.NewCDIImageManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg, k8sCfg, sources)
 	if err != nil {
 		return fmt.Errorf("initialize kubevirt cdi image manager: %w", err)
 	}

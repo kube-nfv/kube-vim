@@ -90,31 +90,6 @@ needed because the directive uses `go run`.
 gomock is used only for the **domain** interfaces. The Kubernetes client is never
 gomock'd — the fake client covers that seam better.
 
-### The image.Manager exception (gRPC embedding)
-
-`image.Manager` embeds the gRPC `admin.AdminServer`, whose forced
-`mustEmbedUnimplementedAdminServer()` method exists specifically to prevent
-external implementations. gomock cannot satisfy it (a generated mock's
-same-named method belongs to the mock package, not `admin`). This is a known
-gomock ↔ gRPC incompatibility.
-
-The fix is to keep the mockable ETSI surface separate from the un-mockable gRPC
-surface:
-
-- `image.NfvImageManager` (`GetImage`, `ListImages`) is split out and gomock'd.
-- `image.Manager` embeds `admin.AdminServer` + `NfvImageManager`.
-- Tests double `image.Manager` with a small type embedding
-  `admin.UnimplementedAdminServer` (supplies the AdminServer methods and the
-  forced `mustEmbed`) plus the `NfvImageManager` mock. The method sets are
-  disjoint, so there is no ambiguity:
-
-```go
-type imageManagerMock struct {
-    admin.UnimplementedAdminServer
-    *imagemock.MockNfvImageManager
-}
-```
-
 ## What is tested
 
 - **Manager Kubernetes logic (fake client):** `flavour/kubevirt`, `network/sriov`,
