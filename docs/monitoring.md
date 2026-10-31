@@ -78,14 +78,16 @@ Correlation (value always `1`):
 
 | Metric | Key labels |
 |---|---|
-| `kubevim_compute_info` | `compute_id`, `compute_name`, `flavour_id`, `image_id`, `host_id`, `pod_name`, `operational_state`, `running_state` |
-| `kubevim_vnic_info` | `compute_id`, `compute_name`, `vnic_id`, `network_id`, `subnet_id`, `network_port_id`, `type`, `host_id`, `pci_address` |
+| `kubevim_compute_info` | `compute_id`, `compute_name`, `vm_name`, `flavour_id`, `image_id`, `host_id`, `pod_name`, `operational_state`, `running_state` |
+| `kubevim_vnic_info` | `compute_id`, `compute_name`, `vm_name`, `vnic_id`, `network_id`, `type`, `host_id`, `pci_address` |
 | `kubevim_network_info` | `network_id`, `network_name`, `network_type`, `provider_network`, `segmentation_id`, `operational_state` |
 
-`compute_name` equals the KubeVirt VM/VMI name — the join key to the `name` label
-on `kubevirt_vmi_*`. `compute_id` is the ETSI compute id (the VM UID). `pod_name` is
-the virt-launcher pod — the join key to pod-scoped series (cAdvisor `container_*`,
-kube-state-metrics `kube_pod_*`) that `kubevirt_vmi_*` does not cover.
+`vm_name` is the KubeVirt VM/VMI name (`vm-<compute id>`) — the join key to the `name`
+label on `kubevirt_vmi_*`. `compute_id` is the v1 compute id; `compute_name` is the
+consumer's name, as the API returns it. `pod_name` is the virt-launcher pod — the join
+key to pod-scoped series (cAdvisor `container_*`, kube-state-metrics `kube_pod_*`) that
+`kubevirt_vmi_*` does not cover. Both come from the compute's `kubevim.kubenfv.io/vm-name`
+and `kubevim.kubenfv.io/pod-name` metadata keys.
 
 On `kubevim_vnic_info`, two labels make a vNIC deterministically joinable to its
 backend counters:
@@ -93,7 +95,8 @@ backend counters:
 - `pci_address` — the **host** VF/pass-through PCI address of a host-PCI vNIC
   (`type=TYPE_VIRTUAL_NIC_SRIOV`); the join key to the SR-IOV VF exporter's
   `sriov_vf_*{pciAddr}` series. Empty for virtio/bridge vNICs. Sourced from the
-  virt-launcher pod's `kubevirt.io/network-info` annotation.
+  interface's `host_pci_address`, which kube-vim reads from the virt-launcher pod's
+  `kubevirt.io/network-info` annotation.
 - `host_id` — the node name (matches `kubevim_compute_info.host_id`). Keeps the
   `pci_address` join unambiguous: PCI addresses are node-local, not cluster-unique.
 
@@ -105,7 +108,7 @@ in the `kubevirt.io/kubevirt` application module, which is not consumable as a
 library (kube-vim depends only on the `kubevirt.io/api` / `client-go` staging modules).
 
 Bridge/virtio vNICs need no extra label: KubeVirt sets the `interface` label on
-`kubevirt_vmi_network_*` to the network name, which equals `vnic_id`, so the join
+`kubevirt_vmi_network_*` to the interface name, which equals `vnic_id`, so the join
 keys on `vnic_id` directly. (SR-IOV VF traffic bypasses virtio and never appears in
 `kubevirt_vmi_network_*`.)
 
@@ -120,11 +123,11 @@ sriov_vf_rx_packets
 kubevirt_vmi_network_receive_packets_total
   * on(name, interface) group_left(compute_id, vnic_id)
   label_replace(label_replace(kubevim_vnic_info{type="TYPE_VIRTUAL_NIC_BRIDGE"},
-      "name", "$1", "compute_name", "(.+)"), "interface", "$1", "vnic_id", "(.+)")
+      "name", "$1", "vm_name", "(.+)"), "interface", "$1", "vnic_id", "(.+)")
 ```
 
 The gauges are OTEL observable gauges whose callback reuses the domain managers'
-existing `List*` methods (`compute.Manager.ListComputeResources`,
+existing `List*` methods (`compute.Manager.ListComputes`,
 `network.Manager.ListNetworks`) — the telemetry layer holds no state of its own,
 consistent with kube-vim being stateless. The List calls run per scrape, bounded
 by a 10s timeout; a backend error is logged and skipped, never failing the scrape.
@@ -167,7 +170,7 @@ pod annotations are intentionally not emitted — the Operator ignores them.
    `kubevim_vnic_info`, `kubevim_network_info`, `rpc_server_*`, `go_*`,
    `kubevim_build_info`, `rest_client_requests_total`.
 3. Confirm the backends export their own series (KubeVirt/kube-OVN/SR-IOV) and
-   that `kubevim_compute_info.compute_name` matches the `name` label on
+   that `kubevim_compute_info.vm_name` matches the `name` label on
    `kubevirt_vmi_*` — that shared label is what the recording rules will join on.
 
 ## Future work (not implemented)

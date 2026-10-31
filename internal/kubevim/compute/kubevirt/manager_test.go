@@ -196,6 +196,7 @@ func TestCreateCompute(t *testing.T) {
 		assert.Equal(t, networkId, data1.NetworkId)
 
 		vm := getVm(t, cl, got.ComputeId)
+		assert.Equal(t, vm.Name, got.Metadata[compute.VmNameMetadataKey])
 		assert.Equal(t, got.ComputeId, vm.Labels[compute.K8sComputeIdLabel])
 		assert.Equal(t, "router-1", vm.Spec.Template.Spec.Hostname)
 		assert.Equal(t, "flavour-f1", vm.Spec.Instancetype.Name)

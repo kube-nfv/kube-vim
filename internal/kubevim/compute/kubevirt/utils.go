@@ -96,6 +96,7 @@ func computeFromVm(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachine
 	if c.Metadata == nil {
 		c.Metadata = map[string]string{}
 	}
+	c.Metadata[compute.VmNameMetadataKey] = vm.Name
 	if launcher.podName != "" {
 		c.Metadata[compute.PodNameMetadataKey] = launcher.podName
 	}

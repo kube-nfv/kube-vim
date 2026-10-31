@@ -15,6 +15,9 @@ const (
 	// PodNameMetadataKey holds the virt-launcher pod name backing a compute;
 	// the join key to pod-scoped backend series (cAdvisor, kube-state-metrics).
 	PodNameMetadataKey = "kubevim.kubenfv.io/pod-name"
+	// VmNameMetadataKey holds the KubeVirt VM/VMI name of a compute; the join key
+	// to the `name` label of kubevirt_vmi_* series.
+	VmNameMetadataKey = "kubevim.kubenfv.io/vm-name"
 )
 
 //go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
