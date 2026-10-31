@@ -4,215 +4,278 @@ import (
 	"context"
 	"testing"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	"github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
+	imagev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/image/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/k8s/k8stest"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
-	kubevirt_flavour "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/kubevirt"
 	flavourmock "github.com/kube-nfv/kube-vim/internal/kubevim/flavour/mock"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	imagemock "github.com/kube-nfv/kube-vim/internal/kubevim/image/mock"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
 	networkmock "github.com/kube-nfv/kube-vim/internal/kubevim/network/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-// imageManagerMock satisfies image.Manager: the gRPC admin.AdminServer surface
-// comes from the embedded UnimplementedAdminServer (which gomock cannot generate),
-// while the ETSI query surface is a gomock.
-type imageManagerMock struct {
-	admin.UnimplementedAdminServer
-	*imagemock.MockNfvImageManager
-}
+const (
+	testNamespace = k8stest.TestNamespace
+	networkId     = "3e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b"
+)
 
 type computeMocks struct {
 	flavour *flavourmock.MockManager
-	image   *imagemock.MockNfvImageManager
+	image   *imagemock.MockManager
 	network *networkmock.MockManager
 }
 
-func newComputeManager(t *testing.T, objs ...client.Object) (*manager, computeMocks) {
-	t.Helper()
-	ctrl := gomock.NewController(t)
-	m := computeMocks{
-		flavour: flavourmock.NewMockManager(ctrl),
-		image:   imagemock.NewMockNfvImageManager(ctrl),
-		network: networkmock.NewMockManager(ctrl),
-	}
-	cl := k8stest.NewClient(t, objs...)
-	ns := k8stest.TestNamespace
-	mgr, err := NewComputeManager(cl, cl, &config.K8sConfig{Namespace: &ns}, nil,
-		m.flavour, &imageManagerMock{MockNfvImageManager: m.image}, m.network)
-	require.NoError(t, err)
-	return mgr, m
-}
-
-func seedVM(name string) *kubevirtv1.VirtualMachine {
-	meta := k8stest.ManagedMeta(name)
-	meta.Namespace = k8stest.TestNamespace
-	return &kubevirtv1.VirtualMachine{ObjectMeta: meta}
-}
-
-func TestListComputeResources(t *testing.T) {
-	t.Parallel()
-	t.Run("empty cluster returns nothing", func(t *testing.T) {
-		m, _ := newComputeManager(t)
-		got, err := m.ListComputeResources(context.Background())
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
-
-	t.Run("a VM with no VMI yet is skipped, not an error", func(t *testing.T) {
-		m, _ := newComputeManager(t, seedVM("vm1"))
-		got, err := m.ListComputeResources(context.Background())
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
-}
-
-// kubevirtFlavour builds a flavour whose metadata carries the annotations
-// AllocateComputeResource requires (kubevirt source + instancetype/preference).
-func kubevirtFlavour() *vivnfm.VirtualComputeFlavour {
-	boot := true
-	bootSize := resource.MustParse("10Gi")
-	return &vivnfm.VirtualComputeFlavour{
-		FlavourId: k8stest.ID("f1"),
-		Metadata: &nfvcommon.Metadata{Fields: map[string]string{
-			flavour.K8sFlavourSourceLabel:     kubevirt_flavour.KubevirtFlavourSource,
-			kubevirtv1.InstancetypeAnnotation: "flavour-f1",
-			kubevirtv1.PreferenceAnnotation:   "flavour-pref-f1",
-		}},
-		StorageAttributes: []*vivnfm.VirtualStorageData{{IsBoot: &boot, SizeOfStorage: &bootSize}},
-	}
-}
-
-func readyImage() *vivnfm.SoftwareImageInformation {
-	size := resource.MustParse("2Gi")
-	return &vivnfm.SoftwareImageInformation{
-		SoftwareImageId: k8stest.ID("img1"),
-		Name:            "img1",
-		Status:          "ready",
-		Size:            &size,
-	}
-}
-
-// podOnlyVMI is what KubeVirt would create for a VM with only the management
-// (pod) network; the fake client has no controller, so the test seeds it so
-// waitForVmi finds it and the VM->nfv conversion has an interface to read.
-func podOnlyVMI(name string) *kubevirtv1.VirtualMachineInstance {
-	meta := k8stest.ManagedMeta(name)
-	meta.Namespace = k8stest.TestNamespace
-	return &kubevirtv1.VirtualMachineInstance{
+// runningVmi is the VMI KubeVirt would run for vm.
+func runningVmi(vm *kubevirtv1.VirtualMachine) kubevirtv1.VirtualMachineInstance {
+	meta := k8stest.ManagedMeta(vm.Name)
+	meta.Namespace = vm.Namespace
+	return kubevirtv1.VirtualMachineInstance{
 		ObjectMeta: meta,
-		Spec: kubevirtv1.VirtualMachineInstanceSpec{
-			Networks: []kubevirtv1.Network{{
-				Name:          KubevirtVmMgmtNetworkName,
-				NetworkSource: kubevirtv1.NetworkSource{Pod: &kubevirtv1.PodNetwork{}},
-			}},
-			Domain: kubevirtv1.DomainSpec{Devices: kubevirtv1.Devices{Interfaces: []kubevirtv1.Interface{{
-				Name:                   KubevirtVmMgmtNetworkName,
-				InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{Masquerade: &kubevirtv1.InterfaceMasquerade{}},
-			}}}},
+		Spec:       vm.Spec.Template.Spec,
+		Status: kubevirtv1.VirtualMachineInstanceStatus{
+			Phase:    kubevirtv1.Running,
+			NodeName: "worker-1",
+			Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+				{Name: KubevirtVmMgmtNetworkName, IPs: []string{"10.16.0.5"}, MAC: "02:00:00:00:00:01", InterfaceName: "eth0"},
+			},
 		},
 	}
 }
 
-func allocateReq() *vivnfm.AllocateComputeRequest {
-	return &vivnfm.AllocateComputeRequest{
-		ComputeName:      k8stest.Ptr("myvm"),
-		ComputeFlavourId: k8stest.ID("f1"),
-		VcImageId:        k8stest.ID("img1"),
+// startVmis stands in for KubeVirt: every VM has a running VMI. VMIs are built on read, since the
+// fake client cannot create one (its uint64 status field breaks the field tracker).
+var startVmis = interceptor.Funcs{
+	Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+		vmi, ok := obj.(*kubevirtv1.VirtualMachineInstance)
+		if !ok {
+			return c.Get(ctx, key, obj, opts...)
+		}
+		vm := &kubevirtv1.VirtualMachine{}
+		if err := c.Get(ctx, key, vm); err != nil {
+			return err
+		}
+		*vmi = runningVmi(vm)
+		return nil
+	},
+	List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+		vmis, ok := list.(*kubevirtv1.VirtualMachineInstanceList)
+		if !ok {
+			return c.List(ctx, list, opts...)
+		}
+		vms := &kubevirtv1.VirtualMachineList{}
+		if err := c.List(ctx, vms, opts...); err != nil {
+			return err
+		}
+		for i := range vms.Items {
+			vmis.Items = append(vmis.Items, runningVmi(&vms.Items[i]))
+		}
+		return nil
+	},
+}
+
+func newComputeManager(t *testing.T) (*manager, computeMocks, client.Client) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	m := computeMocks{
+		flavour: flavourmock.NewMockManager(ctrl),
+		image:   imagemock.NewMockManager(ctrl),
+		network: networkmock.NewMockManager(ctrl),
+	}
+	cl := interceptor.NewClient(k8stest.NewIndexedClient(t, IdIndexes), startVmis)
+	ns := testNamespace
+	mgr, err := NewComputeManager(cl, cl, &config.K8sConfig{Namespace: &ns}, nil, m.flavour, m.image, m.network)
+	require.NoError(t, err)
+	return mgr, m, cl
+}
+
+func bridged(name string) *computev1.NetworkInterfaceData {
+	return &computev1.NetworkInterfaceData{Name: name, NetworkId: networkId}
+}
+
+func sriov(name string) *computev1.NetworkInterfaceData {
+	return &computev1.NetworkInterfaceData{
+		Name:           name,
+		NetworkId:      networkId,
+		TypeVirtualNic: computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV,
+		IpAssignment:   computev1.IpAssignment_IP_ASSIGNMENT_NONE,
+		MacAddress:     "02:00:00:aa:bb:02",
 	}
 }
 
-func TestAllocateComputeResource(t *testing.T) {
+func createRequest(ifaces ...*computev1.NetworkInterfaceData) *computev1.CreateComputeRequest {
+	return &computev1.CreateComputeRequest{
+		Compute: &computev1.Compute{
+			ComputeName: "Router_1",
+			FlavourId:   "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+			ImageId:     "5f0c9d2e-3a4b-4c1d-9e8f-0a1b2c3d4e5f",
+			Metadata:    map[string]string{"osm.etsi.org/vdu": "router"},
+		},
+		NetworkInterfaces: ifaces,
+	}
+}
+
+func bootFlavour(storage ...*commonv1.VirtualStorageData) *flavourv1.Flavour {
+	if storage == nil {
+		storage = []*commonv1.VirtualStorageData{{TypeOfStorage: commonv1.TypeOfStorage_TYPE_OF_STORAGE_VOLUME, SizeOfStorage: "10Gi", IsBoot: true}}
+	}
+	return &flavourv1.Flavour{
+		Metadata: map[string]string{
+			flavour.InstancetypeMetadataKey: "flavour-f1",
+			flavour.PreferenceMetadataKey:   "flavour-pref-f1",
+		},
+		StorageAttributes: storage,
+	}
+}
+
+func availableImage() *imagev1.Image {
+	return &imagev1.Image{
+		ImageId:  "5f0c9d2e-3a4b-4c1d-9e8f-0a1b2c3d4e5f",
+		Status:   imagev1.ImageStatus_IMAGE_STATUS_AVAILABLE,
+		Size:     "2Gi",
+		Metadata: map[string]string{image.PvcMetadataKey: "image-5f0c"},
+	}
+}
+
+// expectRefs makes the flavour, image and network lookups of a create succeed.
+func expectRefs(m computeMocks) {
+	m.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(bootFlavour(), nil).AnyTimes()
+	m.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(availableImage(), nil).AnyTimes()
+	m.network.EXPECT().Attachment(gomock.Any(), networkId, network.NicTypeBridge).
+		Return(&network.Attachment{NetAttachName: "net-a", LogicalSwitch: "net-a", Cidrs: []string{"10.0.0.0/24"}}, nil).AnyTimes()
+	m.network.EXPECT().Attachment(gomock.Any(), networkId, network.NicTypeSriov).
+		Return(&network.Attachment{NetAttachName: "net-a-sriov", Cidrs: []string{"10.0.0.0/24"}}, nil).AnyTimes()
+}
+
+func getVm(t *testing.T, cl client.Client, computeId string) *kubevirtv1.VirtualMachine {
+	t.Helper()
+	vm := &kubevirtv1.VirtualMachine{}
+	require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: "vm-" + computeId}, vm))
+	return vm
+}
+
+func TestCreateCompute(t *testing.T) {
 	t.Parallel()
-	t.Run("builds the VM and returns the compute (pod network only)", func(t *testing.T) {
-		// Seed the VMI KubeVirt would create, so the post-create wait resolves.
-		m, mocks := newComputeManager(t, podOnlyVMI("myvm"))
-		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(kubevirtFlavour(), nil)
-		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(readyImage(), nil)
-		// No InterfaceData => resolveInterfaces makes no network calls.
+	t.Run("builds the VM from flavour, image and interfaces", func(t *testing.T) {
+		m, mocks, cl := newComputeManager(t)
+		expectRefs(mocks)
+		static := bridged("")
+		static.IpAssignment = computev1.IpAssignment_IP_ASSIGNMENT_STATIC
+		static.IpAddresses = []string{"10.0.0.5"}
+		req := createRequest(static, sriov("data1"))
+		req.UserData = &computev1.UserData{Content: "#cloud-config\n"}
 
-		got, err := m.AllocateComputeResource(context.Background(), allocateReq())
+		got, err := m.CreateCompute(context.Background(), req)
 		require.NoError(t, err)
-		require.NotNil(t, got)
-		assert.Equal(t, "myvm", got.GetComputeName())
+		assert.Equal(t, "Router_1", got.ComputeName, "the consumer's name, unchanged")
+		assert.Equal(t, "worker-1", got.HostId)
+		assert.Equal(t, computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STARTING, got.RunningState)
+		require.Len(t, got.NetworkInterfaces, 3)
+		mgmt, nic0, data1 := got.NetworkInterfaces[0], got.NetworkInterfaces[1], got.NetworkInterfaces[2]
+		assert.True(t, mgmt.IsManagement)
+		assert.Equal(t, []string{"10.16.0.5"}, mgmt.IpAddresses)
+		assert.Equal(t, commonv1.OperationalState_OPERATIONAL_STATE_ENABLED, mgmt.OperationalState)
+		assert.Equal(t, "nic0", nic0.Name)
+		assert.Equal(t, computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, nic0.TypeVirtualNic)
+		assert.Equal(t, computev1.NicModel_NIC_MODEL_VIRTIO, nic0.Model)
+		assert.Equal(t, computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV, data1.TypeVirtualNic)
+		assert.Equal(t, computev1.NicModel_NIC_MODEL_UNSPECIFIED, data1.Model)
+		assert.Equal(t, networkId, data1.NetworkId)
 
-		// The VM was persisted with the flavour/image ownership labels and a boot DV.
-		cl := m.client
-		vm := &kubevirtv1.VirtualMachine{}
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: k8stest.TestNamespace, Name: "myvm"}, vm))
-		assert.Equal(t, "f1", vm.Labels[flavour.K8sFlavourIdLabel])
-		assert.Equal(t, "img1", vm.Labels[image.K8sImageIdLabel])
-		require.Len(t, vm.Spec.DataVolumeTemplates, 1)
-		assert.Equal(t, "myvm-boot-dv", vm.Spec.DataVolumeTemplates[0].Name)
+		vm := getVm(t, cl, got.ComputeId)
+		assert.Equal(t, got.ComputeId, vm.Labels[compute.K8sComputeIdLabel])
+		assert.Equal(t, "router-1", vm.Spec.Template.Spec.Hostname)
+		assert.Equal(t, "flavour-f1", vm.Spec.Instancetype.Name)
+		assert.Equal(t, "image-5f0c", vm.Spec.DataVolumeTemplates[0].Spec.Source.PVC.Name)
+		assert.Equal(t, "10Gi", vm.Spec.DataVolumeTemplates[0].Spec.Storage.Resources.Requests.Storage().String())
+		ifaces := vm.Spec.Template.Spec.Domain.Devices.Interfaces
+		require.Len(t, ifaces, 3)
+		assert.NotNil(t, ifaces[0].Masquerade)
+		assert.NotNil(t, ifaces[1].Bridge)
+		assert.NotNil(t, ifaces[2].SRIOV)
+		assert.Equal(t, "02:00:00:aa:bb:02", ifaces[2].MacAddress)
+		assert.Equal(t, "net-a-sriov", vm.Spec.Template.Spec.Networks[2].Multus.NetworkName)
+		ann := vm.Spec.Template.ObjectMeta.Annotations
+		assert.Equal(t, "net-a", ann["net-a."+testNamespace+".ovn.kubernetes.io/logical_switch"])
+		assert.Equal(t, "10.0.0.5", ann["net-a."+testNamespace+".ovn.kubernetes.io/ip_address"])
+		assert.NotContains(t, vm.Annotations[compute.K8sComputeAnnotation], "cloud-config", "user data is not stored")
+
+		secret := &corev1.Secret{}
+		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: vm.Name + KubevirtVmCloudInitSecretSuffix}, secret))
 	})
 
-	t.Run("caller name is sanitised for every derived object", func(t *testing.T) {
-		m, mocks := newComputeManager(t, podOnlyVMI("my-vm"))
-		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(kubevirtFlavour(), nil)
-		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(readyImage(), nil)
-		req := allocateReq()
-		req.ComputeName = k8stest.Ptr("My_VM")
-		noCloud := vivnfm.UserData_NO_CLOUD
-		req.UserData = &vivnfm.UserData{Content: "#cloud-config", Method: &noCloud}
-
-		got, err := m.AllocateComputeResource(context.Background(), req)
-		require.NoError(t, err)
-		assert.Equal(t, "my-vm", got.GetComputeName())
-		vm := &kubevirtv1.VirtualMachine{}
-		require.NoError(t, m.client.Get(context.Background(), client.ObjectKey{Namespace: k8stest.TestNamespace, Name: "my-vm"}, vm))
-		require.Len(t, vm.Spec.DataVolumeTemplates, 1)
-		assert.Equal(t, "my-vm-boot-dv", vm.Spec.DataVolumeTemplates[0].Name)
-		require.NoError(t, m.client.Get(context.Background(), client.ObjectKey{Namespace: k8stest.TestNamespace, Name: "my-vm" + KubevirtVmCloudInitSecretSuffix}, &corev1.Secret{}))
+	t.Run("an image that is not available is an invalid state", func(t *testing.T) {
+		m, mocks, _ := newComputeManager(t)
+		img := availableImage()
+		img.Status = imagev1.ImageStatus_IMAGE_STATUS_IMPORTING
+		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(bootFlavour(), nil)
+		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(img, nil)
+		_, err := m.CreateCompute(context.Background(), createRequest())
+		var invalidState *apperrors.ErrInvalidState
+		assert.ErrorAs(t, err, &invalidState)
 	})
 
-	t.Run("nil request is rejected", func(t *testing.T) {
-		m, _ := newComputeManager(t)
-		_, err := m.AllocateComputeResource(context.Background(), nil)
-		var target *apperrors.ErrInvalidArgument
-		assert.ErrorAs(t, err, &target)
-	})
-
-	t.Run("missing flavour id is rejected before any manager call", func(t *testing.T) {
-		m, _ := newComputeManager(t) // no mock expectations => no delegation
-		_, err := m.AllocateComputeResource(context.Background(), &vivnfm.AllocateComputeRequest{VcImageId: k8stest.ID("img1")})
-		var target *apperrors.ErrInvalidArgument
-		assert.ErrorAs(t, err, &target)
-	})
-
-	t.Run("flavour lookup error is wrapped", func(t *testing.T) {
-		m, mocks := newComputeManager(t)
-		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(nil, &apperrors.ErrNotFound{Entity: "flavour"})
-		_, err := m.AllocateComputeResource(context.Background(), allocateReq())
-		var target *apperrors.ErrNotFound
-		assert.ErrorAs(t, err, &target)
-	})
-
-	t.Run("non-kubevirt flavour source is unsupported", func(t *testing.T) {
-		m, mocks := newComputeManager(t)
-		flav := kubevirtFlavour()
-		flav.Metadata.Fields[flavour.K8sFlavourSourceLabel] = "openstack"
-		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(flav, nil)
-		_, err := m.AllocateComputeResource(context.Background(), allocateReq())
+	t.Run("flavour disks beyond the boot disk are unsupported", func(t *testing.T) {
+		m, mocks, _ := newComputeManager(t)
+		disk := &commonv1.VirtualStorageData{TypeOfStorage: commonv1.TypeOfStorage_TYPE_OF_STORAGE_VOLUME, SizeOfStorage: "10Gi"}
+		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(bootFlavour(bootFlavour().StorageAttributes[0], disk), nil)
+		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(availableImage(), nil)
+		_, err := m.CreateCompute(context.Background(), createRequest())
 		assert.ErrorIs(t, err, apperrors.ErrUnsupported)
 	})
 
-	t.Run("image lookup error is wrapped", func(t *testing.T) {
-		m, mocks := newComputeManager(t)
-		mocks.flavour.EXPECT().GetFlavour(gomock.Any(), gomock.Any()).Return(kubevirtFlavour(), nil)
-		mocks.image.EXPECT().GetImage(gomock.Any(), gomock.Any()).Return(nil, &apperrors.ErrNotFound{Entity: "image"})
-		_, err := m.AllocateComputeResource(context.Background(), allocateReq())
-		var target *apperrors.ErrNotFound
-		assert.ErrorAs(t, err, &target)
+	t.Run("a static address outside the network is rejected", func(t *testing.T) {
+		m, mocks, _ := newComputeManager(t)
+		expectRefs(mocks)
+		static := bridged("data0")
+		static.IpAssignment = computev1.IpAssignment_IP_ASSIGNMENT_STATIC
+		static.IpAddresses = []string{"192.168.1.5"}
+		_, err := m.CreateCompute(context.Background(), createRequest(static))
+		var invalid *apperrors.ErrInvalidArgument
+		assert.ErrorAs(t, err, &invalid)
 	})
+}
+
+func TestGetListDeleteCompute(t *testing.T) {
+	t.Parallel()
+	m, mocks, cl := newComputeManager(t)
+	expectRefs(mocks)
+	req := createRequest(bridged("data0"))
+	req.UserData = &computev1.UserData{Content: "#cloud-config\n"}
+	created, err := m.CreateCompute(context.Background(), req)
+	require.NoError(t, err)
+
+	got, err := m.GetCompute(context.Background(), created.ComputeId)
+	require.NoError(t, err)
+	assert.Equal(t, created.ComputeId, got.ComputeId)
+	assert.Equal(t, "router", got.Metadata["osm.etsi.org/vdu"])
+
+	list, err := m.ListComputes(context.Background())
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, created.ComputeId, list[0].ComputeId)
+
+	vmName := "vm-" + created.ComputeId
+	require.NoError(t, m.DeleteCompute(context.Background(), created.ComputeId))
+	err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: vmName}, &kubevirtv1.VirtualMachine{})
+	assert.True(t, apierrors.IsNotFound(err), "VM should be gone")
+	err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: vmName + KubevirtVmCloudInitSecretSuffix}, &corev1.Secret{})
+	assert.True(t, apierrors.IsNotFound(err), "cloud-init secret should be gone")
+
+	var notFound *apperrors.ErrNotFound
+	_, err = m.GetCompute(context.Background(), created.ComputeId)
+	assert.ErrorAs(t, err, &notFound)
 }

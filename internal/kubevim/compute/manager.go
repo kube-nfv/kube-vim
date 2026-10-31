@@ -3,55 +3,25 @@ package compute
 import (
 	"context"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
 )
 
 const (
-	// Request Annotation that identify that subnetId might be ommited (even for Overlay networks) and
-	// the first (random) subnet will be chosen for network port. Annotation should be present
-	// only in AllocateComputeRequest.VirtualNetworkInterfaceData
-	// Values should be one of the following:
-	//    random - Random subnet will be chosen from the VPC for the network port.
-	//    manual - SubnetID should be specified (default)
-	KubenfvVmNetworkSubnetAssignmentAnnotation = "compute.kubevim.kubenfv.io/network.subnet.assignment"
-	UnknownNetworkSubnetAssigmentAnnotationMsg = "unknown network subnet assignment annotation, should be one of: random, manual"
+	K8sComputeIdLabel = "compute.kubevim.kubenfv.io/id"
+	// K8sComputeAnnotation holds the create request as the consumer sent it (protojson, without user data),
+	// with the interface names the VIM chose.
+	K8sComputeAnnotation = "compute.kubevim.kubenfv.io/compute"
 
-	// VnicHostPciAddressMetadataKey holds the host PCI address backing a vNIC, set
-	// only when it maps to a host PCI device (SR-IOV VF or PCI pass-through). Absent
-	// for virtio/bridge vNICs, which are tap devices with no host PCI device.
-	VnicHostPciAddressMetadataKey = "compute.kubevim.kubenfv.io/host-pci-address"
-
-	// ComputePodNameMetadataKey holds the virt-launcher pod name backing a compute;
+	// PodNameMetadataKey holds the virt-launcher pod name backing a compute;
 	// the join key to pod-scoped backend series (cAdvisor, kube-state-metrics).
-	ComputePodNameMetadataKey = "compute.kubevim.kubenfv.io/pod-name"
+	PodNameMetadataKey = "kubevim.kubenfv.io/pod-name"
 )
 
 //go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
 
 type Manager interface {
-	AllocateComputeResource(context.Context, *vivnfm.AllocateComputeRequest) (*vivnfm.VirtualCompute, error)
-	GetComputeResource(context.Context, ...GetComputeOpt) (*vivnfm.VirtualCompute, error)
-	ListComputeResources(context.Context) ([]*vivnfm.VirtualCompute, error)
-	DeleteComputeResource(context.Context, ...GetComputeOpt) error
-}
-
-type GetComputeOpt func(*getComputeOpts)
-type getComputeOpts struct {
-	Name string
-	Uid  *nfvcommon.Identifier
-}
-
-func GetComputeByName(name string) GetComputeOpt {
-	return func(gco *getComputeOpts) { gco.Name = name }
-}
-func GetComputeByUid(uid *nfvcommon.Identifier) GetComputeOpt {
-	return func(gco *getComputeOpts) { gco.Uid = uid }
-}
-func ApplyGetComputeOpts(gco ...GetComputeOpt) *getComputeOpts {
-	res := &getComputeOpts{}
-	for _, opt := range gco {
-		opt(res)
-	}
-	return res
+	CreateCompute(context.Context, *computev1.CreateComputeRequest) (*computev1.Compute, error)
+	GetCompute(ctx context.Context, computeId string) (*computev1.Compute, error)
+	ListComputes(context.Context) ([]*computev1.Compute, error)
+	DeleteCompute(ctx context.Context, computeId string) error
 }

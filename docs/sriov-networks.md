@@ -127,7 +127,7 @@ When `CreateCompute` requests an SR-IOV interface, kube-vim skips subnet and IPA
 
 The KubeVirt binding is unchanged by the move to ovs-cni: KubeVirt discovers the VF PCI address from the Multus `network-status` `device-info`, independent of the CNI type, and passes it through to QEMU.
 
-If a MAC address is provided in the IPAM entry, kube-vim writes a `k8s.v1.cni.cncf.io/networks` runtime-config annotation on the virt-launcher pod so Multus passes it to ovs-cni at VF setup time.
+If the interface has a `macAddress`, kube-vim sets it on the KubeVirt interface; KubeVirt passes it to Multus in the network selection request, and ovs-cni applies it at VF setup time. SR-IOV interfaces take no NIC `model`: the guest sees the VF itself.
 
 ### Bridge provisioning and overlay isolation
 

@@ -13,8 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
-	compute "github.com/kube-nfv/kube-vim/internal/kubevim/compute"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -42,71 +41,61 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
 }
 
-// AllocateComputeResource mocks base method.
-func (m *MockManager) AllocateComputeResource(arg0 context.Context, arg1 *vivnfm.AllocateComputeRequest) (*vivnfm.VirtualCompute, error) {
+// CreateCompute mocks base method.
+func (m *MockManager) CreateCompute(arg0 context.Context, arg1 *computev1.CreateComputeRequest) (*computev1.Compute, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AllocateComputeResource", arg0, arg1)
-	ret0, _ := ret[0].(*vivnfm.VirtualCompute)
+	ret := m.ctrl.Call(m, "CreateCompute", arg0, arg1)
+	ret0, _ := ret[0].(*computev1.Compute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// AllocateComputeResource indicates an expected call of AllocateComputeResource.
-func (mr *MockManagerMockRecorder) AllocateComputeResource(arg0, arg1 any) *gomock.Call {
+// CreateCompute indicates an expected call of CreateCompute.
+func (mr *MockManagerMockRecorder) CreateCompute(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocateComputeResource", reflect.TypeOf((*MockManager)(nil).AllocateComputeResource), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCompute", reflect.TypeOf((*MockManager)(nil).CreateCompute), arg0, arg1)
 }
 
-// DeleteComputeResource mocks base method.
-func (m *MockManager) DeleteComputeResource(arg0 context.Context, arg1 ...compute.GetComputeOpt) error {
+// DeleteCompute mocks base method.
+func (m *MockManager) DeleteCompute(ctx context.Context, computeId string) error {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "DeleteComputeResource", varargs...)
+	ret := m.ctrl.Call(m, "DeleteCompute", ctx, computeId)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// DeleteComputeResource indicates an expected call of DeleteComputeResource.
-func (mr *MockManagerMockRecorder) DeleteComputeResource(arg0 any, arg1 ...any) *gomock.Call {
+// DeleteCompute indicates an expected call of DeleteCompute.
+func (mr *MockManagerMockRecorder) DeleteCompute(ctx, computeId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteComputeResource", reflect.TypeOf((*MockManager)(nil).DeleteComputeResource), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCompute", reflect.TypeOf((*MockManager)(nil).DeleteCompute), ctx, computeId)
 }
 
-// GetComputeResource mocks base method.
-func (m *MockManager) GetComputeResource(arg0 context.Context, arg1 ...compute.GetComputeOpt) (*vivnfm.VirtualCompute, error) {
+// GetCompute mocks base method.
+func (m *MockManager) GetCompute(ctx context.Context, computeId string) (*computev1.Compute, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "GetComputeResource", varargs...)
-	ret0, _ := ret[0].(*vivnfm.VirtualCompute)
+	ret := m.ctrl.Call(m, "GetCompute", ctx, computeId)
+	ret0, _ := ret[0].(*computev1.Compute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetComputeResource indicates an expected call of GetComputeResource.
-func (mr *MockManagerMockRecorder) GetComputeResource(arg0 any, arg1 ...any) *gomock.Call {
+// GetCompute indicates an expected call of GetCompute.
+func (mr *MockManagerMockRecorder) GetCompute(ctx, computeId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetComputeResource", reflect.TypeOf((*MockManager)(nil).GetComputeResource), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCompute", reflect.TypeOf((*MockManager)(nil).GetCompute), ctx, computeId)
 }
 
-// ListComputeResources mocks base method.
-func (m *MockManager) ListComputeResources(arg0 context.Context) ([]*vivnfm.VirtualCompute, error) {
+// ListComputes mocks base method.
+func (m *MockManager) ListComputes(arg0 context.Context) ([]*computev1.Compute, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListComputeResources", arg0)
-	ret0, _ := ret[0].([]*vivnfm.VirtualCompute)
+	ret := m.ctrl.Call(m, "ListComputes", arg0)
+	ret0, _ := ret[0].([]*computev1.Compute)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListComputeResources indicates an expected call of ListComputeResources.
-func (mr *MockManagerMockRecorder) ListComputeResources(arg0 any) *gomock.Call {
+// ListComputes indicates an expected call of ListComputes.
+func (mr *MockManagerMockRecorder) ListComputes(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListComputeResources", reflect.TypeOf((*MockManager)(nil).ListComputeResources), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListComputes", reflect.TypeOf((*MockManager)(nil).ListComputes), arg0)
 }

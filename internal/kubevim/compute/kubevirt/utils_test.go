@@ -3,171 +3,98 @@ package kubevirt
 import (
 	"testing"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
+	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"google.golang.org/protobuf/proto"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func TestGetRunningState(t *testing.T) {
+func TestRunningState(t *testing.T) {
+	halted := kubevirtv1.VirtualMachineStatus{RunStrategy: kubevirtv1.RunStrategyHalted}
+	phase := func(p kubevirtv1.VirtualMachineInstancePhase) *kubevirtv1.VirtualMachineInstance {
+		return &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{Phase: p}}
+	}
 	tests := []struct {
-		name string
-		vm   *kubevirtv1.VirtualMachine
-		vmi  *kubevirtv1.VirtualMachineInstance
-		want nfvcommon.ComputeRunningState
+		name       string
+		vm         *kubevirtv1.VirtualMachine
+		vmi        *kubevirtv1.VirtualMachineInstance
+		want       computev1.ComputeRunningState
+		wantDetail string
 	}{
-		{
-			name: "halted -> stopped",
-			vm:   &kubevirtv1.VirtualMachine{Status: kubevirtv1.VirtualMachineStatus{RunStrategy: kubevirtv1.RunStrategyHalted}},
-			vmi:  &kubevirtv1.VirtualMachineInstance{},
-			want: nfvcommon.ComputeRunningState_STOPPED,
-		},
+		{name: "halted -> stopped", vm: &kubevirtv1.VirtualMachine{Status: halted}, vmi: &kubevirtv1.VirtualMachineInstance{}, want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STOPPED},
+		{name: "halted while running -> stopping", vm: &kubevirtv1.VirtualMachine{Status: halted}, vmi: phase(kubevirtv1.Running), want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STOPPING},
 		{
 			name: "paused condition -> paused",
 			vm:   &kubevirtv1.VirtualMachine{},
 			vmi: &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{
 				Conditions: []kubevirtv1.VirtualMachineInstanceCondition{{Type: kubevirtv1.VirtualMachineInstancePaused}},
 			}},
-			want: nfvcommon.ComputeRunningState_PAUSED,
+			want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_PAUSED,
 		},
 		{
 			name: "terminating",
 			vm:   &kubevirtv1.VirtualMachine{Status: kubevirtv1.VirtualMachineStatus{PrintableStatus: kubevirtv1.VirtualMachineStatusTerminating}},
 			vmi:  &kubevirtv1.VirtualMachineInstance{},
-			want: nfvcommon.ComputeRunningState_TERMINATING,
+			want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_TERMINATING,
 		},
 		{
-			name: "running",
+			name: "running and ready -> started",
 			vm:   &kubevirtv1.VirtualMachine{Status: kubevirtv1.VirtualMachineStatus{Created: true, Ready: true}},
-			vmi:  &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{Phase: kubevirtv1.Running}},
-			want: nfvcommon.ComputeRunningState_RUNNING,
+			vmi:  phase(kubevirtv1.Running),
+			want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STARTED,
 		},
+		{name: "pending -> starting", vm: &kubevirtv1.VirtualMachine{}, vmi: phase(kubevirtv1.Pending), want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STARTING},
 		{
-			name: "pending -> starting",
+			name: "failed with its reason",
 			vm:   &kubevirtv1.VirtualMachine{},
-			vmi:  &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{Phase: kubevirtv1.Pending}},
-			want: nfvcommon.ComputeRunningState_STARTING,
+			vmi: &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{
+				Phase: kubevirtv1.Failed, Reason: "PodTerminating",
+			}},
+			want:       computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_FAILED,
+			wantDetail: "PodTerminating",
 		},
-		{
-			name: "failed",
-			vm:   &kubevirtv1.VirtualMachine{},
-			vmi:  &kubevirtv1.VirtualMachineInstance{Status: kubevirtv1.VirtualMachineInstanceStatus{Phase: kubevirtv1.Failed}},
-			want: nfvcommon.ComputeRunningState_FAILED,
-		},
-		{
-			name: "unknown",
-			vm:   &kubevirtv1.VirtualMachine{},
-			vmi:  &kubevirtv1.VirtualMachineInstance{},
-			want: nfvcommon.ComputeRunningState_UNKNOWN,
-		},
+		{name: "unknown", vm: &kubevirtv1.VirtualMachine{}, vmi: &kubevirtv1.VirtualMachineInstance{}, want: computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_UNSPECIFIED},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, getRunningState(tt.vm, tt.vmi))
-		})
-	}
-}
-
-func TestGetFlavourFromInstanceSpec(t *testing.T) {
-	t.Run("present", func(t *testing.T) {
-		vm := &kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{flavour.K8sFlavourIdLabel: "flav-1"},
-		}}
-		id, err := getFlavourFromInstanceSpec(vm)
-		require.NoError(t, err)
-		assert.Equal(t, "flav-1", id.GetValue())
-	})
-	t.Run("missing", func(t *testing.T) {
-		_, err := getFlavourFromInstanceSpec(&kubevirtv1.VirtualMachine{})
-		assert.Error(t, err)
-	})
-}
-
-func TestGetImageIdFromInstnceSpec(t *testing.T) {
-	t.Run("present", func(t *testing.T) {
-		vm := &kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{image.K8sImageIdLabel: "img-1"},
-		}}
-		id, err := getImageIdFromInstnceSpec(vm)
-		require.NoError(t, err)
-		assert.Equal(t, "img-1", id.GetValue())
-	})
-	t.Run("missing", func(t *testing.T) {
-		_, err := getImageIdFromInstnceSpec(&kubevirtv1.VirtualMachine{})
-		assert.Error(t, err)
-	})
-}
-
-func TestIfaceBindingMethodToNfv(t *testing.T) {
-	tests := []struct {
-		name    string
-		method  kubevirtv1.InterfaceBindingMethod
-		want    nfvcommon.TypeVirtualNic
-		wantErr bool
-	}{
-		{"bridge", kubevirtv1.InterfaceBindingMethod{Bridge: &kubevirtv1.InterfaceBridge{}}, nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, false},
-		{"masquerade", kubevirtv1.InterfaceBindingMethod{Masquerade: &kubevirtv1.InterfaceMasquerade{}}, nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, false},
-		{"sriov", kubevirtv1.InterfaceBindingMethod{SRIOV: &kubevirtv1.InterfaceSRIOV{}}, nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV, false},
-		{"unknown", kubevirtv1.InterfaceBindingMethod{}, nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ifaceBindingMethodToNfv(tt.method)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
+			got, detail := runningState(tt.vm, tt.vmi)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantDetail, detail)
 		})
 	}
 }
 
-func TestGetNetworkFromVm(t *testing.T) {
-	vm := &kubevirtv1.VirtualMachine{Spec: kubevirtv1.VirtualMachineSpec{
-		Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-			Spec: kubevirtv1.VirtualMachineInstanceSpec{
-				Networks: []kubevirtv1.Network{{Name: "net1"}},
-			},
+func TestCheckSupported(t *testing.T) {
+	unsupported := map[string]func(r *computev1.CreateComputeRequest){
+		"placement groups": func(r *computev1.CreateComputeRequest) { r.Compute.PlacementGroupIds = []string{"g"} },
+		"start stopped":    func(r *computev1.CreateComputeRequest) { r.Start = proto.Bool(false) },
+		"e1000 model": func(r *computev1.CreateComputeRequest) {
+			r.NetworkInterfaces[0].Model = computev1.NicModel_NIC_MODEL_E1000
 		},
-	}}
-	t.Run("found", func(t *testing.T) {
-		net, err := getNetworkFromVm("net1", vm)
-		require.NoError(t, err)
-		assert.Equal(t, "net1", net.Name)
-	})
-	t.Run("not found", func(t *testing.T) {
-		_, err := getNetworkFromVm("missing", vm)
-		assert.Error(t, err)
-	})
-	t.Run("nil template", func(t *testing.T) {
-		_, err := getNetworkFromVm("net1", &kubevirtv1.VirtualMachine{})
-		assert.Error(t, err)
-	})
+		"bandwidth": func(r *computev1.CreateComputeRequest) { r.NetworkInterfaces[0].Bandwidth = 100 },
+		"no addresses on a bridged interface": func(r *computev1.CreateComputeRequest) {
+			r.NetworkInterfaces[0].IpAssignment = computev1.IpAssignment_IP_ASSIGNMENT_NONE
+		},
+	}
+	for name, set := range unsupported {
+		t.Run(name, func(t *testing.T) {
+			req := createRequest(bridged("data0"))
+			set(req)
+			assert.ErrorIs(t, checkSupported(req), apperrors.ErrUnsupported)
+		})
+	}
+
+	var invalid *apperrors.ErrInvalidArgument
+	assert.ErrorAs(t, checkSupported(createRequest(bridged(KubevirtVmMgmtNetworkName))), &invalid, "the management interface name is reserved")
+	assert.NoError(t, checkSupported(createRequest(bridged("data0"), sriov("data1"))))
 }
 
-func TestGetInterfaceFromVm(t *testing.T) {
-	vm := &kubevirtv1.VirtualMachine{Spec: kubevirtv1.VirtualMachineSpec{
-		Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-			Spec: kubevirtv1.VirtualMachineInstanceSpec{
-				Domain: kubevirtv1.DomainSpec{Devices: kubevirtv1.Devices{
-					Interfaces: []kubevirtv1.Interface{{Name: "iface1"}},
-				}},
-			},
-		},
-	}}
-	t.Run("found", func(t *testing.T) {
-		iface, err := getInterfaceFromVm("iface1", vm)
-		require.NoError(t, err)
-		assert.Equal(t, "iface1", iface.Name)
-	})
-	t.Run("not found", func(t *testing.T) {
-		_, err := getInterfaceFromVm("missing", vm)
-		assert.Error(t, err)
-	})
+func TestNameInterfaces(t *testing.T) {
+	ifaces := []*computev1.NetworkInterfaceData{bridged(""), bridged("nic0"), bridged("")}
+	nameInterfaces(ifaces)
+	assert.Equal(t, []string{"nic1", "nic0", "nic2"}, []string{ifaces[0].Name, ifaces[1].Name, ifaces[2].Name})
 }
 
 func TestFormatVmName(t *testing.T) {
