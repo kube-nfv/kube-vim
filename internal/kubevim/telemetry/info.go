@@ -68,42 +68,44 @@ func registerInfoMetrics(meter metric.Meter, logger *zap.Logger, computeMgr comp
 }
 
 func observeComputeInfo(ctx context.Context, obs metric.Observer, logger *zap.Logger, mgr compute.Manager, computeInfo, vnicInfo metric.Int64ObservableGauge) {
-	computes, err := mgr.ListComputeResources(ctx)
+	computes, err := mgr.ListComputes(ctx)
 	if err != nil {
 		logger.Warn("list compute resources for info metrics", zap.Error(err))
 		return
 	}
 	for _, c := range computes {
-		computeID := c.GetComputeId().GetValue()
+		computeID := c.GetComputeId()
 		computeName := c.GetComputeName()
+		// vm_name is the KubeVirt VM/VMI name, i.e. the join key to the
+		// `name` label on kubevirt_vmi_* backend series.
+		vmName := c.GetMetadata()[compute.VmNameMetadataKey]
 		obs.ObserveInt64(computeInfo, 1, metric.WithAttributes(
 			attribute.String("compute_id", computeID),
-			// compute_name is the KubeVirt VM/VMI name, i.e. the join key to the
-			// `name` label on kubevirt_vmi_* backend series.
 			attribute.String("compute_name", computeName),
-			attribute.String("flavour_id", c.GetFlavourId().GetValue()),
-			attribute.String("image_id", c.GetVcImageId().GetValue()),
-			attribute.String("host_id", c.GetHostId().GetValue()),
+			attribute.String("vm_name", vmName),
+			attribute.String("flavour_id", c.GetFlavourId()),
+			attribute.String("image_id", c.GetImageId()),
+			attribute.String("host_id", c.GetHostId()),
 			// pod_name is the virt-launcher pod, the join key to cAdvisor/kube-state-metrics.
-			attribute.String("pod_name", c.GetMetadata().GetFields()[compute.ComputePodNameMetadataKey]),
+			attribute.String("pod_name", c.GetMetadata()[compute.PodNameMetadataKey]),
 			attribute.String("operational_state", c.GetOperationalState().String()),
 			attribute.String("running_state", c.GetRunningState().String()),
 		))
-		for _, nic := range c.GetVirtualNetworkInterface() {
+		for _, nic := range c.GetNetworkInterfaces() {
 			obs.ObserveInt64(vnicInfo, 1, metric.WithAttributes(
 				attribute.String("compute_id", computeID),
 				attribute.String("compute_name", computeName),
-				attribute.String("vnic_id", nic.GetResourceId().GetValue()),
-				attribute.String("network_id", nic.GetNetworkId().GetValue()),
-				attribute.String("subnet_id", nic.GetSubnetId().GetValue()),
-				attribute.String("network_port_id", nic.GetNetworkPortId().GetValue()),
+				attribute.String("vm_name", vmName),
+				// vnic_id is the interface name, also the `interface` label on kubevirt_vmi_network_* series.
+				attribute.String("vnic_id", nic.GetName()),
+				attribute.String("network_id", nic.GetNetworkId()),
 				attribute.String("type", nic.GetTypeVirtualNic().String()),
 				// host_id disambiguates the pci_address join across nodes (PCI addresses
 				// are node-local, not cluster-unique).
-				attribute.String("host_id", c.GetHostId().GetValue()),
+				attribute.String("host_id", c.GetHostId()),
 				// pci_address is the host VF/pass-through address for host-PCI vNICs
 				// (SR-IOV); empty for virtio/bridge vNICs.
-				attribute.String("pci_address", nic.GetMetadata().GetFields()[compute.VnicHostPciAddressMetadataKey]),
+				attribute.String("pci_address", nic.GetHostPciAddress()),
 			))
 		}
 	}
@@ -117,11 +119,11 @@ func observeNetworkInfo(ctx context.Context, obs metric.Observer, logger *zap.Lo
 	}
 	for _, n := range networks {
 		obs.ObserveInt64(networkInfo, 1, metric.WithAttributes(
-			attribute.String("network_id", n.GetNetworkResourceId().GetValue()),
-			attribute.String("network_name", n.GetNetworkResourceName()),
+			attribute.String("network_id", n.GetNetworkId()),
+			attribute.String("network_name", n.GetNetworkName()),
 			attribute.String("network_type", n.GetNetworkType().String()),
 			attribute.String("provider_network", n.GetProviderNetwork()),
-			attribute.String("segmentation_id", strconv.FormatUint(n.GetSegmentationId(), 10)),
+			attribute.String("segmentation_id", strconv.FormatUint(uint64(n.GetSegmentationId()), 10)),
 			attribute.String("operational_state", n.GetOperationalState().String()),
 		))
 	}
