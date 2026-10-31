@@ -2,7 +2,7 @@
 
 ## Overview
 
-Kube-vim supports SR-IOV (Single Root I/O Virtualization) as a network type alongside OVERLAY and UNDERLAY. SR-IOV networks are allocated through the standard VI-VNFM `AllocateVirtualisedNetworkResource` RPC and can then be attached to a VM via `AllocateVirtualisedComputeResource`.
+Kube-vim attaches VM interfaces to VLAN and FLAT networks as SR-IOV virtual functions (VFs). SR-IOV is not a kind of network: a VLAN or FLAT network on a provider network carries SR-IOV settings (the VF pool), and each interface chooses how it attaches (`typeVirtualNic`: `BRIDGE` or `SRIOV`). One network can carry both kinds of interfaces on the same layer 2 segment.
 
 ## Background
 
@@ -22,7 +22,7 @@ SR-IOV is the standard approach for:
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │ kube-vim                                                       │
-│  network request ──► composite manager ──► sriov backend      │
+│  network request (sriov.pool) ──► kube-ovn network manager    │
 │                                               │                │
 │                                               ▼                │
 │                                         NetworkAttachmentDefinition
@@ -63,55 +63,47 @@ SR-IOV is the standard approach for:
 
 ## API
 
-SR-IOV networks use the same `VirtualNetworkData` message as OVERLAY and UNDERLAY networks. The relevant fields are:
+A network takes SR-IOV interfaces when it has `sriov` settings:
 
 | Field | SR-IOV meaning |
 |---|---|
-| `networkType` | `SRIOV` |
-| `providerNetwork` | Device plugin resource name (e.g. `openshift.io/sriov_netdevice`). A name without `/` gets `openshift.io/` prepended |
-| `segmentationId` | VLAN ID applied to the OVS port — `0` means untagged |
-| `bandwidth` | Ignored. ovs-cni has no per-port rate limiting; use OVS QoS if needed |
+| `networkType` | `NETWORK_TYPE_VLAN` or `NETWORK_TYPE_FLAT`; `GENEVE` networks take no `sriov` settings |
+| `providerNetwork` | The Kube-OVN ProviderNetwork whose OVS bridge the PF uplink is on (e.g. `mx5p0`) |
+| `segmentationId` | VLAN ID applied to the representor's OVS port; absent (untagged) for FLAT |
+| `mtu` | MTU of the ovs-cni attachment, and of the Kube-OVN subnet when the network has one |
+| `sriov.pool` | Device plugin resource name of the VF pool, e.g. `openshift.io/mlx_vf_pf0_vfio`; a `vfio-pci` pool on the provider network's PF |
 
-When attaching an SR-IOV network to a VM, set `typeVirtualNic` to `TYPE_VIRTUAL_NIC_SRIOV` in the `VirtualNetworkInterfaceData`.
+An interface attaches through a VF when it has `typeVirtualNic: TYPE_VIRTUAL_NIC_SRIOV`, which needs `ipAssignment: IP_ASSIGNMENT_NONE`: kube-vim assigns no addresses to SR-IOV interfaces.
 
-SR-IOV networks do not support subnets. All subnet operations on an SR-IOV network return an error.
+Kube-vim cannot check that the pool belongs to the provider network's PF: a pool of another PF puts the VF on another uplink without an error. On a network that also has a subnet, guests on SR-IOV interfaces must use addresses Kube-OVN does not allocate (outside the subnet's range or in its excluded addresses).
 
-Networks placed on the **same PF** are separated from one another by their access VLAN: give each co-located SR-IOV network a distinct `segmentationId` to isolate it. `segmentationId: 0` leaves the port untagged, so multiple untagged networks on the same PF land in a single shared L2 broadcast domain. Networks on different PFs are already isolated by hardware.
+Networks placed on the **same PF** are separated from one another by their access VLAN: give each co-located network a distinct `segmentationId` to isolate it. FLAT networks leave the port untagged, so several FLAT networks on the same PF land in a single shared L2 broadcast domain. Networks on different PFs are already isolated by hardware.
 
 ## Architecture
 
-### Composite network manager
+### Per-network SR-IOV attachment
 
-Kube-vim routes network operations to the correct backend through a composite manager (`internal/kubevim/network/composite/`). It holds an OVN backend and an SR-IOV backend:
-
-- `CreateNetwork` — dispatches on `networkData.NetworkType`: `SRIOV` → sriov backend, else → OVN backend.
-- `GetNetwork` / `DeleteNetwork` — tries OVN first, falls through on not-found, then tries SR-IOV.
-- `ListNetworks` — returns the union of both backends.
-- Subnet operations — resolves the parent network's type; SR-IOV → unsupported, OVN → OVN backend.
-- `EnsureManagementNetwork` — delegates to OVN only (SR-IOV has no management-network concept).
-
-### SR-IOV network backend
-
-`internal/kubevim/network/sriov/` implements `network.Manager` against Multus `NetworkAttachmentDefinition` objects. The NAD is the sole source of truth — kube-vim creates it on `AllocateVirtualisedNetworkResource` and parses it back on `QueryVirtualisedNetworkResource`. No separate CRD or database entry is required.
+The Kube-OVN network manager (`internal/kubevim/network/kubeovn/`) owns every network. For a VLAN or FLAT network it creates a Kube-OVN `Vlan` on the provider network, the Kube-OVN subnet and its kube-ovn NAD when the network has subnets, and, when the network has `sriov` settings, an ovs-cni NAD that SR-IOV interfaces attach through. Every object carries the network ID label; the network's settings are stored in an annotation on the `Vlan`. Kube-vim never creates provider networks or VF pools: operators set them up with the node, since VF pools need a host reboot.
 
 **NAD structure**
 
 ```
 NetworkAttachmentDefinition
-  name: <network name>
+  name: net-<network id>-sriov
   namespace: <kube-vim namespace>
   annotations:
-    k8s.v1.cni.cncf.io/resourceName: <providerNetwork>
+    k8s.v1.cni.cncf.io/resourceName: <sriov.pool>
   labels:
     app.kubernetes.io/managed-by: kube-nfv
-    network.kubevim.kubenfv.io/netowrk-type: SRIOV
-    network.kubevim.kubenfv.io/network-name: <name>
+    network.kubevim.kubenfv.io/network-id: <network id>
+    network.kubevim.kubenfv.io/nic-type: sriov
   spec.config: |
     {
       "cniVersion": "0.3.1",
       "type": "ovs",
-      "name": "<name>",
-      "vlan": <segmentationId>,     // omitted when 0
+      "name": "net-<network id>-sriov",
+      "vlan": <segmentationId>,     // omitted for FLAT
+      "mtu": <mtu>,                 // omitted when unset
       "socket_file": "<socketFile>" // from config; omitted when empty
     }
 ```
@@ -122,7 +114,8 @@ The OVS `bridge` is intentionally **not** set in the config. ovs-cni auto-discov
 
 | Field | Source | Notes |
 |---|---|---|
-| `vlan` | `segmentationId` | Access VLAN on the OVS port; omitted when `0` |
+| `vlan` | `segmentationId` | Access VLAN on the OVS port; omitted for FLAT networks |
+| `mtu` | `mtu` | Omitted when the network sets none |
 | `socket_file` | `network.sriov.socketFile` config | OVSDB socket; defaults to `unix:/var/run/openvswitch/db.sock` |
 | `bridge` | (unset) | Auto-discovered by ovs-cni from the VF's PF |
 
@@ -130,7 +123,7 @@ The `vfio`/`netdevice` driver mode is set by the VF pool (`SriovNetworkNodePolic
 
 ### Compute layer
 
-When `AllocateVirtualisedComputeResource` references an SR-IOV network, kube-vim skips subnet and IPAM resolution and emits a KubeVirt VM spec with an SR-IOV interface binding (`interface.sriov: {}`). No OVN annotations are written: the VF data path is offloaded to the NIC and is **not** attached to any OVN logical switch. The underlying OVS bridge may itself be a kube-OVN ProviderNetwork, but that registration alone does not place the VF port on the overlay — see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation).
+When `CreateCompute` requests an SR-IOV interface, kube-vim skips subnet and IPAM resolution and emits a KubeVirt VM spec with an SR-IOV interface binding (`interface.sriov: {}`). No OVN annotations are written: the VF data path is offloaded to the NIC and is **not** attached to any OVN logical switch. The underlying OVS bridge may itself be a kube-OVN ProviderNetwork, but that registration alone does not place the VF port on the overlay — see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation).
 
 The KubeVirt binding is unchanged by the move to ovs-cni: KubeVirt discovers the VF PCI address from the Multus `network-status` `device-info`, independent of the CNI type, and passes it through to QEMU.
 
@@ -146,14 +139,15 @@ ovs-cni attaches representors but never creates bridges. The per-PF OVS bridges 
 
 kube-vim is agnostic to which is used; it only requires that each PF's bridge exists with the uplink attached, so ovs-cni's auto-discovery can resolve it.
 
-**Overlay isolation.** When these bridges are kube-OVN ProviderNetworks, kube-OVN *knows* them (they appear in the OVS bridge mappings) — but knowing a bridge is not the same as connecting it to the overlay. An SR-IOV provider bridge stays isolated from the OVN overlay (`br-int`) **as long as no OVN logical switch has a localnet port on that provider** — i.e. as long as no kube-OVN `Vlan` + provider-bound `Subnet` references it.
+**Overlay isolation.** When these bridges are kube-OVN ProviderNetworks, kube-OVN *knows* them (they appear in the OVS bridge mappings) — but knowing a bridge is not the same as connecting it to the overlay. A provider bridge stays isolated from the OVN overlay (`br-int`) **as long as no OVN logical switch has a localnet port on that provider** — i.e. as long as no kube-OVN `Vlan` + provider-bound `Subnet` references it.
 
-Creating such a `Subnet` makes OVN add a localnet patch between `br-int` and the provider bridge. That would:
+A network with both a subnet and `sriov` settings creates such a `Subnet`, so OVN adds a localnet patch between `br-int` and the provider bridge, tagged with the network's VLAN. Bridged and SR-IOV interfaces of the network then share the segment, which is the point. What is not yet verified (KB spec N14) is the price:
 
-- merge the SR-IOV L2 domain into the OVN overlay, and
-- push the OVN pipeline (ACLs, conntrack, NAT) onto the offloaded bridge — much of which does not hardware-offload and silently falls back to the software data path, defeating the point of switchdev.
+- whether VF-to-uplink traffic stays hardware-offloaded while the localnet port exists;
+- whether traffic of other VLANs, or of SR-IOV-only networks on the same uplink, stays out of `br-int`;
+- whether high-bandwidth SR-IOV traffic (including broadcast and unknown unicast) loads `ovs-vswitchd` or `ovn-controller` enough to hurt pod networking and Kubernetes services on the node.
 
-So the isolation guarantee is: on a provider network used for SR-IOV, the only intended attachments are VF representors (added by ovs-cni) and the PF uplink. **Do not bind kube-OVN `Vlan`/`Subnet` objects to it.** This is enforced by convention, not by a hard barrier — worth guarding in CI/policy on clusters that also use kube-OVN VLAN provider subnets for other purposes.
+Until that is verified, a network without subnets (SR-IOV interfaces only) is the safe choice for line-rate data planes: it creates no localnet port, so the only attachments on the bridge are VF representors (added by ovs-cni) and the PF uplink. If the check fails, networks with `sriov` settings will stop accepting subnets.
 
 ## Prerequisites
 
@@ -201,7 +195,7 @@ network:
     socketFile: "unix:/var/run/openvswitch/db.sock"
 ```
 
-There is deliberately no bridge setting — the bridge is auto-discovered per VF from its PF (see [NAD structure](#sr-iov-network-backend)).
+There is deliberately no bridge setting — the bridge is auto-discovered per VF from its PF (see [NAD structure](#per-network-sr-iov-attachment)).
 
 ### VF pool provisioning
 
@@ -224,7 +218,7 @@ spec:
   deviceType: netdevice                # use vfio-pci for DPDK
 ```
 
-The full resource name consumed by kube-vim is `<prefix>/<resourceName>`. The prefix is determined by the SR-IOV device plugin configuration — the default with sriov-network-operator is `openshift.io`, giving `openshift.io/sriov_netdevice`. Some deployments override this prefix, so always verify the actual resource names advertised on your nodes:
+VMs need a `vfio-pci` pool (`deviceType: vfio-pci`): KubeVirt passes the VF through to the guest. The full resource name to put in a network's `sriov.pool` is `<prefix>/<resourceName>`. The prefix is determined by the SR-IOV device plugin configuration — the default with sriov-network-operator is `openshift.io`, giving `openshift.io/sriov_netdevice`. Some deployments override this prefix, so always verify the actual resource names advertised on your nodes:
 
 ```
 kubectl get node <node> -o json \
@@ -233,36 +227,40 @@ kubectl get node <node> -o json \
 
 ## Operator runbook
 
-### Allocate an SR-IOV network
+### Create a network for SR-IOV interfaces
 
 ```bash
-curl -X POST http://kube-vim-gateway/vivnfm/v5/networks \
+curl -X POST http://kube-vim-gateway/network/v1/networks \
   -H 'Content-Type: application/json' \
   -d '{
-    "networkResourceName": "data-net-1",
-    "networkType": "SRIOV",
-    "providerNetwork": "openshift.io/sriov_netdevice",
-    "segmentationId": 100
+    "network": {
+      "networkName": "data-net-1",
+      "networkType": "NETWORK_TYPE_VLAN",
+      "providerNetwork": "mx5p0",
+      "segmentationId": 100,
+      "sriov": {"pool": "openshift.io/mlx_vf_pf0_vfio"}
+    }
   }'
 ```
 
 Verify the NAD was created:
 
 ```
-kubectl get net-attach-def data-net-1 -n kube-vim -o yaml
+kubectl get net-attach-def -n kube-vim -l network.kubevim.kubenfv.io/network-id=<network id> -o yaml
 ```
 
-Expect `spec.config` to contain `"type":"ovs"` and annotation `k8s.v1.cni.cncf.io/resourceName: openshift.io/sriov_netdevice`.
+Expect the `-sriov` NAD's `spec.config` to contain `"type":"ovs"` and `"vlan":100`, and annotation `k8s.v1.cni.cncf.io/resourceName: openshift.io/mlx_vf_pf0_vfio`.
 
-### Allocate a VM with an SR-IOV interface
+### Create a VM with an SR-IOV interface
 
 ```json
 {
-  "computeData": { ... },
-  "virtualNetworkInterface": [
+  "compute": { ... },
+  "networkInterfaces": [
     {
-      "networkId": "<network-resource-id>",
-      "typeVirtualNic": "TYPE_VIRTUAL_NIC_SRIOV"
+      "networkId": "<network id>",
+      "typeVirtualNic": "TYPE_VIRTUAL_NIC_SRIOV",
+      "ipAssignment": "IP_ASSIGNMENT_NONE"
     }
   ]
 }
@@ -301,16 +299,19 @@ ovs-appctl dpctl/dump-flows -m                      # look for offloaded:yes dp:
 | VM starts but VF not visible inside guest | Older KubeVirt without the SRIOV feature gate | Inspect `KubeVirt` CR `featureGates` and the KubeVirt version |
 | VF up but no traffic / representor not on bridge | ovs-cni couldn't reach OVSDB, or the PF isn't a bridge port (auto-discovery failed) | `ovs-vsctl list-ports <bridge>`; check `socketFile`; verify the PF uplink is attached to its bridge |
 | Traffic works but not offloaded | PF not in switchdev, or `hw-offload` disabled on OVS | `ovs-vsctl get Open_vSwitch . other_config:hw-offload`; check PF `eSwitchMode` |
-| VF visible but incorrect VLAN tagging | `segmentationId` mismatch on the OVS port | Delete and recreate the SR-IOV network |
+| VF visible but incorrect VLAN tagging | `segmentationId` mismatch on the OVS port | Delete and recreate the network |
+| VF on the wrong uplink | `sriov.pool` is a pool of another PF than the provider network's | Recreate the network with the pool of the right PF |
 | Not-found error on network query | NAD missing `managed-by: kube-nfv` label | Label may have been removed out of band |
 
 ## Limitations
 
 - **No admin API for VF pools or bridges.** `SriovNetworkNodePolicy` CRs, switchdev config, and the per-PF OVS bridges must be created out of band. See Phase 2 below.
 - **OVS bridges must pre-exist.** ovs-cni attaches representors but never creates bridges; auto-discovery also requires the PF uplink to already be a bridge port.
-- **No subnet support.** SR-IOV networks are L2 only; IPAM must be handled inside the VM or by an external DHCP server on the VLAN.
-- **No rate limiting.** ovs-cni has no `min_tx_rate`/`max_tx_rate`; `bandwidth` is ignored. Use OVS QoS out of band if required.
-- **One VF per network per VM.** Multiple SR-IOV interfaces on the same VM require separate network resources with distinct names.
+- **No addresses for SR-IOV interfaces.** Kube-vim assigns none (`IP_ASSIGNMENT_NONE`); IPAM is handled inside the VM or by an external DHCP server on the VLAN.
+- **No rate limiting.** ovs-cni has no `min_tx_rate`/`max_tx_rate`. Use OVS QoS out of band if required.
+- **One VF per network per VM.** Multiple SR-IOV interfaces on the same VM require separate networks.
+- **No pool check.** Kube-vim does not verify that `sriov.pool` belongs to the provider network's PF.
+- **Bridged and SR-IOV interfaces on one network are unverified** (see [Bridge provisioning and overlay isolation](#bridge-provisioning-and-overlay-isolation)).
 
 ## Phase 2: NodeNetworkProfile admin API
 

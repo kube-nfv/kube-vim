@@ -19,9 +19,7 @@ import (
 	cdiimmage "github.com/kube-nfv/kube-vim/internal/kubevim/image/cdi"
 	httpsource "github.com/kube-nfv/kube-vim/internal/kubevim/image/source/http"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/network/composite"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network/kubeovn"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/network/sriov"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/server"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/telemetry"
 	"go.uber.org/zap"
@@ -193,19 +191,18 @@ func (m *kubevimManager) initImageManager(cfg *config.ImageConfig, k8sCfg *confi
 }
 
 func (m *kubevimManager) initNetworkManager(k8sCfg *config.K8sConfig) error {
-	ovnMgr, err := kubeovn.NewKubeovnNetworkManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), k8sCfg, m.logger.Named("network.ovn"))
-	if err != nil {
-		return fmt.Errorf("create kubeovn network manager: %w", err)
+	if err := k8s.IndexLabels(context.Background(), m.cluster.GetFieldIndexer(), kubeovn.IdIndexes...); err != nil {
+		return fmt.Errorf("index networks: %w", err)
 	}
 	var sriovCfg *config.SriovNetworkConfig
 	if m.cfg.Network != nil {
 		sriovCfg = m.cfg.Network.Sriov
 	}
-	sriovMgr, err := sriov.NewSriovNetworkManager(m.cluster.GetClient(), k8sCfg, sriovCfg, m.logger.Named("network.sriov"))
+	var err error
+	m.networkMgr, err = kubeovn.NewKubeovnNetworkManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), k8sCfg, sriovCfg, m.logger.Named("network"))
 	if err != nil {
-		return fmt.Errorf("create sriov network manager: %w", err)
+		return fmt.Errorf("create kubeovn network manager: %w", err)
 	}
-	m.networkMgr = composite.NewManager(ovnMgr, sriovMgr)
 	return nil
 }
 

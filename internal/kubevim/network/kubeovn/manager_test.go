@@ -9,8 +9,8 @@ import (
 
 	netattv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	kubeovnv1 "github.com/kube-nfv/kube-vim-api/kube-ovn-api/pkg/apis/kubeovn/v1"
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/k8s/k8stest"
@@ -18,211 +18,312 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const testNamespace = k8stest.TestNamespace
 
-func newManager(t *testing.T, objs ...client.Object) (*manager, client.Client) {
+func newManagerWithClient(t *testing.T, cl, reader client.Client) *manager {
 	t.Helper()
-	cl := k8stest.NewClient(t, objs...)
 	ns := testNamespace
-	m, err := NewKubeovnNetworkManager(cl, cl, &config.K8sConfig{Namespace: &ns}, nil)
+	m, err := NewKubeovnNetworkManager(cl, reader, &config.K8sConfig{Namespace: &ns}, &config.SriovNetworkConfig{SocketFile: k8stest.Ptr("unix:/var/run/ovs.sock")}, nil)
 	require.NoError(t, err)
-	return m, cl
+	return m
 }
 
-func seedVpc(name string, subnets ...string) *kubeovnv1.Vpc {
-	return &kubeovnv1.Vpc{
-		ObjectMeta: managedMeta(name),
-		Status:     kubeovnv1.VpcStatus{Subnets: subnets},
+func newManager(t *testing.T) (*manager, client.Client) {
+	t.Helper()
+	cl := k8stest.NewIndexedClient(t, IdIndexes)
+	return newManagerWithClient(t, cl, cl), cl
+}
+
+func v4(cidr string) *networkv1.SubnetData {
+	return &networkv1.SubnetData{IpVersion: commonv1.IpVersion_IP_VERSION_IPV4, Cidr: cidr}
+}
+
+func v6(cidr string) *networkv1.SubnetData {
+	return &networkv1.SubnetData{IpVersion: commonv1.IpVersion_IP_VERSION_IPV6, Cidr: cidr}
+}
+
+func geneve(l3 ...*networkv1.SubnetData) *networkv1.Network {
+	return &networkv1.Network{NetworkName: "data", NetworkType: networkv1.NetworkType_NETWORK_TYPE_GENEVE, Layer3Attributes: l3}
+}
+
+func vlan(id uint32, l3 ...*networkv1.SubnetData) *networkv1.Network {
+	return &networkv1.Network{NetworkType: networkv1.NetworkType_NETWORK_TYPE_VLAN, ProviderNetwork: "mx5p0", SegmentationId: id, Mtu: 9000, Layer3Attributes: l3}
+}
+
+func get[T client.Object](t *testing.T, cl client.Client, name string, obj T) T {
+	t.Helper()
+	ns := ""
+	if _, ok := any(obj).(*netattv1.NetworkAttachmentDefinition); ok {
+		ns = testNamespace
 	}
-}
-
-func seedVlan(name string, id int, subnets ...string) *kubeovnv1.Vlan {
-	return &kubeovnv1.Vlan{
-		ObjectMeta: managedMeta(name),
-		Spec:       kubeovnv1.VlanSpec{ID: id, Provider: "provider"},
-		Status:     kubeovnv1.VlanStatus{Subnets: subnets},
-	}
-}
-
-func seedSubnet(name string) *kubeovnv1.Subnet {
-	meta := managedMeta(name)
-	meta.Labels[network.K8sSubnetNameLabel] = name
-	meta.Labels[network.K8sSubnetNetAttachNameLabel] = formatNetAttachName(name)
-	return &kubeovnv1.Subnet{
-		ObjectMeta: meta,
-		Spec:       kubeovnv1.SubnetSpec{Protocol: "IPv4", CIDRBlock: "10.0.0.0/24", Gateway: "10.0.0.1", EnableDHCP: true},
-	}
-}
-
-func TestGetNetwork(t *testing.T) {
-	t.Parallel()
-	t.Run("overlay by name", func(t *testing.T) {
-		m, _ := newManager(t, seedVpc("net1"))
-		got, err := m.GetNetwork(context.Background(), network.GetNetworkByName("net1"))
-		require.NoError(t, err)
-		assert.Equal(t, "net1", got.GetNetworkResourceName())
-		assert.Equal(t, nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY, got.NetworkType)
-		assert.Equal(t, "uid-net1", got.NetworkResourceId.GetValue())
-	})
-
-	t.Run("overlay by uid", func(t *testing.T) {
-		m, _ := newManager(t, seedVpc("net1"))
-		got, err := m.GetNetwork(context.Background(), network.GetNetworkByUid(&nfvcommon.Identifier{Value: "uid-net1"}))
-		require.NoError(t, err)
-		assert.Equal(t, "net1", got.GetNetworkResourceName())
-	})
-
-	t.Run("underlay by name", func(t *testing.T) {
-		m, _ := newManager(t, seedVlan("vl1", 100))
-		got, err := m.GetNetwork(context.Background(), network.GetNetworkByName("vl1"))
-		require.NoError(t, err)
-		assert.Equal(t, nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY, got.NetworkType)
-		assert.Equal(t, uint64(100), got.GetSegmentationId())
-	})
-
-	t.Run("missing network is ErrNotFound", func(t *testing.T) {
-		m, _ := newManager(t)
-		_, err := m.GetNetwork(context.Background(), network.GetNetworkByName("nope"))
-		var target *apperrors.ErrNotFound
-		assert.ErrorAs(t, err, &target)
-	})
-}
-
-func TestListNetworks(t *testing.T) {
-	t.Parallel()
-	t.Run("joins vpcs, vlans and subnets", func(t *testing.T) {
-		m, _ := newManager(t,
-			seedVpc("net1", "sub1"),
-			seedVlan("vl1", 100, "sub2"),
-			seedSubnet("sub1"),
-			seedSubnet("sub2"),
-		)
-		got, err := m.ListNetworks(context.Background())
-		require.NoError(t, err)
-		require.Len(t, got, 2)
-
-		byName := map[string]*vivnfm.VirtualNetwork{}
-		for _, n := range got {
-			byName[n.GetNetworkResourceName()] = n
-		}
-		require.Contains(t, byName, "net1")
-		require.Contains(t, byName, "vl1")
-		assert.Equal(t, "uid-sub1", byName["net1"].SubnetId[0].GetValue())
-		assert.Equal(t, "uid-sub2", byName["vl1"].SubnetId[0].GetValue())
-	})
-
-	t.Run("errors when a referenced subnet is missing", func(t *testing.T) {
-		m, _ := newManager(t, seedVpc("net1", "ghost"))
-		_, err := m.ListNetworks(context.Background())
-		require.Error(t, err)
-	})
-
-	t.Run("empty returns nothing", func(t *testing.T) {
-		m, _ := newManager(t)
-		got, err := m.ListNetworks(context.Background())
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
+	require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: name}, obj))
+	return obj
 }
 
 func TestCreateNetwork(t *testing.T) {
 	t.Parallel()
-	t.Run("overlay creates a vpc", func(t *testing.T) {
+	t.Run("geneve dual stack is one vpc, one subnet and a bridge nad", func(t *testing.T) {
 		m, cl := newManager(t)
-		got, err := m.CreateNetwork(context.Background(), "net1", &vivnfm.VirtualNetworkData{})
+		gw := v4("10.0.0.0/24")
+		gw.GatewayIp = "10.0.0.1"
+		gw6 := v6("fd00::/64")
+		gw6.GatewayIp = "fd00::1"
+		n := geneve(gw, gw6)
+		n.Mtu = 1400
+		got, err := m.CreateNetwork(context.Background(), n)
 		require.NoError(t, err)
-		assert.Equal(t, nfvcommon.NetworkType_NETWORK_TYPE_OVERLAY, got.NetworkType)
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{}))
+		require.Len(t, got.SubnetIds, 2)
+		assert.Equal(t, "data", got.NetworkName)
+		assert.Empty(t, got.Layer3Attributes, "input-only")
+
+		name := formatNetworkName(got.NetworkId)
+		vpc := get(t, cl, name, &kubeovnv1.Vpc{})
+		assert.Equal(t, got.NetworkId, vpc.Labels[network.K8sNetworkIdLabel])
+		sub := get(t, cl, name, &kubeovnv1.Subnet{})
+		assert.Equal(t, name, sub.Spec.Vpc)
+		assert.Equal(t, "Dual", sub.Spec.Protocol)
+		assert.Equal(t, "10.0.0.0/24,fd00::/64", sub.Spec.CIDRBlock)
+		assert.Equal(t, "10.0.0.1,fd00::1", sub.Spec.Gateway)
+		assert.Equal(t, uint32(1400), sub.Spec.Mtu)
+		assert.True(t, sub.Spec.EnableDHCP)
+		assert.Equal(t, got.SubnetIds[0], sub.Labels[network.K8sSubnetIdIPv4Label])
+		assert.Equal(t, got.SubnetIds[1], sub.Labels[network.K8sSubnetIdIPv6Label])
+		nad := get(t, cl, name, &netattv1.NetworkAttachmentDefinition{})
+		assert.Equal(t, network.NicTypeBridge, nad.Labels[network.K8sNicTypeLabel])
+		assertProviderMatches(t, sub, nad)
 	})
 
-	t.Run("underlay creates a vlan", func(t *testing.T) {
+	t.Run("vlan with sriov and no subnets is a vlan and an ovs-cni nad", func(t *testing.T) {
 		m, cl := newManager(t)
-		underlay := nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY
-		got, err := m.CreateNetwork(context.Background(), "vl1", &vivnfm.VirtualNetworkData{
-			NetworkType:     &underlay,
-			ProviderNetwork: k8stest.Ptr("provider"),
-			SegmentationId:  k8stest.Ptr[uint64](100),
-		})
+		n := vlan(100)
+		n.Sriov = &networkv1.SriovSettings{Pool: "openshift.io/mlx_vf_pf0_vfio"}
+		got, err := m.CreateNetwork(context.Background(), n)
 		require.NoError(t, err)
-		assert.Equal(t, nfvcommon.NetworkType_NETWORK_TYPE_UNDERLAY, got.NetworkType)
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: "vl1"}, &kubeovnv1.Vlan{}))
+		assert.Empty(t, got.SubnetIds)
+		assert.Equal(t, "openshift.io/mlx_vf_pf0_vfio", got.GetSriov().GetPool())
+
+		name := formatNetworkName(got.NetworkId)
+		v := get(t, cl, name, &kubeovnv1.Vlan{})
+		assert.Equal(t, 100, v.Spec.ID)
+		assert.Equal(t, "mx5p0", v.Spec.Provider)
+		err = cl.Get(context.Background(), client.ObjectKey{Name: name}, &kubeovnv1.Subnet{})
+		assert.True(t, apierrors.IsNotFound(err), "no kube-ovn subnet without layer3 attributes")
+		nad := get(t, cl, formatSriovNetAttachName(name), &netattv1.NetworkAttachmentDefinition{})
+		assert.Equal(t, "openshift.io/mlx_vf_pf0_vfio", nad.Annotations[nadResourceNameAnnotation])
+		assert.Equal(t, network.NicTypeSriov, nad.Labels[network.K8sNicTypeLabel])
+		var cfg ovsCniConfig
+		require.NoError(t, json.Unmarshal([]byte(nad.Spec.Config), &cfg))
+		assert.Equal(t, "ovs", cfg.Type)
+		require.NotNil(t, cfg.Vlan)
+		assert.Equal(t, 100, *cfg.Vlan)
+		assert.Equal(t, 9000, cfg.MTU)
 	})
+
+	t.Run("flat is an untagged vlan with its subnet on it", func(t *testing.T) {
+		m, cl := newManager(t)
+		n := vlan(0, v4("192.168.0.0/24"))
+		n.NetworkType = networkv1.NetworkType_NETWORK_TYPE_FLAT
+		got, err := m.CreateNetwork(context.Background(), n)
+		require.NoError(t, err)
+		name := formatNetworkName(got.NetworkId)
+		assert.Equal(t, 0, get(t, cl, name, &kubeovnv1.Vlan{}).Spec.ID)
+		assert.Equal(t, name, get(t, cl, name, &kubeovnv1.Subnet{}).Spec.Vlan)
+	})
+
+	t.Run("address pools are unsupported", func(t *testing.T) {
+		m, _ := newManager(t)
+		l3 := v4("10.0.0.0/24")
+		l3.AddressPools = []*networkv1.IpAddressPool{{StartIp: "10.0.0.10", EndIp: "10.0.0.20"}}
+		_, err := m.CreateNetwork(context.Background(), geneve(l3))
+		assert.ErrorIs(t, err, apperrors.ErrUnsupported)
+	})
+
+	t.Run("a gateway on one family of a dual-stack network is rejected and rolled back", func(t *testing.T) {
+		m, cl := newManager(t)
+		l3 := v4("10.0.0.0/24")
+		l3.GatewayIp = "10.0.0.1"
+		_, err := m.CreateNetwork(context.Background(), geneve(l3, v6("fd00::/64")))
+		var invalid *apperrors.ErrInvalidArgument
+		require.ErrorAs(t, err, &invalid)
+		vpcs := &kubeovnv1.VpcList{}
+		require.NoError(t, cl.List(context.Background(), vpcs))
+		assert.Empty(t, vpcs.Items)
+	})
+}
+
+func TestGetNetworkAndSubnets(t *testing.T) {
+	t.Parallel()
+	m, _ := newManager(t)
+	created, err := m.CreateNetwork(context.Background(), geneve(v4("10.0.0.0/24"), v6("fd00::/64")))
+	require.NoError(t, err)
+
+	got, err := m.GetNetwork(context.Background(), created.NetworkId)
+	require.NoError(t, err)
+	assert.Equal(t, created.NetworkId, got.NetworkId)
+	assert.Equal(t, created.SubnetIds, got.SubnetIds)
+	assert.Equal(t, commonv1.OperationalState_OPERATIONAL_STATE_ENABLED, got.OperationalState)
+
+	sub, err := m.GetSubnet(context.Background(), created.SubnetIds[1])
+	require.NoError(t, err)
+	assert.Equal(t, created.NetworkId, sub.NetworkId)
+	assert.Equal(t, "fd00::/64", sub.GetData().GetCidr())
+
+	subs, err := m.ListSubnets(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, subs, 2)
+
+	_, err = m.GetNetwork(context.Background(), "nope")
+	var notFound *apperrors.ErrNotFound
+	assert.ErrorAs(t, err, &notFound)
+	_, err = m.GetSubnet(context.Background(), "nope")
+	assert.ErrorAs(t, err, &notFound)
+}
+
+func TestListNetworks(t *testing.T) {
+	t.Parallel()
+	m, _ := newManager(t)
+	a, err := m.CreateNetwork(context.Background(), geneve(v4("10.0.0.0/24")))
+	require.NoError(t, err)
+	b, err := m.CreateNetwork(context.Background(), vlan(100))
+	require.NoError(t, err)
+
+	got, err := m.ListNetworks(context.Background())
+	require.NoError(t, err)
+	ids := map[string][]string{}
+	for _, n := range got {
+		ids[n.NetworkId] = n.SubnetIds
+	}
+	assert.Equal(t, map[string][]string{a.NetworkId: a.SubnetIds, b.NetworkId: nil}, ids)
 }
 
 func TestDeleteNetwork(t *testing.T) {
 	t.Parallel()
-	t.Run("overlay deletes the vpc", func(t *testing.T) {
-		m, cl := newManager(t, seedVpc("net1"))
-		require.NoError(t, m.DeleteNetwork(context.Background(), network.GetNetworkByName("net1")))
-		err := cl.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{})
-		assert.True(t, apierrors.IsNotFound(err))
-	})
-
-	t.Run("missing network surfaces not found", func(t *testing.T) {
-		m, _ := newManager(t)
-		err := m.DeleteNetwork(context.Background(), network.GetNetworkByName("nope"))
-		var target *apperrors.ErrNotFound
-		assert.ErrorAs(t, err, &target)
-	})
-}
-
-func TestGetSubnet(t *testing.T) {
-	t.Parallel()
-	t.Run("by name", func(t *testing.T) {
-		m, _ := newManager(t, seedSubnet("sub1"))
-		got, err := m.GetSubnet(context.Background(), network.GetSubnetByName("sub1"))
+	t.Run("removes every object of the network", func(t *testing.T) {
+		m, cl := newManager(t)
+		n := vlan(100, v4("10.0.0.0/24"))
+		n.Sriov = &networkv1.SriovSettings{Pool: "pool"}
+		created, err := m.CreateNetwork(context.Background(), n)
 		require.NoError(t, err)
-		assert.Equal(t, "uid-sub1", got.ResourceId.GetValue())
-		assert.Equal(t, "10.0.0.0/24", got.Cidr.GetCidr())
+		require.NoError(t, m.DeleteNetwork(context.Background(), created.NetworkId))
+
+		for _, list := range []client.ObjectList{&kubeovnv1.VlanList{}, &kubeovnv1.SubnetList{}, &netattv1.NetworkAttachmentDefinitionList{}} {
+			require.NoError(t, cl.List(context.Background(), list))
+			items, _ := json.Marshal(list)
+			assert.NotContains(t, string(items), created.NetworkId)
+		}
 	})
 
-	t.Run("by uid", func(t *testing.T) {
-		m, _ := newManager(t, seedSubnet("sub1"))
-		got, err := m.GetSubnet(context.Background(), network.GetSubnetByUid(&nfvcommon.Identifier{Value: "uid-sub1"}))
+	t.Run("missing network is ErrNotFound", func(t *testing.T) {
+		m, _ := newManager(t)
+		var notFound *apperrors.ErrNotFound
+		assert.ErrorAs(t, m.DeleteNetwork(context.Background(), "nope"), &notFound)
+	})
+
+	t.Run("the management network is kept", func(t *testing.T) {
+		m, cl := newManager(t)
+		require.NoError(t, m.EnsureManagementNetwork(context.Background(), mgmtConfig()))
+		vpc := get(t, cl, "mgmt", &kubeovnv1.Vpc{})
+		var invalid *apperrors.ErrInvalidArgument
+		assert.ErrorAs(t, m.DeleteNetwork(context.Background(), vpc.Labels[network.K8sNetworkIdLabel]), &invalid)
+	})
+}
+
+func TestCreateNetworkWithStaleCache(t *testing.T) {
+	t.Parallel()
+	t.Run("waits until the cache sees the new network", func(t *testing.T) {
+		base := k8stest.NewIndexedClient(t, IdIndexes)
+		m := newManagerWithClient(t, interceptor.NewClient(base, laggingCache()), base)
+
+		got, err := m.CreateNetwork(context.Background(), geneve(v4("10.10.0.0/24")))
 		require.NoError(t, err)
-		assert.Equal(t, "sub1", got.Metadata.Fields[network.K8sSubnetNameLabel])
+		// The next cached read (RO's status refresh) must find it.
+		_, err = m.GetNetwork(context.Background(), got.NetworkId)
+		require.NoError(t, err)
 	})
 
-	t.Run("missing uid is ErrNotFound", func(t *testing.T) {
-		m, _ := newManager(t)
-		_, err := m.GetSubnet(context.Background(), network.GetSubnetByUid(&nfvcommon.Identifier{Value: "uid-nope"}))
-		var target *apperrors.ErrNotFound
-		assert.ErrorAs(t, err, &target)
+	t.Run("cache that never catches up fails and removes everything", func(t *testing.T) {
+		base := k8stest.NewIndexedClient(t, IdIndexes)
+		m := newManagerWithClient(t, interceptor.NewClient(base, staleCache), base)
+		m.cacheSyncTimeout = 100 * time.Millisecond
+
+		_, err := m.CreateNetwork(context.Background(), geneve(v4("10.10.0.0/24")))
+		require.Error(t, err)
+		assertNoNetworkObjects(t, base)
 	})
 
-	t.Run("no selector is rejected", func(t *testing.T) {
-		m, _ := newManager(t)
-		_, err := m.GetSubnet(context.Background())
-		var target *apperrors.ErrInvalidArgument
-		assert.ErrorAs(t, err, &target)
+	t.Run("failed subnet removes the vpc and netattach", func(t *testing.T) {
+		indexed := k8stest.NewIndexedClient(t, IdIndexes)
+		base := interceptor.NewClient(indexed, interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*kubeovnv1.Subnet); ok {
+					return errors.New("subnet rejected")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		})
+		m := newManagerWithClient(t, base, base)
+
+		_, err := m.CreateNetwork(context.Background(), geneve(v4("10.10.0.0/24")))
+		require.Error(t, err)
+		assertNoNetworkObjects(t, indexed)
 	})
 }
 
-func TestListSubnets(t *testing.T) {
-	t.Parallel()
-	m, _ := newManager(t, seedSubnet("sub1"), seedSubnet("sub2"))
-	got, err := m.ListSubnets(context.Background())
-	require.NoError(t, err)
-	assert.Len(t, got, 2)
+func assertNoNetworkObjects(t *testing.T, cl client.Client) {
+	t.Helper()
+	vpcs := &kubeovnv1.VpcList{}
+	require.NoError(t, cl.List(context.Background(), vpcs))
+	assert.Empty(t, vpcs.Items, "vpc should be rolled back")
+	nads := &netattv1.NetworkAttachmentDefinitionList{}
+	require.NoError(t, cl.List(context.Background(), nads, client.InNamespace(testNamespace)))
+	assert.Empty(t, nads.Items, "netattach should be rolled back")
 }
 
-func TestDeleteSubnet(t *testing.T) {
-	t.Parallel()
-	nad := &netattv1.NetworkAttachmentDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: formatNetAttachName("sub1"), Namespace: testNamespace},
+func mgmtConfig() *config.ManagementNetworkConfig {
+	ns := testNamespace
+	return &config.ManagementNetworkConfig{
+		Enabled:               k8stest.Ptr(true),
+		Name:                  k8stest.Ptr("mgmt"),
+		Cidr:                  k8stest.Ptr("10.240.0.0/24"),
+		NetAttachDefName:      k8stest.Ptr("mgmt-netattach"),
+		NetAttachDefNamespace: &ns,
 	}
-	m, cl := newManager(t, seedSubnet("sub1"), nad)
-	require.NoError(t, m.DeleteSubnet(context.Background(), network.GetSubnetByName("sub1")))
+}
 
-	err := cl.Get(context.Background(), client.ObjectKey{Name: "sub1"}, &kubeovnv1.Subnet{})
-	assert.True(t, apierrors.IsNotFound(err), "subnet should be gone")
-	err = cl.Get(context.Background(), client.ObjectKey{Namespace: testNamespace, Name: formatNetAttachName("sub1")}, &netattv1.NetworkAttachmentDefinition{})
-	assert.True(t, apierrors.IsNotFound(err), "netattach should be gone")
+func TestEnsureManagementNetwork(t *testing.T) {
+	t.Parallel()
+	m, cl := newManager(t)
+	require.NoError(t, m.EnsureManagementNetwork(context.Background(), mgmtConfig()))
+	vpc := get(t, cl, "mgmt", &kubeovnv1.Vpc{})
+	networkId := vpc.Labels[network.K8sNetworkIdLabel]
+	require.NotEmpty(t, networkId)
+
+	// A restart keeps the ids clients already hold.
+	require.NoError(t, m.EnsureManagementNetwork(context.Background(), mgmtConfig()))
+	got, err := m.GetNetwork(context.Background(), networkId)
+	require.NoError(t, err)
+	assert.Equal(t, "mgmt", got.NetworkName)
+	assert.Equal(t, networkv1.NetworkType_NETWORK_TYPE_GENEVE, got.NetworkType)
+	require.Len(t, got.SubnetIds, 1)
+	sub, err := m.GetSubnet(context.Background(), got.SubnetIds[0])
+	require.NoError(t, err)
+	assert.Equal(t, "10.240.0.0/24", sub.GetData().GetCidr())
+
+	assertProviderMatches(t, get(t, cl, formatSubnetName("mgmt", "0"), &kubeovnv1.Subnet{}), get(t, cl, "mgmt-netattach", &netattv1.NetworkAttachmentDefinition{}))
+}
+
+// Kube-OVN binds an attachment to the subnet whose provider equals the NAD's provider.
+func assertProviderMatches(t *testing.T, sub *kubeovnv1.Subnet, nad *netattv1.NetworkAttachmentDefinition) {
+	t.Helper()
+	var cfg struct {
+		Provider string `json:"provider"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(nad.Spec.Config), &cfg))
+	assert.Equal(t, cfg.Provider, sub.Spec.Provider)
 }
 
 // staleCache hides kube-ovn networks and subnets from reads, like an informer cache
@@ -259,104 +360,4 @@ func laggingCache() interceptor.Funcs {
 			return c.Get(ctx, key, obj, opts...)
 		},
 	}
-}
-
-func TestCreateNetworkWithStaleCache(t *testing.T) {
-	t.Parallel()
-	ns := testNamespace
-	v4 := nfvcommon.IPVersion_IPV4
-	data := func() *vivnfm.VirtualNetworkData {
-		return &vivnfm.VirtualNetworkData{Layer3Attributes: []*vivnfm.NetworkSubnetData{{
-			IpVersion: &v4,
-			Cidr:      &nfvcommon.IPSubnetCIDR{Cidr: "10.10.0.0/24"},
-		}}}
-	}
-
-	t.Run("waits until the cache sees the new network", func(t *testing.T) {
-		base := k8stest.NewClient(t)
-		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, laggingCache()), base, &config.K8sConfig{Namespace: &ns}, nil)
-		require.NoError(t, err)
-
-		got, err := m.CreateNetwork(context.Background(), "net1", data())
-		require.NoError(t, err)
-		require.Len(t, got.SubnetId, 1)
-		// The next cached read (RO's status refresh) must find it.
-		_, err = m.GetNetwork(context.Background(), network.GetNetworkByName("net1"))
-		require.NoError(t, err)
-	})
-
-	t.Run("cache that never catches up fails and removes the vpc", func(t *testing.T) {
-		base := k8stest.NewClient(t)
-		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
-		require.NoError(t, err)
-		m.cacheSyncTimeout = 100 * time.Millisecond
-
-		_, err = m.CreateNetwork(context.Background(), "net1", data())
-		require.Error(t, err)
-		err = base.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{})
-		assert.True(t, apierrors.IsNotFound(err), "vpc should be rolled back")
-	})
-
-	t.Run("failed subnet removes the vpc and netattach", func(t *testing.T) {
-		base := interceptor.NewClient(k8stest.NewClient(t), interceptor.Funcs{
-			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				if _, ok := obj.(*kubeovnv1.Subnet); ok {
-					return errors.New("subnet rejected")
-				}
-				return c.Create(ctx, obj, opts...)
-			},
-		})
-		m, err := NewKubeovnNetworkManager(interceptor.NewClient(base, staleCache), base, &config.K8sConfig{Namespace: &ns}, nil)
-		require.NoError(t, err)
-
-		_, err = m.CreateNetwork(context.Background(), "net1", data())
-		require.Error(t, err)
-		err = base.Get(context.Background(), client.ObjectKey{Name: "net1"}, &kubeovnv1.Vpc{})
-		assert.True(t, apierrors.IsNotFound(err), "vpc should be rolled back")
-		nads := &netattv1.NetworkAttachmentDefinitionList{}
-		require.NoError(t, base.List(context.Background(), nads, client.InNamespace(testNamespace)))
-		assert.Empty(t, nads.Items, "netattach should be rolled back")
-	})
-}
-
-// Kube-OVN binds an attachment to the subnet whose provider equals the NAD's provider.
-func TestSubnetProviderMatchesNetAttach(t *testing.T) {
-	t.Parallel()
-	assertProviderMatches := func(t *testing.T, cl client.Client, subnetName, nadName string) {
-		t.Helper()
-		subnet := &kubeovnv1.Subnet{}
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: subnetName}, subnet))
-		nad := &netattv1.NetworkAttachmentDefinition{}
-		require.NoError(t, cl.Get(context.Background(), client.ObjectKey{Name: nadName, Namespace: testNamespace}, nad))
-		var cfg struct {
-			Provider string `json:"provider"`
-		}
-		require.NoError(t, json.Unmarshal([]byte(nad.Spec.Config), &cfg))
-		assert.Equal(t, cfg.Provider, subnet.Spec.Provider)
-	}
-
-	t.Run("CreateSubnet", func(t *testing.T) {
-		m, cl := newManager(t, seedVpc("net1"))
-		v4 := nfvcommon.IPVersion_IPV4
-		_, err := m.CreateSubnet(context.Background(), "sub1", &vivnfm.NetworkSubnetData{
-			NetworkId: &nfvcommon.Identifier{Value: "net1"},
-			IpVersion: &v4,
-			Cidr:      &nfvcommon.IPSubnetCIDR{Cidr: "10.0.0.0/24"},
-		})
-		require.NoError(t, err)
-		assertProviderMatches(t, cl, "sub1", formatNetAttachName("sub1"))
-	})
-
-	t.Run("EnsureManagementNetwork", func(t *testing.T) {
-		m, cl := newManager(t)
-		ns := testNamespace
-		require.NoError(t, m.EnsureManagementNetwork(context.Background(), &config.ManagementNetworkConfig{
-			Enabled:               k8stest.Ptr(true),
-			Name:                  k8stest.Ptr("mgmt"),
-			Cidr:                  k8stest.Ptr("10.240.0.0/24"),
-			NetAttachDefName:      k8stest.Ptr("mgmt-netattach"),
-			NetAttachDefNamespace: &ns,
-		}))
-		assertProviderMatches(t, cl, formatSubnetName("mgmt", "0"), "mgmt-netattach")
-	})
 }

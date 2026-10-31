@@ -2,104 +2,48 @@ package network
 
 import (
 	"context"
-	"fmt"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 )
 
 const (
-	K8sNetworkNameLabel          = "network.kubevim.kubenfv.io/network-name"
-	K8sNetworkIdLabel            = "network.kubevim.kubenfv.io/network-id"
-	K8sNetworkTypeLabel          = "network.kubevim.kubenfv.io/netowrk-type"
-	K8sNetworkNetAttachNameLabel = "network.kubevim.kubenfv.io/network-netattach-name"
-	K8sSubnetNameLabel           = "network.kubevim.kubenfv.io/subnet-name"
-	K8sSubnetIdLabel             = "network.kubevim.kubenfv.io/subnet-id"
-	K8sSubnetNetAttachNameLabel  = "network.kubevim.kubenfv.io/subnet-netattach-name"
+	// K8sNetworkIdLabel is on every object backing a network.
+	K8sNetworkIdLabel = "network.kubevim.kubenfv.io/network-id"
+	// K8sSubnetIdIPv4Label and K8sSubnetIdIPv6Label carry the subnet ids on the network's Kube-OVN subnet.
+	K8sSubnetIdIPv4Label = "network.kubevim.kubenfv.io/subnet-id-ipv4"
+	K8sSubnetIdIPv6Label = "network.kubevim.kubenfv.io/subnet-id-ipv6"
+	// K8sNicTypeLabel marks a network's NetworkAttachmentDefinition with the interfaces it serves: bridge or sriov.
+	K8sNicTypeLabel = "network.kubevim.kubenfv.io/nic-type"
+	// K8sManagementNetworkLabel marks the objects of the kube-vim-managed management network.
+	K8sManagementNetworkLabel = "network.kubevim.kubenfv.io/management"
+
+	// K8sNetworkAnnotation holds the network as the consumer created it (protojson, without ids, subnets or outputs).
+	K8sNetworkAnnotation = "network.kubevim.kubenfv.io/network"
+	// K8sSubnetIPv4Annotation and K8sSubnetIPv6Annotation hold each subnet as the consumer created it.
+	K8sSubnetIPv4Annotation = "network.kubevim.kubenfv.io/subnet-ipv4"
+	K8sSubnetIPv6Annotation = "network.kubevim.kubenfv.io/subnet-ipv6"
+
+	NicTypeBridge = "bridge"
+	NicTypeSriov  = "sriov"
 )
 
 //go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
 
 type Manager interface {
-	CreateNetwork(context.Context, string /*name*/, *vivnfm.VirtualNetworkData) (*vivnfm.VirtualNetwork, error)
-	GetNetwork(context.Context, ...GetNetworkOpt) (*vivnfm.VirtualNetwork, error)
-	ListNetworks(context.Context) ([]*vivnfm.VirtualNetwork, error)
-	DeleteNetwork(context.Context, ...GetNetworkOpt) error
+	CreateNetwork(context.Context, *networkv1.Network) (*networkv1.Network, error)
+	GetNetwork(ctx context.Context, networkId string) (*networkv1.Network, error)
+	ListNetworks(context.Context) ([]*networkv1.Network, error)
+	DeleteNetwork(ctx context.Context, networkId string) error
 
-	CreateSubnet(context.Context, string /*name*/, *vivnfm.NetworkSubnetData) (*vivnfm.NetworkSubnet, error)
-	GetSubnet(context.Context, ...GetSubnetOpt) (*vivnfm.NetworkSubnet, error)
-	ListSubnets(context.Context) ([]*vivnfm.NetworkSubnet, error)
-	DeleteSubnet(context.Context, ...GetSubnetOpt) error
+	GetSubnet(ctx context.Context, subnetId string) (*networkv1.Subnet, error)
+	ListSubnets(context.Context) ([]*networkv1.Subnet, error)
 
 	// EnsureManagementNetwork is idempotent: it creates the Vpc + Subnet +
 	// NetworkAttachmentDefinition described by cfg if they do not exist, and
-	// patches their labels if they exist with the wrong ones. It never mutates
-	// the subnet CIDR or gateway of an existing subnet (workloads might already
-	// have IPs from it). Intended to be called once at kube-vim startup. If cfg
-	// is nil or cfg.Enabled is false (or unset), the method is a no-op.
+	// patches their labels and annotations if they exist with the wrong ones. It
+	// never mutates the subnet CIDR or gateway of an existing subnet (workloads
+	// might already have IPs from it). Intended to be called once at kube-vim
+	// startup. If cfg is nil or cfg.Enabled is false (or unset), the method is a no-op.
 	EnsureManagementNetwork(context.Context, *config.ManagementNetworkConfig) error
-}
-
-func NetworkTypeStrToNfvType(networkTypeStr string) (*nfvcommon.NetworkType, error) {
-	typeVal, ok := nfvcommon.NetworkType_value[networkTypeStr]
-	if !ok {
-		return nil, fmt.Errorf("invalid networkType \"%s\"", networkTypeStr)
-	}
-	return (*nfvcommon.NetworkType)(&typeVal), nil
-}
-
-type GetNetworkOpt func(*getNetworkOpts)
-type getNetworkOpts struct {
-	Name string
-	Uid  *nfvcommon.Identifier
-}
-
-func GetNetworkByName(name string) GetNetworkOpt {
-	return func(gno *getNetworkOpts) { gno.Name = name }
-}
-func GetNetworkByUid(uid *nfvcommon.Identifier) GetNetworkOpt {
-	return func(gno *getNetworkOpts) { gno.Uid = uid }
-}
-func ApplyGetNetworkOpts(gno ...GetNetworkOpt) *getNetworkOpts {
-	res := &getNetworkOpts{}
-	for _, opt := range gno {
-		opt(res)
-	}
-	return res
-}
-
-type GetSubnetOpt func(*getSubnetOpts)
-type getSubnetOpts struct {
-	Name          string
-	Uid           *nfvcommon.Identifier
-	NetAttachName string
-	NetId         *nfvcommon.Identifier
-	IPAddress     *nfvcommon.IPAddress
-}
-
-func GetSubnetByName(name string) GetSubnetOpt {
-	return func(gso *getSubnetOpts) { gso.Name = name }
-}
-func GetSubnetByUid(uid *nfvcommon.Identifier) GetSubnetOpt {
-	return func(gso *getSubnetOpts) { gso.Uid = uid }
-}
-func GetSubnetByNetAttachName(netAttachName string) GetSubnetOpt {
-	return func(gso *getSubnetOpts) { gso.NetAttachName = netAttachName }
-}
-
-// Returns the subnet from VPC ID and IP address which should belongs to the subnet
-func GetSubnetByNetworkIP(netId *nfvcommon.Identifier, ip *nfvcommon.IPAddress) GetSubnetOpt {
-	return func(gso *getSubnetOpts) {
-		gso.NetId = netId
-		gso.IPAddress = ip
-	}
-}
-
-func ApplyGetSubnetOpts(gso ...GetSubnetOpt) *getSubnetOpts {
-	res := &getSubnetOpts{}
-	for _, opt := range gso {
-		opt(res)
-	}
-	return res
 }
