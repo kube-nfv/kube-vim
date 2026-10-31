@@ -219,6 +219,9 @@ func (m *kubevimManager) initFlavourManager(cfg *config.K8sConfig) error {
 }
 
 func (m *kubevimManager) initComputeManager(cfg *config.K8sConfig, computeCfg *config.ComputeConfig) error {
+	if err := k8s.IndexLabels(context.Background(), m.cluster.GetFieldIndexer(), kubevirt_compute.IdIndexes...); err != nil {
+		return fmt.Errorf("index computes: %w", err)
+	}
 	var err error
 	m.computeMgr, err = kubevirt_compute.NewComputeManager(m.cluster.GetClient(), m.cluster.GetAPIReader(), cfg, computeCfg, m.flavourMgr, m.imageMgr, m.networkMgr)
 	if err != nil {

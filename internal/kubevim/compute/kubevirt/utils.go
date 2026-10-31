@@ -1,306 +1,169 @@
 package kubevirt
 
 import (
-	"context"
-	"errors"
+	"cmp"
 	"fmt"
 	"hash/fnv"
-	"strconv"
 	"strings"
 
-	nfvcommon "github.com/kube-nfv/kube-vim-api/pkg/apis"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/compute"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
-	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
-	"github.com/kube-nfv/kube-vim/internal/misc"
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func nfvVirtualComputeFromKubevirtVm(ctx context.Context, netMgr network.Manager, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance, launcher launcherInfo) (*vivnfm.VirtualCompute, error) {
-	if vmi == nil || vm == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt resources", Reason: "virtualMachine and virtualMachineInstance cannot be nil"}
+// checkSupported rejects request fields kube-vim does not apply yet.
+func checkSupported(req *computev1.CreateComputeRequest) error {
+	unsupported := ""
+	switch {
+	case len(req.GetCompute().GetPlacementGroupIds()) > 0:
+		unsupported = "compute.placementGroupIds"
+	case req.Start != nil && !req.GetStart():
+		unsupported = "start"
 	}
-	computeId := misc.UIDToIdentifier(vm.UID)
-	flavId, err := getFlavourFromInstanceSpec(vm)
-	if err != nil {
-		return nil, fmt.Errorf("get flavour from kubevirt VM '%s' (uid: %s): %w", vm.Name, vm.UID, err)
+	for _, iface := range req.GetNetworkInterfaces() {
+		if unsupported != "" {
+			break
+		}
+		switch {
+		case iface.GetName() == KubevirtVmMgmtNetworkName:
+			return &apperrors.ErrInvalidArgument{Field: "networkInterfaces.name", Reason: fmt.Sprintf("'%s' is the management interface", KubevirtVmMgmtNetworkName)}
+		case iface.GetModel() != computev1.NicModel_NIC_MODEL_UNSPECIFIED && iface.GetModel() != computev1.NicModel_NIC_MODEL_VIRTIO:
+			unsupported = "networkInterfaces.model"
+		case iface.GetBandwidth() != 0:
+			unsupported = "networkInterfaces.bandwidth"
+		case iface.GetIpAssignment() == computev1.IpAssignment_IP_ASSIGNMENT_NONE && !isSriov(iface):
+			unsupported = "networkInterfaces.ipAssignment IP_ASSIGNMENT_NONE on a BRIDGE interface"
+		}
 	}
-	imgId, err := getImageIdFromInstnceSpec(vm)
-	if err != nil {
-		return nil, fmt.Errorf("get image id from kubevirt VM '%s' (uid: %s): %w", vm.Name, vm.UID, err)
+	if unsupported != "" {
+		return fmt.Errorf("%s: %w", unsupported, apperrors.ErrUnsupported)
 	}
-	operState := nfvcommon.OperationalState_ENABLED
-	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
-		operState = nfvcommon.OperationalState_DISABLED
-	}
+	return nil
+}
 
-	runningState := getRunningState(vm, vmi)
-	mdFields := make(map[string]string)
-	mdFields[KubevirtVmStatusCreated] = strconv.FormatBool(vm.Status.Created)
-	mdFields[KubevirtVmStatusReady] = strconv.FormatBool(vm.Status.Ready)
-	mdFields[KubevirtVmPrintableStatus] = string(vm.Status.PrintableStatus)
-	mdFields[KubevirtVmRunStategy] = string(vm.Status.RunStrategy)
-	mdFields[KubevirtVmiStatusPhase] = string(vmi.Status.Phase)
-	if vmi.Status.Reason != "" {
-		mdFields[KubevirtVmiStatusReason] = vmi.Status.Reason
+// storedRequest returns the parts of req kept in the VM annotation: no user data, no outputs.
+func storedRequest(req *computev1.CreateComputeRequest) *computev1.CreateComputeRequest {
+	c := req.GetCompute()
+	ifaces := make([]*computev1.NetworkInterfaceData, len(req.GetNetworkInterfaces()))
+	for i, iface := range req.GetNetworkInterfaces() {
+		ifaces[i] = proto.CloneOf(iface)
+	}
+	return &computev1.CreateComputeRequest{
+		Compute: &computev1.Compute{
+			ComputeName: c.GetComputeName(),
+			FlavourId:   c.GetFlavourId(),
+			ImageId:     c.GetImageId(),
+			Metadata:    c.GetMetadata(),
+		},
+		NetworkInterfaces: ifaces,
+	}
+}
+
+// launcherInfo is what the virt-launcher pod adds to a compute.
+type launcherInfo struct {
+	podName       string
+	hostPciByVnic map[string]string // vNIC name -> host PCI address (SR-IOV / pass-through)
+}
+
+// computeFromVm returns the compute vm and vmi run, from the request stored on vm.
+func computeFromVm(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance, launcher launcherInfo) (*computev1.Compute, error) {
+	raw, ok := vm.Annotations[compute.K8sComputeAnnotation]
+	if !ok {
+		return nil, fmt.Errorf("VirtualMachine '%s' has no '%s' annotation: %w", vm.Name, compute.K8sComputeAnnotation, apperrors.ErrInternal)
+	}
+	stored := &computev1.CreateComputeRequest{}
+	if err := protojson.Unmarshal([]byte(raw), stored); err != nil {
+		return nil, fmt.Errorf("unmarshal compute of VirtualMachine '%s': %w", vm.Name, err)
+	}
+	c := stored.GetCompute()
+	c.ComputeId = vm.Labels[compute.K8sComputeIdLabel]
+	c.HostId = vmi.Status.NodeName
+	c.OperationalState = commonv1.OperationalState_OPERATIONAL_STATE_ENABLED
+	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
+		c.OperationalState = commonv1.OperationalState_OPERATIONAL_STATE_DISABLED
+	}
+	c.RunningState, c.StatusDetail = runningState(vm, vmi)
+	if cpu := vmi.Spec.Domain.CPU; cpu != nil {
+		c.VirtualCpu = &computev1.VirtualCpu{NumVirtualCpu: atLeastOne(cpu.Sockets) * atLeastOne(cpu.Cores) * atLeastOne(cpu.Threads)}
+	}
+	if mem := vmi.Spec.Domain.Memory; mem != nil && mem.Guest != nil {
+		c.VirtualMemory = &computev1.VirtualMemory{VirtualMemSize: mem.Guest.String()}
+	}
+	if c.Metadata == nil {
+		c.Metadata = map[string]string{}
 	}
 	if launcher.podName != "" {
-		mdFields[compute.ComputePodNameMetadataKey] = launcher.podName
+		c.Metadata[compute.PodNameMetadataKey] = launcher.podName
 	}
 
-	netIfaces := make([]*vivnfm.VirtualNetworkInterface, 0, len(vmi.Status.Interfaces))
-	for _, netSpec := range vmi.Spec.Networks {
-		name := netSpec.Name
-		netIfRes := &vivnfm.VirtualNetworkInterface{
-			ResourceId: &nfvcommon.Identifier{
-				Value: name,
-			},
-			OperationalState: nfvcommon.OperationalState_ENABLED,
-			OwnerId:          computeId,
-		}
-		netMdFields := make(map[string]string)
-		ifaceSpec, err := getInterfaceFromVmi(name, vmi)
-		if err != nil {
-			return nil, fmt.Errorf("get interface from VMI '%s' (uid: %s): %w", vm.Name, vm.UID, err)
-		}
-		vNicType, err := ifaceBindingMethodToNfv(ifaceSpec.InterfaceBindingMethod)
-		if err != nil {
-			return nil, fmt.Errorf("get virtual NIC type for VMI '%s' (uid: %s) interface '%s': %w", vm.Name, vm.UID, name, err)
-		}
-		netIfRes.TypeVirtualNic = vNicType
-		if netSpec.NetworkSource.Pod != nil {
-			netMdFields[KubevirtVmNetworkManagement] = "true"
-		} else if netSpec.NetworkSource.Multus != nil {
-			multusNet := netSpec.NetworkSource.Multus
-			if multusNet.Default {
-				netMdFields[KubevirtVmNetworkManagement] = "true"
-			} else {
-				netMdFields[KubevirtVmNetworkManagement] = "false"
-			}
-			// TODO: Add logic to split the NetworkAttachmentDefinition from namespace (if it exists).
-			// SR-IOV networks map directly to a NAD with no subnet — check for that first.
-			if sriovNet, err := netMgr.GetNetwork(ctx, network.GetNetworkByName(multusNet.NetworkName)); err == nil && sriovNet.NetworkType == nfvcommon.NetworkType_NETWORK_TYPE_SRIOV {
-				netIfRes.NetworkId = sriovNet.NetworkResourceId
-				netIfRes.Bandwidth = 0
-			} else {
-				subnet, err := netMgr.GetSubnet(ctx, network.GetSubnetByNetAttachName(multusNet.NetworkName))
-				if err != nil {
-					// Check if the error is due to missing NetworkAttachmentDefinition (race condition during deletion)
-					var notFoundErr *apperrors.ErrNotFound
-					isK8sNotFound := k8s_errors.IsNotFound(err)
-					isKubeNfvNotFound := errors.As(err, &notFoundErr)
-
-					if isK8sNotFound || isKubeNfvNotFound {
-						// During deletion, NetworkAttachmentDefinition might be already deleted
-						// Set placeholder values to allow VM deletion to proceed
-						netIfRes.SubnetId = &nfvcommon.Identifier{Value: "deleted"}
-						netIfRes.NetworkId = &nfvcommon.Identifier{Value: "deleted"}
-						netIfRes.Bandwidth = 0
-					} else {
-						return nil, fmt.Errorf("get subnet from VM network '%s' network attachment definition '%s': %w", name, multusNet.NetworkName, err)
-					}
-				} else {
-					netIfRes.SubnetId = subnet.ResourceId
-					netIfRes.NetworkId = subnet.NetworkId
-					netIfRes.Bandwidth = 0
-				}
-			}
-		} else {
-			return nil, &apperrors.ErrInvalidArgument{Field: fmt.Sprintf("network '%s'", name), Reason: "must be either multus or pod type"}
-		}
-		ifaceStatus, err := getInterfaceStatusFromVmi(name, vmi)
-		if err == nil && ifaceStatus != nil {
-			ips := make([]*nfvcommon.IPAddress, 0, len(ifaceStatus.IPs))
-			for _, ip := range ifaceStatus.IPs {
-				ips = append(ips, &nfvcommon.IPAddress{
-					Ip: ip,
-				})
-			}
-			netIfRes.IpAddress = ips
-			netIfRes.MacAddress = &nfvcommon.MacAddress{
-				Mac: ifaceStatus.MAC,
-			}
-			netMdFields[KubevirtInterfaceReady] = "true"
-		} else {
-			netIfRes.MacAddress = &nfvcommon.MacAddress{
-				Mac: "initializing",
-			}
-			netMdFields[KubevirtInterfaceReady] = "false"
-		}
-
-		if pci, ok := launcher.hostPciByVnic[name]; ok && pci != "" {
-			netMdFields[compute.VnicHostPciAddressMetadataKey] = pci
-		}
-
-		netIfRes.Metadata = &nfvcommon.Metadata{
-			Fields: netMdFields,
-		}
-		netIfaces = append(netIfaces, netIfRes)
+	mgmt := &computev1.VirtualNetworkInterface{
+		Name:           KubevirtVmMgmtNetworkName,
+		TypeVirtualNic: computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_MASQUERADE,
+		IsManagement:   true,
 	}
-
-	return &vivnfm.VirtualCompute{
-		ComputeId:               computeId,
-		ComputeName:             &vm.Name,
-		FlavourId:               flavId,
-		VcImageId:               imgId,
-		VirtualNetworkInterface: netIfaces,
-		HostId: &nfvcommon.Identifier{
-			Value: vmi.Status.NodeName,
-		},
-		OperationalState: operState,
-		RunningState:     runningState,
-		VirtualCpu:       &vivnfm.VirtualCpu{},
-		VirtualMemory:    &vivnfm.VirtualMemory{},
-		Metadata: &nfvcommon.Metadata{
-			Fields: mdFields,
-		},
-	}, nil
+	c.NetworkInterfaces = []*computev1.VirtualNetworkInterface{mgmt}
+	for _, req := range stored.GetNetworkInterfaces() {
+		iface := &computev1.VirtualNetworkInterface{
+			Name:           req.GetName(),
+			NetworkId:      req.GetNetworkId(),
+			TypeVirtualNic: computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE,
+			Model:          computev1.NicModel_NIC_MODEL_VIRTIO,
+			HostPciAddress: launcher.hostPciByVnic[req.GetName()],
+		}
+		if isSriov(req) {
+			iface.TypeVirtualNic = computev1.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV
+			iface.Model = computev1.NicModel_NIC_MODEL_UNSPECIFIED
+		}
+		c.NetworkInterfaces = append(c.NetworkInterfaces, iface)
+	}
+	for _, iface := range c.NetworkInterfaces {
+		iface.ComputeId = c.ComputeId
+		iface.OperationalState = commonv1.OperationalState_OPERATIONAL_STATE_DISABLED
+		for _, st := range vmi.Status.Interfaces {
+			if st.Name == iface.Name {
+				iface.IpAddresses = st.IPs
+				iface.MacAddress = st.MAC
+				iface.GuestInterfaceName = st.InterfaceName
+				iface.OperationalState = commonv1.OperationalState_OPERATIONAL_STATE_ENABLED
+			}
+		}
+	}
+	return c, nil
 }
 
-// GetRunningState determines the high-level operational state of a VM
-// the description string also can be set for some states
-func getRunningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) nfvcommon.ComputeRunningState {
-	// If VM is administratively stopped
-	if vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted {
-		return nfvcommon.ComputeRunningState_STOPPED
+func atLeastOne(v uint32) uint32 {
+	return max(v, 1)
+}
+
+// runningState maps the KubeVirt state of vm and vmi to a running state, with a reason when it failed.
+func runningState(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) (computev1.ComputeRunningState, string) {
+	phase := vmi.Status.Phase
+	switch {
+	case vm.DeletionTimestamp != nil || vm.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusTerminating:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_TERMINATING, ""
+	case vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted && phase == kubevirtv1.Running:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STOPPING, ""
+	case vm.Status.RunStrategy == kubevirtv1.RunStrategyHalted:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STOPPED, ""
+	case phase == kubevirtv1.Failed:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_FAILED, cmp.Or(vmi.Status.Reason, string(vm.Status.PrintableStatus))
 	}
-	// If VM is stopped by the user
 	for _, cond := range vmi.Status.Conditions {
 		if cond.Type == kubevirtv1.VirtualMachineInstancePaused {
-			return nfvcommon.ComputeRunningState_PAUSED
+			return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_PAUSED, ""
 		}
 	}
-	// If VM is in Terminating phase
-	if vm.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusTerminating {
-		return nfvcommon.ComputeRunningState_TERMINATING
-	}
-	if vm.Status.Created && vm.Status.Ready && vmi.Status.Phase == kubevirtv1.Running {
-		return nfvcommon.ComputeRunningState_RUNNING
-	}
-	if vmi.Status.Phase == kubevirtv1.Pending || vmi.Status.Phase == kubevirtv1.Scheduling || vmi.Status.Phase == kubevirtv1.Scheduled || vmi.Status.Phase == kubevirtv1.Running {
-		return nfvcommon.ComputeRunningState_STARTING
-	}
-	if vmi.Status.Phase == kubevirtv1.Failed {
-		return nfvcommon.ComputeRunningState_FAILED
-	}
-	// TODO: Suspeneded
-	return nfvcommon.ComputeRunningState_UNKNOWN
-}
-
-func getFlavourFromInstanceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfvcommon.Identifier, error) {
-	flavId, ok := vmSpec.Labels[flavour.K8sFlavourIdLabel]
-	if !ok {
-		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt VirtualMachine spec", Reason: "missing kube-nfv flavour id label"}
-	}
-	return &nfvcommon.Identifier{
-		Value: flavId,
-	}, nil
-}
-
-func getImageIdFromInstnceSpec(vmSpec *kubevirtv1.VirtualMachine) (*nfvcommon.Identifier, error) {
-	imgId, ok := vmSpec.Labels[image.K8sImageIdLabel]
-	if !ok {
-		return nil, &apperrors.ErrInvalidArgument{Field: "kubevirt VirtualMachine spec", Reason: "missing kube-nfv image id label"}
-	}
-	return &nfvcommon.Identifier{
-		Value: imgId,
-	}, nil
-
-}
-
-// Returns the kubevirt network with specified name from the kubevirt vmi spec or nil if not found.
-func getNetworkFromVmiSpec(netName string, vmiSpec *kubevirtv1.VirtualMachineInstanceSpec) (*kubevirtv1.Network, error) {
-	if vmiSpec == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VMI spec", Reason: "cannot be empty"}
-	}
-	for _, net := range vmiSpec.Networks {
-		if net.Name == netName {
-			return &net, nil
-		}
-	}
-	return nil, &apperrors.ErrNotFound{Entity: "network", Identifier: netName}
-}
-
-// Returns the kubevirt network with specified name from the kubevirt vm or nil if not found.
-func getNetworkFromVm(netName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Network, error) {
-	if vmSpec == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VM", Reason: "cannot be empty"}
-	}
-	if vmSpec.Spec.Template == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VM template", Reason: "cannot be empty"}
-	}
-	if net, err := getNetworkFromVmiSpec(netName, &vmSpec.Spec.Template.Spec); err != nil {
-		return nil, fmt.Errorf("get network from VM '%s' VMI template: %w", vmSpec.Name, err)
-	} else {
-		return net, nil
-	}
-}
-
-// Returns the kubevirt interface with specified network name from the kubevirt domain spec or nil if not found.
-func getInterfaceFromDomainSpec(ifaceName string, domSpec *kubevirtv1.DomainSpec) (*kubevirtv1.Interface, error) {
-	if domSpec == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "domain spec", Reason: "cannot be empty"}
-	}
-	for _, iface := range domSpec.Devices.Interfaces {
-		if iface.Name == ifaceName {
-			return &iface, nil
-		}
-	}
-	return nil, &apperrors.ErrNotFound{Entity: "interface", Identifier: ifaceName}
-}
-
-func getInterfaceFromVm(ifaceName string, vmSpec *kubevirtv1.VirtualMachine) (*kubevirtv1.Interface, error) {
-	if vmSpec == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VM", Reason: "cannot be empty"}
-	}
-	if vmSpec.Spec.Template == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VM template", Reason: "cannot be empty"}
-	}
-	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmSpec.Spec.Template.Spec.Domain); err != nil {
-		return nil, fmt.Errorf("get interface from VM '%s' VMI template domain spec: %w", vmSpec.Name, err)
-	} else {
-		return iface, nil
-	}
-}
-
-func getInterfaceFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.Interface, error) {
-	if vmi == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VMI", Reason: "cannot be empty"}
-	}
-	if iface, err := getInterfaceFromDomainSpec(ifaceName, &vmi.Spec.Domain); err != nil {
-		return nil, fmt.Errorf("get interface '%s' from VMI spec: %w", ifaceName, err)
-	} else {
-		return iface, nil
-	}
-}
-
-func getInterfaceStatusFromVmi(ifaceName string, vmi *kubevirtv1.VirtualMachineInstance) (*kubevirtv1.VirtualMachineInstanceNetworkInterface, error) {
-	if vmi == nil {
-		return nil, &apperrors.ErrInvalidArgument{Field: "VMI", Reason: "cannot be empty"}
-	}
-	for _, iface := range vmi.Status.Interfaces {
-		if iface.Name == ifaceName {
-			return &iface, nil
-		}
-	}
-	return nil, &apperrors.ErrNotFound{Entity: "interface", Identifier: ifaceName}
-}
-
-func ifaceBindingMethodToNfv(method kubevirtv1.InterfaceBindingMethod) (nfvcommon.TypeVirtualNic, error) {
 	switch {
-	case method.Bridge != nil:
-		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, nil
-	case method.Masquerade != nil:
-		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, nil
-	case method.SRIOV != nil:
-		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_SRIOV, nil
-	default:
-		return nfvcommon.TypeVirtualNic_TYPE_VIRTUAL_NIC_BRIDGE, fmt.Errorf("unknown interface binding method: %w", apperrors.ErrUnsupported)
+	case vm.Status.Ready && phase == kubevirtv1.Running:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STARTED, ""
+	case phase == kubevirtv1.Pending || phase == kubevirtv1.Scheduling || phase == kubevirtv1.Scheduled || phase == kubevirtv1.Running:
+		return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_STARTING, ""
 	}
+	return computev1.ComputeRunningState_COMPUTE_RUNNING_STATE_UNSPECIFIED, ""
 }
 
 // maxVmNameLen is the DNS-1123 label limit; the VM name is also used as a label value.
