@@ -28,6 +28,16 @@ const (
 	NicTypeSriov  = "sriov"
 )
 
+// Attachment is what a VM interface needs to attach to a network.
+type Attachment struct {
+	// NetAttachName is the NetworkAttachmentDefinition in the kube-vim namespace the interface attaches through.
+	NetAttachName string
+	// LogicalSwitch is the network's Kube-OVN subnet; empty for SR-IOV attachments.
+	LogicalSwitch string
+	// Cidrs are the CIDRs of the network's subnets.
+	Cidrs []string
+}
+
 //go:generate go run go.uber.org/mock/mockgen -source=manager.go -destination=mock/mock_manager.go -package=mock
 
 type Manager interface {
@@ -38,6 +48,9 @@ type Manager interface {
 
 	GetSubnet(ctx context.Context, subnetId string) (*networkv1.Subnet, error)
 	ListSubnets(context.Context) ([]*networkv1.Subnet, error)
+
+	// Attachment returns how interfaces of nicType (NicTypeBridge or NicTypeSriov) attach to the network.
+	Attachment(ctx context.Context, networkId string, nicType string) (*Attachment, error)
 
 	// EnsureManagementNetwork is idempotent: it creates the Vpc + Subnet +
 	// NetworkAttachmentDefinition described by cfg if they do not exist, and

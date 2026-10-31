@@ -183,6 +183,32 @@ func TestGetNetworkAndSubnets(t *testing.T) {
 	assert.ErrorAs(t, err, &notFound)
 }
 
+func TestAttachment(t *testing.T) {
+	t.Parallel()
+	m, _ := newManager(t)
+	n := vlan(100, v4("10.0.0.0/24"))
+	n.Sriov = &networkv1.SriovSettings{Pool: "pool"}
+	both, err := m.CreateNetwork(context.Background(), n)
+	require.NoError(t, err)
+	l2, err := m.CreateNetwork(context.Background(), vlan(200))
+	require.NoError(t, err)
+	name := formatNetworkName(both.NetworkId)
+
+	got, err := m.Attachment(context.Background(), both.NetworkId, network.NicTypeBridge)
+	require.NoError(t, err)
+	assert.Equal(t, &network.Attachment{NetAttachName: name, LogicalSwitch: name, Cidrs: []string{"10.0.0.0/24"}}, got)
+	got, err = m.Attachment(context.Background(), both.NetworkId, network.NicTypeSriov)
+	require.NoError(t, err)
+	assert.Equal(t, formatSriovNetAttachName(name), got.NetAttachName)
+	assert.Empty(t, got.LogicalSwitch)
+
+	var invalid *apperrors.ErrInvalidArgument
+	_, err = m.Attachment(context.Background(), l2.NetworkId, network.NicTypeBridge)
+	assert.ErrorAs(t, err, &invalid, "no subnets, no bridged interfaces")
+	_, err = m.Attachment(context.Background(), l2.NetworkId, network.NicTypeSriov)
+	assert.ErrorAs(t, err, &invalid, "no sriov settings")
+}
+
 func TestListNetworks(t *testing.T) {
 	t.Parallel()
 	m, _ := newManager(t)
