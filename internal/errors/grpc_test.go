@@ -130,6 +130,13 @@ func TestToGRPCError_StructuredErrors(t *testing.T) {
 			expectedReason: "INTERNAL",
 		},
 		{
+			name:           "Unimplemented RPC of a generated server gets NOT_IMPLEMENTED",
+			inputError:     status.Error(codes.Unimplemented, "method UpdateImage not implemented"),
+			expectedCode:   codes.Unimplemented,
+			expectedMsg:    "method UpdateImage not implemented",
+			expectedReason: "NOT_IMPLEMENTED",
+		},
+		{
 			name:           "Unknown error is internal",
 			inputError:     errors.New("boom"),
 			expectedCode:   codes.Internal,

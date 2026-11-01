@@ -36,8 +36,11 @@ func ToGRPCError(err error) error {
 		return nil
 	}
 
-	// If already a gRPC status error, return as-is
-	if _, ok := status.FromError(err); ok {
+	// If already a gRPC status error, return as-is; the generated servers' Unimplemented gets its reason.
+	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.Unimplemented && len(st.Details()) == 0 {
+			return reasonStatus(codes.Unimplemented, commonv1.ErrorReason_ERROR_REASON_NOT_IMPLEMENTED, st.Message())
+		}
 		return err
 	}
 

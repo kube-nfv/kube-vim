@@ -142,9 +142,10 @@ handler. On the REST side the gateway's error handler (`internal/gateway`, `erro
 writes the status as SOL 013 ProblemDetails (`application/problem+json`): `type` is
 `https://kubevim.kubenfv.io/problems/<reason in kebab case>` and the HTTP status comes
 from the reason (`reasonHTTPStatus`). A status without an `ErrorInfo` gets `about:blank`
-and the standard grpc-gateway status for its code, except `UNIMPLEMENTED` from a
-generated server, which is typed `not-implemented` (501). Authentication errors keep
-their `WWW-Authenticate` challenge.
+and the standard grpc-gateway status for its code. Authentication errors keep their
+`WWW-Authenticate` challenge. The `UNIMPLEMENTED` of an RPC kube-vim does not implement
+(the generated `Unimplemented*Server`) is a plain status; `ToGRPCError` gives it the
+`NOT_IMPLEMENTED` reason.
 
 ## Code-to-gRPC mapping
 
