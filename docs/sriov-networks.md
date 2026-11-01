@@ -75,6 +75,8 @@ A network takes SR-IOV interfaces when it has `sriov` settings:
 
 An interface attaches through a VF when it has `typeVirtualNic: TYPE_VIRTUAL_NIC_SRIOV`, which needs `ipAssignment: IP_ASSIGNMENT_NONE`: kube-vim assigns no addresses to SR-IOV interfaces.
 
+A VLAN or FLAT network's subnet carries `gatewayMode`, since Kube-OVN only attaches a bridged interface to an underlay subnet once its gateway answers: `GATEWAY_MODE_NONE` (the default; no router on the segment, Kube-OVN `disableGatewayCheck`), `GATEWAY_MODE_EXTERNAL` (a router on the segment owns `gatewayIp` and is checked) or `GATEWAY_MODE_VIM` (Kube-OVN's logical router is the gateway, `logicalGateway`). Both families of a dual-stack network take the same mode.
+
 Kube-vim cannot check that the pool belongs to the provider network's PF: a pool of another PF puts the VF on another uplink without an error. On a network that also has a subnet, guests on SR-IOV interfaces must use addresses Kube-OVN does not allocate (outside the subnet's range or in its excluded addresses).
 
 Networks placed on the **same PF** are separated from one another by their access VLAN: give each co-located network a distinct `segmentationId` to isolate it. FLAT networks leave the port untagged, so several FLAT networks on the same PF land in a single shared L2 broadcast domain. Networks on different PFs are already isolated by hardware.

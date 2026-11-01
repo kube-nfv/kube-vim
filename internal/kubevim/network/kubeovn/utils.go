@@ -187,6 +187,7 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 	}
 	var cidrs, gateways []string
 	dhcp := map[bool]bool{}
+	modes := map[networkv1.GatewayMode]bool{}
 	for idx, d := range l3 {
 		cidrs = append(cidrs, d.GetCidr())
 		if d.GetGatewayIp() != "" {
@@ -194,6 +195,7 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 		}
 		// DHCP is on unless the subnet turns it off.
 		dhcp[d.IsDhcpEnabled == nil || d.GetIsDhcpEnabled()] = true
+		modes[gatewayMode(d)] = true
 		raw, err := protojson.Marshal(&networkv1.Subnet{Data: d})
 		if err != nil {
 			return nil, fmt.Errorf("marshal subnet: %w", err)
@@ -203,6 +205,18 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 	}
 	if len(dhcp) > 1 {
 		return nil, fmt.Errorf("layer3Attributes.isDhcpEnabled differing between IP versions: %w", apperrors.ErrUnsupported)
+	}
+	if len(modes) > 1 {
+		return nil, fmt.Errorf("layer3Attributes.gatewayMode differing between IP versions: %w", apperrors.ErrUnsupported)
+	}
+	if n.GetNetworkType() != networkv1.NetworkType_NETWORK_TYPE_GENEVE {
+		// Kube-OVN waits for an underlay gateway to answer unless the check is off.
+		switch gatewayMode(l3[0]) {
+		case networkv1.GatewayMode_GATEWAY_MODE_NONE:
+			sub.Spec.DisableGatewayCheck = true
+		case networkv1.GatewayMode_GATEWAY_MODE_VIM:
+			sub.Spec.LogicalGateway = true
+		}
 	}
 	if len(gateways) != 0 && len(gateways) != len(l3) {
 		return nil, &apperrors.ErrInvalidArgument{Field: "layer3Attributes.gatewayIp", Reason: "set on every subnet of a dual-stack network or on none"}
@@ -217,6 +231,14 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 		sub.Spec.Protocol = "Dual"
 	}
 	return sub, nil
+}
+
+// gatewayMode returns the gateway mode of d; unset means NONE.
+func gatewayMode(d *networkv1.SubnetData) networkv1.GatewayMode {
+	if d.GetGatewayMode() == networkv1.GatewayMode_GATEWAY_MODE_UNSPECIFIED {
+		return networkv1.GatewayMode_GATEWAY_MODE_NONE
+	}
+	return d.GetGatewayMode()
 }
 
 func kubeovnProtocol(v commonv1.IpVersion) string {
