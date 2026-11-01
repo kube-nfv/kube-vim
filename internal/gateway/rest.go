@@ -144,10 +144,6 @@ func problemFromStatus(s *status.Status) problemDetails {
 			reason = commonv1.ErrorReason(commonv1.ErrorReason_value["ERROR_REASON_"+info.GetReason()])
 		}
 	}
-	// Unimplemented RPCs of the generated servers carry no ErrorInfo.
-	if reason == commonv1.ErrorReason_ERROR_REASON_UNSPECIFIED && s.Code() == codes.Unimplemented {
-		reason = commonv1.ErrorReason_ERROR_REASON_NOT_IMPLEMENTED
-	}
 	if httpStatus, ok := reasonHTTPStatus[reason]; ok {
 		name := strings.TrimPrefix(reason.String(), "ERROR_REASON_")
 		p.Type = problemTypePrefix + strings.ReplaceAll(strings.ToLower(name), "_", "-")
