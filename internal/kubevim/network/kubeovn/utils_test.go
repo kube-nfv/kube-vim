@@ -54,3 +54,45 @@ func TestSubnetGatewayFromKubeovn(t *testing.T) {
 	assert.Equal(t, "a", got.SubnetId)
 	assert.Equal(t, "10.0.0.1", got.GetData().GetGatewayIp())
 }
+
+func TestKubeovnSubnetGatewayMode(t *testing.T) {
+	withMode := func(d *networkv1.SubnetData, m networkv1.GatewayMode) *networkv1.SubnetData {
+		d.GatewayMode = m
+		return d
+	}
+	tests := []struct {
+		name             string
+		l3               []*networkv1.SubnetData
+		wantDisableCheck bool
+		wantLogical      bool
+		wantErr          error
+	}{
+		{name: "unset is none", l3: []*networkv1.SubnetData{v4("10.0.0.0/24")}, wantDisableCheck: true},
+		{name: "none", l3: []*networkv1.SubnetData{withMode(v4("10.0.0.0/24"), networkv1.GatewayMode_GATEWAY_MODE_NONE)}, wantDisableCheck: true},
+		{name: "external is checked", l3: []*networkv1.SubnetData{withMode(v4("10.0.0.0/24"), networkv1.GatewayMode_GATEWAY_MODE_EXTERNAL)}},
+		{name: "vim is a logical gateway", l3: []*networkv1.SubnetData{withMode(v4("10.0.0.0/24"), networkv1.GatewayMode_GATEWAY_MODE_VIM)}, wantLogical: true},
+		{name: "dual-stack modes must agree", l3: []*networkv1.SubnetData{
+			withMode(v4("10.0.0.0/24"), networkv1.GatewayMode_GATEWAY_MODE_VIM), v6("fd00::/64"),
+		}, wantErr: apperrors.ErrUnsupported},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ids := []string{"a", "b"}[:len(tt.l3)]
+			sub, err := kubeovnSubnet("net-x", vlan(100), tt.l3, ids, nil, "p")
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDisableCheck, sub.Spec.DisableGatewayCheck)
+			assert.Equal(t, tt.wantLogical, sub.Spec.LogicalGateway)
+		})
+	}
+
+	t.Run("geneve is untouched", func(t *testing.T) {
+		sub, err := kubeovnSubnet("net-x", geneve(), []*networkv1.SubnetData{v4("10.0.0.0/24")}, []string{"a"}, nil, "p")
+		require.NoError(t, err)
+		assert.False(t, sub.Spec.DisableGatewayCheck)
+		assert.False(t, sub.Spec.LogicalGateway)
+	})
+}
