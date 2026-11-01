@@ -4,7 +4,7 @@
 
 kube-vim lets ETSI NFV-MANO orchestrators (such as [OSM](https://osm.etsi.org/)) manage
 [VNF](https://www.etsi.org/technologies/nfv) workloads on Kubernetes through the standard
-**Or-Vi** and **Vi-Vnfm** reference points — without coupling to any specific hardware
+**Or-Vi** and **Vi-Vnfm** reference points, without coupling to any specific hardware
 vendor, NIC vendor, or Kubernetes distribution.
 
 ## Why kube-vim
@@ -12,13 +12,13 @@ vendor, NIC vendor, or Kubernetes distribution.
 Existing VIMs either are not ETSI reference-point compatible (OpenVIM) or drag in a full
 OpenStack control plane (Tacker). kube-vim is a thin, **stateless** translation layer: it
 maps ETSI MANO requests onto Kubernetes Custom Resources provided by best-in-class
-third-party projects, and stores no state of its own — everything lives in Kubernetes
+third-party projects, and stores no state of its own: everything lives in Kubernetes
 objects.
 
-- **Vendor neutral** — no dependency on specific hardware, NIC vendors, or K8s distros.
-- **Stateless** — all resource state is held in Kubernetes CRs; ETSI metadata with no CRD
+- **Vendor neutral**: no dependency on specific hardware, NIC vendors, or K8s distros.
+- **Stateless**: all resource state is held in Kubernetes CRs; ETSI metadata with no CRD
   equivalent is carried in labels and annotations.
-- **Standard reference points** — gRPC + Protobuf with REST/OpenAPI bindings, conformant
+- **Standard reference points**: gRPC + Protobuf with REST/OpenAPI bindings, conformant
   to ETSI GS NFV-IFA 005, IFA 006, and SOL 013.
 
 ## Architecture
@@ -27,7 +27,7 @@ kube-vim ships as two independent Kubernetes Deployments:
 
 | Component | Source | Role |
 |---|---|---|
-| **vim** | `cmd/kube-vim` | Main gRPC server. Exposes the ETSI Or-Vi / Vi-Vnfm reference points plus an admin API. Translates requests into Kubernetes CRs. |
+| **vim** | `cmd/kube-vim` | Main gRPC server. Exposes the ETSI Or-Vi / Vi-Vnfm reference points. Translates requests into Kubernetes CRs. |
 | **gateway** | `cmd/kube-vim-gateway` | gRPC-Gateway reverse proxy. Exposes REST/JSON bindings (OpenAPI 3.0) generated from the same gRPC schema and forwards to the vim service. |
 
 ```
@@ -37,7 +37,7 @@ kube-vim ships as two independent Kubernetes Deployments:
    ┌─────────┐   gRPC    ┌────────────────────────────┐
    │ gateway │──────────▶│            vim             │
    └─────────┘           │  compute · network ·       │
-                         │  flavour · image · admin   │
+                         │  flavour · image           │
                          └─────────────┬──────────────┘
                                        │ Kubernetes API
         ┌──────────────────────────────┼──────────────────────────────┐
@@ -60,19 +60,19 @@ compatible set of CRDs:
 
 ## Features
 
-- **Compute** — allocate, query, and terminate VM-based VNFs via KubeVirt; flavours mapped
+- **Compute**: allocate, query, and terminate VM-based VNFs via KubeVirt; flavours mapped
   to KubeVirt instancetypes/preferences.
-- **Images** — provision VM boot disks from images via CDI DataVolumes.
-- **Networking** — overlay and underlay (L2/VLAN) networks and subnets via Kube-OVN, with
+- **Images**: provision VM boot disks from images via CDI DataVolumes.
+- **Networking**: overlay and underlay (L2/VLAN) networks and subnets via Kube-OVN, with
   static or dynamic IPAM.
-- **SR-IOV** — line-rate data planes with OVS hardware offload (switchdev). See
+- **SR-IOV**: line-rate data planes with OVS hardware offload (switchdev). See
   [docs/sriov-networks.md](docs/sriov-networks.md).
-- **Managed management network** — optionally own a single shared mgmt network so NFVOs
+- **Managed management network**: optionally own a single shared mgmt network so NFVOs
   reuse one fabric instead of creating one VPC per network service. See
   [docs/management-network.md](docs/management-network.md).
-- **cloud-init** — pass NoCloud / ConfigDrive user-data via Kubernetes Secret (bypasses
+- **cloud-init**: pass NoCloud / ConfigDrive user-data via Kubernetes Secret (bypasses
   KubeVirt's 2 KiB inline limit).
-- **Monitoring** — opt-in Prometheus `/metrics` endpoint exposing kube-vim's own
+- **Monitoring**: opt-in Prometheus `/metrics` endpoint exposing kube-vim's own
   operational metrics plus `kubevim_*_info` correlation metrics that join backend
   (KubeVirt/kube-OVN/SR-IOV) series to ETSI resource IDs. See
   [docs/monitoring.md](docs/monitoring.md).
@@ -125,8 +125,8 @@ Both components read configuration loaded by [Viper](https://github.com/spf13/vi
 file or environment variables; the chart renders it into a ConfigMap. The configuration
 schema is defined by OpenAPI 3.0 in [`configs/`](configs):
 
-- `configs/kube-vim-config.openapi.yaml` — vim configuration
-- `configs/kube-vim-gw-config.openapi.yaml` — gateway configuration
+- `configs/kube-vim-config.openapi.yaml`: vim configuration
+- `configs/kube-vim-gw-config.openapi.yaml`: gateway configuration
 
 Key defaults: vim gRPC on `:50051`, gateway REST on `:8080`. See
 [`dist/chart/values.yaml`](dist/chart/values.yaml) for the full set of knobs (images,
@@ -146,15 +146,14 @@ to an OIDC issuer and audience to require a bearer token on every request (see
 
 The API definitions, generated Go stubs, OpenAPI schema, and a generated Python client
 (used by OSM) live in the separate
-[kube-vim-api](https://github.com/kube-nfv/kube-vim-api) repository. An additional **admin
-API** (outside the ETSI reference points) handles image management tasks.
+[kube-vim-api](https://github.com/kube-nfv/kube-vim-api) repository.
 
 ## Documentation
 
-- [docs/management-network.md](docs/management-network.md) — managed management network design & runbook
-- [docs/sriov-networks.md](docs/sriov-networks.md) — SR-IOV networks design & runbook
-- [docs/monitoring.md](docs/monitoring.md) — telemetry / metrics design & runbook
-- [docs/ci-cd.md](docs/ci-cd.md) — CI/CD workflows, release management & runbook
+- [docs/management-network.md](docs/management-network.md): managed management network design & runbook
+- [docs/sriov-networks.md](docs/sriov-networks.md): SR-IOV networks design & runbook
+- [docs/monitoring.md](docs/monitoring.md): telemetry / metrics design & runbook
+- [docs/ci-cd.md](docs/ci-cd.md): CI/CD workflows, release management & runbook
 
 ## License
 

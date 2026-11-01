@@ -6,7 +6,7 @@ Scope: kube-vim core, kube-OVN integration
 
 ## TL;DR
 
-Kube-vim can optionally own a single shared "management network" — a kube-OVN
+Kube-vim can optionally own a single shared "management network", a kube-OVN
 `Vpc` + `Subnet` + `NetworkAttachmentDefinition` provisioned and reconciled at
 kube-vim startup. NFVOs (e.g. OSM) point at this network through their own VIM
 account configuration; from that point on, every VNF/NS reuses the same
@@ -71,7 +71,7 @@ The blockers are inside kube-vim, not in the network model:
   rejects any object that does not carry the
   `app.kubernetes.io/managed-by: kube-nfv` label. `ovn-default` is owned by
   kube-OVN, not kube-nfv.
-* `ovn-cluster` (the default VPC) contains multiple subnets — `join`,
+* `ovn-cluster` (the default VPC) contains multiple subnets: `join`,
   `ovn-default`, plus any user-created ones. Picking "the management subnet"
   out of that set is ambiguous.
 
@@ -163,7 +163,7 @@ VM creation finds a network's objects by its ID label (`network.Manager.Attachme
 | `network.kubevim.kubenfv.io/nic-type: bridge` | On the NAD: the attachment bridged interfaces use. |
 
 The `K8sNetworkNameLabel`, `K8sNetworkIdLabel`, and `K8sNetworkTypeLabel`
-labels are written too but are informational — `nfvNetworkSubnetFromKubeovnSubnet`
+labels are written too but are informational: `nfvNetworkSubnetFromKubeovnSubnet`
 tolerates their absence.
 
 ## Operator runbook

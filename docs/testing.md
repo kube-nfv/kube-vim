@@ -38,7 +38,7 @@ testable against the fake client.
 
 The heavyweight Kubernetes controller test stack (envtest spinning up a real
 apiserver, Ginkgo/Gomega BDD) exists for **controller-runtime reconcilers**.
-kube-vim is not one — it is a stateless gRPC service that uses controller-runtime's
+kube-vim is not one: it is a stateless gRPC service that uses controller-runtime's
 client/cache but has no controllers. Adopting that stack would be a mismatch, so
 tests use the Go standard `testing` package with table-driven `t.Run` subtests,
 plus `testify` for terse `require` (fatal preconditions) / `assert` (soft checks)
@@ -88,12 +88,12 @@ generate` regenerates them via `go generate ./...`; no separate tool install is
 needed because the directive uses `go run`.
 
 gomock is used only for the **domain** interfaces. The Kubernetes client is never
-gomock'd — the fake client covers that seam better.
+gomock'd: the fake client covers that seam better.
 
 ## What is tested
 
 - **Manager Kubernetes logic (fake client):** `flavour/kubevirt`,
-  `network/kubeovn`, `image/cdi` — Create/Get/List/Delete, lookups by ID through
+  `network/kubeovn`, `image/cdi`: Create/Get/List/Delete, lookups by ID through
   the label indexes, ownership filtering (kube-nfv refuses objects it does not
   own), not-found mapping, rollback of a failed create, and the
   `ListNetworks`/`ListImages` in-memory joins. The network tests cover GENEVE
@@ -139,4 +139,4 @@ yet gated in CI. `go tool cover -html=cover.out` renders the per-line report.
 - **Compute running states** are tested on the mapping only; the fake VMI is
   always running.
 - **Gateway wiring** (`internal/gateway`) is untested.
-- **No coverage gate in CI** — the number is reported, not enforced.
+- **No coverage gate in CI**: the number is reported, not enforced.
