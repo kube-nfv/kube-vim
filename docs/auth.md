@@ -43,7 +43,9 @@ What SOL 013 clause 8 asks of kube-vim:
   `Authorization` header as `authorization` metadata, maps `Unauthenticated` to 401 and
   `PermissionDenied` to 403, and copies an `Unauthenticated` status message into
   `WWW-Authenticate`. kube-vim makes that message an RFC 6750 challenge, so the gateway
-  needs no auth code and direct gRPC clients get the same checks. The gateway forwards the
+  needs no auth code and direct gRPC clients get the same checks. The ProblemDetails
+  `detail` of a 401 is the challenge's `error_description`, or "Authentication required"
+  when no token was sent. The gateway forwards the
   caller's token, so kube-vim sees the real client.
 - **Secure by default.** With auth on, kube-vim refuses to start without server TLS or
   with an `http://` issuer unless `allowInsecureTransport` is set. The chart refuses to

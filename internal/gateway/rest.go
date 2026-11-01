@@ -126,10 +126,23 @@ func errorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Marshaler, w
 		w.Header().Set("WWW-Authenticate", s.Message())
 	}
 	p := problemFromStatus(s)
+	if s.Code() == codes.Unauthenticated {
+		p.Detail = challengeReason(s.Message())
+	}
 	if httpStatus != 0 {
 		p = problemDetails{Type: "about:blank", Status: httpStatus, Detail: s.Message()}
 	}
 	writeProblem(w, p)
+}
+
+// challengeReason returns the error_description of an RFC 6750 challenge, which kube-vim sends as the status message.
+func challengeReason(challenge string) string {
+	if _, desc, ok := strings.Cut(challenge, `error_description="`); ok {
+		if reason, _, ok := strings.Cut(desc, `"`); ok && reason != "" {
+			return reason
+		}
+	}
+	return "Authentication required"
 }
 
 func routingErrorHandler(_ context.Context, _ *runtime.ServeMux, _ runtime.Marshaler, w http.ResponseWriter, _ *http.Request, httpStatus int) {

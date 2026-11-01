@@ -159,10 +159,13 @@ func TestGatewayForwardsBearerToken(t *testing.T) {
 		authorization string
 		wantStatus    int
 		wantChallenge string
+		wantDetail    string
 	}{
-		{name: "no token", wantStatus: http.StatusUnauthorized, wantChallenge: `Bearer realm="kube-vim"`},
+		{name: "no token", wantStatus: http.StatusUnauthorized, wantChallenge: `Bearer realm="kube-vim"`,
+			wantDetail: "Authentication required"},
 		{name: "invalid token", authorization: "Bearer bad", wantStatus: http.StatusUnauthorized,
-			wantChallenge: `Bearer realm="kube-vim", error="invalid_token", error_description="invalid token"`},
+			wantChallenge: `Bearer realm="kube-vim", error="invalid_token", error_description="invalid token"`,
+			wantDetail:    "invalid token"},
 		{name: "valid token", authorization: "Bearer good", wantStatus: http.StatusOK},
 	}
 	for _, tt := range tests {
@@ -170,6 +173,11 @@ func TestGatewayForwardsBearerToken(t *testing.T) {
 			resp, body := do(t, http.MethodGet, gw+"/image/v1/images", "", tt.authorization)
 			assert.Equal(t, tt.wantStatus, resp.StatusCode, body)
 			assert.Equal(t, tt.wantChallenge, resp.Header.Get("WWW-Authenticate"))
+			if tt.wantDetail != "" {
+				var p problemDetails
+				require.NoError(t, json.Unmarshal([]byte(body), &p))
+				assert.Equal(t, tt.wantDetail, p.Detail, "the reason, not the challenge")
+			}
 		})
 	}
 }
