@@ -81,10 +81,11 @@ func TestCreateNetwork(t *testing.T) {
 		assert.Empty(t, got.Layer3Attributes, "input-only")
 
 		name := formatNetworkName(got.NetworkId)
-		vpc := get(t, cl, name, &kubeovnv1.Vpc{})
+		// Kube-OVN rejects a subnet named like its Vpc.
+		vpc := get(t, cl, formatVpcName(name), &kubeovnv1.Vpc{})
 		assert.Equal(t, got.NetworkId, vpc.Labels[network.K8sNetworkIdLabel])
 		sub := get(t, cl, name, &kubeovnv1.Subnet{})
-		assert.Equal(t, name, sub.Spec.Vpc)
+		assert.Equal(t, vpc.Name, sub.Spec.Vpc)
 		assert.Equal(t, "Dual", sub.Spec.Protocol)
 		assert.Equal(t, "10.0.0.0/24,fd00::/64", sub.Spec.CIDRBlock)
 		assert.Equal(t, "10.0.0.1,fd00::1", sub.Spec.Gateway)

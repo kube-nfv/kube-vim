@@ -44,6 +44,11 @@ func formatNetworkName(networkId string) string {
 	return "net-" + networkId
 }
 
+// formatVpcName names a GENEVE network's Vpc; Kube-OVN rejects a subnet named like its Vpc.
+func formatVpcName(networkName string) string {
+	return networkName + "-vpc"
+}
+
 func formatSubnetName(networkName string, subnetName string) string {
 	return fmt.Sprintf("%s-subnet-%s", networkName, subnetName)
 }
@@ -132,6 +137,7 @@ func networkAnnotations(n *networkv1.Network) (map[string]string, error) {
 func primaryObject(name string, n *networkv1.Network, labels, annotations map[string]string) (*kubeovnv1.Vpc, *kubeovnv1.Vlan) {
 	meta := v1.ObjectMeta{Name: name, Labels: labels, Annotations: annotations}
 	if n.GetNetworkType() == networkv1.NetworkType_NETWORK_TYPE_GENEVE {
+		meta.Name = formatVpcName(name)
 		return &kubeovnv1.Vpc{ObjectMeta: meta}, nil
 	}
 	return nil, &kubeovnv1.Vlan{
@@ -156,7 +162,7 @@ func subnetAnnotation(v commonv1.IpVersion) string {
 	return network.K8sSubnetIPv4Annotation
 }
 
-// kubeovnSubnet builds the network's single Kube-OVN subnet, named like the network's Vpc or Vlan, holding one
+// kubeovnSubnet builds the network's single Kube-OVN subnet, named like the network's Vlan, holding one
 // address family per entry of l3; subnetIds gives the id of each entry.
 func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData, subnetIds []string, labels map[string]string, provider string) (*kubeovnv1.Subnet, error) {
 	sub := &kubeovnv1.Subnet{
@@ -175,7 +181,7 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 		sub.Labels[k] = v
 	}
 	if n.GetNetworkType() == networkv1.NetworkType_NETWORK_TYPE_GENEVE {
-		sub.Spec.Vpc = name
+		sub.Spec.Vpc = formatVpcName(name)
 	} else {
 		sub.Spec.Vlan = name
 	}
