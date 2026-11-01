@@ -116,8 +116,8 @@ Check it through the gateway:
 ```bash
 TOKEN=$(curl -s -d grant_type=client_credentials -u osm-ro:<secret> \
   https://<host>/realms/<realm>/protocol/openid-connect/token | jq -r .access_token)
-curl -i https://<gateway>/vivnfm/v5/images                                  # 401
-curl -i -H "Authorization: Bearer $TOKEN" https://<gateway>/vivnfm/v5/images  # 200
+curl -i https://<gateway>/image/v1/images                                   # 401
+curl -i -H "Authorization: Bearer $TOKEN" https://<gateway>/image/v1/images  # 200
 ```
 
 A 401 with `error="invalid_token"` and the kube-vim log line `Request rejected` carry the

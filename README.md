@@ -28,7 +28,7 @@ kube-vim ships as two independent Kubernetes Deployments:
 | Component | Source | Role |
 |---|---|---|
 | **vim** | `cmd/kube-vim` | Main gRPC server. Exposes the ETSI Or-Vi / Vi-Vnfm reference points. Translates requests into Kubernetes CRs. |
-| **gateway** | `cmd/kube-vim-gateway` | gRPC-Gateway reverse proxy. Exposes REST/JSON bindings (OpenAPI 3.0) generated from the same gRPC schema and forwards to the vim service. |
+| **gateway** | `cmd/kube-vim-gateway` | gRPC-Gateway reverse proxy. Exposes the SOL 013 REST/JSON bindings (OpenAPI 3.1) generated from the same gRPC schema and forwards to the vim service. |
 
 ```
   NFVO / VNFM (e.g. OSM)
