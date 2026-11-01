@@ -106,9 +106,9 @@ gomock'd — the fake client covers that seam better.
   Get, List and Delete. KubeVirt is stood in by an interceptor that answers VMI
   reads from the stored VM: the fake client cannot create a VMI, whose `uint64`
   status field breaks its field tracker.
-- **`ViVnfmServer` adapters (gomock ×4):** validate → delegate → wrap for every
-  reference-point method, the network allocate/query validation branches, and the
-  terminate-network → subnet fall-through.
+- **v1 service adapters (`server/services`, gomock):** List filtering by protobuf
+  JSON name, malformed filters, the rejected paging marker and the unsupported
+  `delete_volumes`.
 - **Pure logic (as before):** `nfv⇄k8s` converters in each `utils.go`,
   format/marshal helpers, and error → gRPC/k8s mapping (`internal/errors`).
 

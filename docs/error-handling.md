@@ -192,8 +192,7 @@ client's token and scopes.
 covering the typed errors, the sentinels, the apimachinery predicates, wrapped
 (`%w`) chains, and the "already a gRPC status is preserved" path. Because the
 converters are pure functions the mapping is unit-tested without a server; the
-adapter tests (`server/grpc/vivnfm`) then assert that a manager error surfaces as
-the right status end to end.
+adapter tests (`server/services`) assert the sentinel the adapter returns.
 
 ## Known gaps / follow-ups
 

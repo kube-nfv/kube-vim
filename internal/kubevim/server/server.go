@@ -7,8 +7,11 @@ import (
 	"sync"
 	"time"
 
-	admin "github.com/kube-nfv/kube-vim-api/pkg/apis/admin"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
+	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
+	flavourv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/flavour/v1"
+	imagev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/image/v1"
+	networkv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/network/v1"
+	storagev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/storage/v1"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -17,7 +20,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/kubevim/flavour"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/image"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/network"
-	vivnfmserver "github.com/kube-nfv/kube-vim/internal/kubevim/server/grpc/vivnfm"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/server/services"
 	"github.com/kube-nfv/kube-vim/internal/kubevim/validation"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/metric"
@@ -85,13 +88,11 @@ func NewNorthboundServer(
 		log.Warn("No TLS configuration specified. Kubevim gRPC server will launch unsecure!")
 	}
 	server := grpc.NewServer(opts...)
-	vivnfm.RegisterViVnfmServer(server, &vivnfmserver.ViVnfmServer{
-		ImageMgr:   imageMgr,
-		NetworkMgr: networkManager,
-		FlavourMgr: flavourManager,
-		ComputeMgr: computeManager,
-	})
-	admin.RegisterAdminServer(server, imageMgr)
+	computev1.RegisterComputeServiceServer(server, &services.ComputeService{Mgr: computeManager})
+	flavourv1.RegisterFlavourServiceServer(server, &services.FlavourService{Mgr: flavourManager})
+	imagev1.RegisterImageServiceServer(server, &services.ImageService{Mgr: imageMgr})
+	networkv1.RegisterNetworkServiceServer(server, &services.NetworkService{Mgr: networkManager})
+	storagev1.RegisterStorageServiceServer(server, storagev1.UnimplementedStorageServiceServer{})
 	reflection.Register(server)
 	return &NorthboundServer{
 		server: server,
