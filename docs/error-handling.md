@@ -138,9 +138,13 @@ The logging interceptor sits second on purpose: it logs the converted status, no
 the raw internal error. Request validation (`validation.UnaryServerInterceptor`)
 runs inside it, after authentication: a request that breaks the API's protovalidate
 rules fails with `ErrInvalidArgument` (`VALIDATION_FAILED`) before reaching a
-handler. On the REST side the gateway (`internal/gateway`) is a
-grpc-gateway proxy, so the gRPC status maps to an HTTP status through the standard
-grpc-gateway rules; no second conversion layer exists.
+handler. On the REST side the gateway's error handler (`internal/gateway`, `errorHandler`)
+writes the status as SOL 013 ProblemDetails (`application/problem+json`): `type` is
+`https://kubevim.kubenfv.io/problems/<reason in kebab case>` and the HTTP status comes
+from the reason (`reasonHTTPStatus`). A status without an `ErrorInfo` gets `about:blank`
+and the standard grpc-gateway status for its code, except `UNIMPLEMENTED` from a
+generated server, which is typed `not-implemented` (501). Authentication errors keep
+their `WWW-Authenticate` challenge.
 
 ## Code-to-gRPC mapping
 
@@ -198,5 +202,3 @@ adapter tests (`server/services`) assert the sentinel the adapter returns.
 
 - **No typed error for `RESOURCE_IN_USE`.** Nothing raises it yet; add the type and
   its converter arm with the first manager that needs one.
-- **The gateway still maps the gRPC code, not the reason,** through the standard
-  grpc-gateway rules, until it has a ProblemDetails error handler.

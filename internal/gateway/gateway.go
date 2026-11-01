@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	vivnfm "github.com/kube-nfv/kube-vim-api/pkg/apis/vivnfm"
 	common "github.com/kube-nfv/kube-vim/internal/config"
 	config "github.com/kube-nfv/kube-vim/internal/config/gateway"
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
@@ -65,17 +63,14 @@ func (g *kubeVimGateway) Start(ctx context.Context) error {
 	// }
 	g.logger.Info("successfully connected to the kubevim gRPC endpoint", zap.String("endpoint", connAddr))
 
-	gwmux := runtime.NewServeMux(
-		runtime.SetQueryParameterParser(&queryParameterParser{}),
-		runtime.WithMarshalerOption(runtime.MIMEWildcard, newQuantityMarshaler(g.logger)),
-	)
-	if err = vivnfm.RegisterViVnfmHandler(ctx, gwmux, conn); err != nil {
-		return fmt.Errorf("register viVnfm gateway handler: %w", err)
+	gwmux := newServeMux()
+	if err = registerHandlers(ctx, gwmux, conn); err != nil {
+		return fmt.Errorf("register gateway handlers: %w", err)
 	}
 	servAddr := fmt.Sprintf(":%d", *g.cfg.Service.Server.Port)
 	server := &http.Server{
 		Addr:         servAddr,
-		Handler:      LogMiddlewareHandler(gwmux, g.logger),
+		Handler:      LogMiddlewareHandler(withRequestPath(gwmux), g.logger),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
