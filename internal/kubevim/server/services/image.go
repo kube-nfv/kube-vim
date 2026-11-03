@@ -27,7 +27,7 @@ func (s *ImageService) ListImages(ctx context.Context, req *imagev1.ListImagesRe
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}
-	res, err := filterList(all, req)
+	res, err := filterList(all, req, imageQuantityAttrs...)
 	if err != nil {
 		return nil, err
 	}

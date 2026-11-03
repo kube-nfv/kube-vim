@@ -29,7 +29,7 @@ func (s *ComputeService) ListComputes(ctx context.Context, req *computev1.ListCo
 	if err != nil {
 		return nil, fmt.Errorf("list computes: %w", err)
 	}
-	res, err := filterList(all, req)
+	res, err := filterList(all, req, computeQuantityAttrs...)
 	if err != nil {
 		return nil, err
 	}
