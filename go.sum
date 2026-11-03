@@ -204,8 +204,8 @@ github.com/kube-nfv/kube-vim-api v1.0.0-alpha.2 h1:hJUE9LJn073JpIwuUwumATRkSLZiT
 github.com/kube-nfv/kube-vim-api v1.0.0-alpha.2/go.mod h1:vBICc799xnWkeRw8ZpBwFRoFqGUb2y7zvGuI0CMztp0=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v1.14.10 h1:R16J6dJZVvYAuH+QC46380JvZCcG2E4E/zgk1ckg8Q0=
 github.com/kube-nfv/kube-vim-api/kube-ovn-api v1.14.10/go.mod h1:z+DsbzljEPX8XS0gG3CCpOFIZTdoV918h7rJ0L7MAYY=
-github.com/kube-nfv/query-filter v0.0.2-alpha2 h1:gqdnq1cELi29rVMkWgNe7WXwpZ/TQwVM87Wa5acCWwQ=
-github.com/kube-nfv/query-filter v0.0.2-alpha2/go.mod h1:26c31PRaEUHgB86Lfl+sC2AirarveGQ75wA/Quk0RJc=
+github.com/kube-nfv/query-filter v0.0.2-alpha3 h1:omS3Py2tn5BE/PT+9LH7xS6lIiPZiPaoHtiG5p4UaUc=
+github.com/kube-nfv/query-filter v0.0.2-alpha3/go.mod h1:26c31PRaEUHgB86Lfl+sC2AirarveGQ75wA/Quk0RJc=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=

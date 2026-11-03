@@ -28,7 +28,7 @@ func (s *FlavourService) ListFlavours(ctx context.Context, req *flavourv1.ListFl
 	if err != nil {
 		return nil, fmt.Errorf("list flavours: %w", err)
 	}
-	res, err := filterList(all, req)
+	res, err := filterList(all, req, flavourQuantityAttrs...)
 	if err != nil {
 		return nil, err
 	}
