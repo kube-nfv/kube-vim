@@ -135,6 +135,22 @@ func TestCreateNetwork(t *testing.T) {
 		assert.Equal(t, name, get(t, cl, name, &kubeovnv1.Subnet{}).Spec.Vlan)
 	})
 
+	t.Run("only underlay subnets turn off load balancers", func(t *testing.T) {
+		m, cl := newManager(t)
+		flat := vlan(0, v4("192.168.0.0/24"))
+		flat.NetworkType = networkv1.NetworkType_NETWORK_TYPE_FLAT
+		for _, n := range []*networkv1.Network{vlan(100, v4("10.0.0.0/24")), flat} {
+			got, err := m.CreateNetwork(context.Background(), n)
+			require.NoError(t, err)
+			sub := get(t, cl, formatNetworkName(got.NetworkId), &kubeovnv1.Subnet{})
+			require.NotNil(t, sub.Spec.EnableLb, n.GetNetworkType().String())
+			assert.False(t, *sub.Spec.EnableLb, n.GetNetworkType().String())
+		}
+		got, err := m.CreateNetwork(context.Background(), geneve(v4("10.1.0.0/24")))
+		require.NoError(t, err)
+		assert.Nil(t, get(t, cl, formatNetworkName(got.NetworkId), &kubeovnv1.Subnet{}).Spec.EnableLb)
+	})
+
 	t.Run("address pools are unsupported", func(t *testing.T) {
 		m, _ := newManager(t)
 		l3 := v4("10.0.0.0/24")

@@ -210,6 +210,8 @@ func kubeovnSubnet(name string, n *networkv1.Network, l3 []*networkv1.SubnetData
 		return nil, fmt.Errorf("layer3Attributes.gatewayMode differing between IP versions: %w", apperrors.ErrUnsupported)
 	}
 	if n.GetNetworkType() != networkv1.NetworkType_NETWORK_TYPE_GENEVE {
+		// Load balancers send traffic from the provider network through conntrack; see docs/sriov-networks.md.
+		sub.Spec.EnableLb = proto.Bool(false)
 		// Kube-OVN waits for an underlay gateway to answer unless the check is off.
 		switch gatewayMode(l3[0]) {
 		case networkv1.GatewayMode_GATEWAY_MODE_NONE:
