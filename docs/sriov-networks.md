@@ -143,13 +143,16 @@ kube-vim is agnostic to which is used; it only requires that each PF's bridge ex
 
 **Overlay isolation.** When these bridges are kube-OVN ProviderNetworks, kube-OVN *knows* them (they appear in the OVS bridge mappings), but knowing a bridge is not the same as connecting it to the overlay. A provider bridge stays isolated from the OVN overlay (`br-int`) **as long as no OVN logical switch has a localnet port on that provider**, i.e. as long as no kube-OVN `Vlan` + provider-bound `Subnet` references it.
 
-A network with both a subnet and `sriov` settings creates such a `Subnet`, so OVN adds a localnet patch between `br-int` and the provider bridge, tagged with the network's VLAN. Bridged and SR-IOV interfaces of the network then share the segment, which is the point. What is not yet verified (KB spec N14) is the price:
+A network with both a subnet and `sriov` settings creates such a `Subnet`, so OVN adds a localnet patch between `br-int` and the provider bridge, tagged with the network's VLAN. Bridged and SR-IOV interfaces of the network then share the segment, which is the point. A traffic test with a VM on each kind of interface (mlx5 switchdev, Kube-OVN 1.16.13, T-Rex on the uplink) measured the price:
 
-- whether VF-to-uplink traffic stays hardware-offloaded while the localnet port exists;
-- whether traffic of other VLANs, or of SR-IOV-only networks on the same uplink, stays out of `br-int`;
-- whether high-bandwidth SR-IOV traffic (including broadcast and unknown unicast) loads `ovs-vswitchd` or `ovn-controller` enough to hurt pod networking and Kubernetes services on the node.
+- Known unicast between a VF and the uplink stays hardware-offloaded while the localnet port exists, measured at 20 Gbps.
+- Broadcast and unknown unicast of every VLAN on the provider cross the patch into `br-int`, because the patch port has no VLAN filter. No bridged interface received frames of another VLAN, and the cost was not measurable.
+- Flooded traffic is switched in software, with or without a localnet port: about 650 kpps in this test.
+- At 1 Mpps of broadcast on the network's own VLAN, about a quarter of the packets are delivered with a bridged interface on it, and two thirds without.
 
-Until that is verified, a network without subnets (SR-IOV interfaces only) is the safe choice for line-rate data planes: it creates no localnet port, so the only attachments on the bridge are VF representors (added by ovs-cni) and the PF uplink. If the check fails, networks with `sriov` settings will stop accepting subnets.
+Kube-vim sets `enableLb: false` on the Kube-OVN subnets of VLAN and FLAT networks. With Kube-OVN's default, the cluster's Service load balancers are attached to the logical switch, and traffic arriving through the localnet port goes through conntrack and recirculation, which cannot be offloaded. 100 kpps of unknown unicast then held `ovs-vswitchd` at about 95% CPU, against about 5% with the setting off. As a result, a bridged interface on these networks does not reach ClusterIP Services through OVN.
+
+A network without subnets (SR-IOV interfaces only) creates no localnet port, so the only attachments on the bridge are VF representors (added by ovs-cni) and the PF uplink.
 
 ## Prerequisites
 
