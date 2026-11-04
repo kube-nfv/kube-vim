@@ -150,7 +150,7 @@ A network with both a subnet and `sriov` settings creates such a `Subnet`, so OV
 - Flooded traffic is switched in software, with or without a localnet port: about 650 kpps in this test.
 - At 1 Mpps of broadcast on the network's own VLAN, about a quarter of the packets are delivered with a bridged interface on it, and two thirds without.
 
-Kube-vim sets `enableLb: false` on the Kube-OVN subnets of VLAN and FLAT networks. With Kube-OVN's default, the cluster's Service load balancers are attached to the logical switch, and traffic arriving through the localnet port goes through conntrack and recirculation, which cannot be offloaded. 100 kpps of unknown unicast then held `ovs-vswitchd` at about 95% CPU, against about 5% with the setting off. As a result, a bridged interface on these networks does not reach ClusterIP Services through OVN.
+Kube-vim sets `enableLb: false` on the Kube-OVN subnets of VLAN and FLAT networks. With Kube-OVN's default, the cluster's Service load balancers are attached to the logical switch, and traffic arriving through the localnet port goes through conntrack and recirculation, which cannot be offloaded. 100 kpps of unknown unicast then held `ovs-vswitchd` at about 95% CPU, against about 5% with the setting off. Guests reach ClusterIP Services over the management interface, which keeps its load balancers on the pod network. A VM with only SR-IOV interfaces on such a network creates no localnet patch.
 
 A network without subnets (SR-IOV interfaces only) creates no localnet port, so the only attachments on the bridge are VF representors (added by ovs-cni) and the PF uplink.
 
