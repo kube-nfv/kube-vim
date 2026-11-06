@@ -19,7 +19,7 @@ func TestCheckSupported(t *testing.T) {
 		"cpu pinning":      func(f *flavourv1.Flavour) { f.VirtualCpu.VirtualCpuPinning = &flavourv1.VirtualCpuPinningData{} },
 		"cpu topology":     func(f *flavourv1.Flavour) { f.VirtualCpu.Topology = &flavourv1.CpuTopology{} },
 		"oversubscription": func(f *flavourv1.Flavour) { f.VirtualMemory.VirtualMemOversubscriptionPolicy = "2:1" },
-		"numa":             func(f *flavourv1.Flavour) { f.VirtualMemory.NumaEnabled = proto.Bool(false) },
+		"numa":             func(f *flavourv1.Flavour) { f.VirtualMemory.NumaEnabled = proto.Bool(true) },
 		"hugepages":        func(f *flavourv1.Flavour) { f.VirtualMemory.HugepageSize = "1Gi" },
 	}
 	for name, set := range unsupported {
@@ -30,6 +30,10 @@ func TestCheckSupported(t *testing.T) {
 		})
 	}
 	assert.NoError(t, checkSupported(newFlavour()))
+
+	numaOff := newFlavour()
+	numaOff.VirtualMemory.NumaEnabled = proto.Bool(false)
+	assert.NoError(t, checkSupported(numaOff))
 }
 
 // TestFlavourRoundTrip stores a flavour in kubevirt objects and reads it back unchanged.
