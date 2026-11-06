@@ -250,6 +250,22 @@ func TestCreateCompute(t *testing.T) {
 		assert.ErrorAs(t, err, &invalid)
 	})
 
+	t.Run("a name that makes no hostname leaves no Secret", func(t *testing.T) {
+		m, mocks, cl := newComputeManager(t)
+		expectRefs(mocks)
+		req := createRequest()
+		req.Compute.ComputeName = "___"
+		req.UserData = &computev1.UserData{Content: "#cloud-config\n"}
+
+		_, err := m.CreateCompute(context.Background(), req)
+		var invalid *apperrors.ErrInvalidArgument
+		require.ErrorAs(t, err, &invalid)
+
+		secrets := &corev1.SecretList{}
+		require.NoError(t, cl.List(context.Background(), secrets))
+		assert.Empty(t, secrets.Items)
+	})
+
 	t.Run("a VMI that never appears rolls back the VM and its Secret", func(t *testing.T) {
 		m, mocks, _ := newComputeManager(t)
 		expectRefs(mocks)

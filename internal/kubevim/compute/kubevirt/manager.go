@@ -120,6 +120,13 @@ func (m *manager) CreateCompute(ctx context.Context, req *computev1.CreateComput
 		return nil, fmt.Errorf("marshal compute: %w", err)
 	}
 
+	var hostname string
+	if c.GetComputeName() != "" {
+		if hostname, err = formatVmName(c.GetComputeName()); err != nil {
+			return nil, err
+		}
+	}
+
 	var secret *corev1.Secret
 	if req.GetUserData() != nil {
 		var volume *kubevirtv1.Volume
@@ -134,11 +141,7 @@ func (m *manager) CreateCompute(ctx context.Context, req *computev1.CreateComput
 
 	vmSpec := m.virtualMachine(vmName, computeId, c, flav.GetMetadata(), dvs, volumes, disks, networks, interfaces, netAnnotations)
 	vmSpec.Annotations = map[string]string{compute.K8sComputeAnnotation: string(raw)}
-	if c.GetComputeName() != "" {
-		if vmSpec.Spec.Template.Spec.Hostname, err = formatVmName(c.GetComputeName()); err != nil {
-			return nil, err
-		}
-	}
+	vmSpec.Spec.Template.Spec.Hostname = hostname
 	if err := m.client.Create(ctx, vmSpec); err != nil {
 		if secret != nil {
 			_ = m.client.Delete(context.WithoutCancel(ctx), secret)
