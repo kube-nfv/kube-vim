@@ -28,7 +28,7 @@ func checkSupported(f *flavourv1.Flavour) error {
 		unsupported = "virtualCpu.topology"
 	case mem.GetVirtualMemOversubscriptionPolicy() != "":
 		unsupported = "virtualMemory.virtualMemOversubscriptionPolicy"
-	case mem.NumaEnabled != nil:
+	case mem.GetNumaEnabled():
 		unsupported = "virtualMemory.numaEnabled"
 	case mem.GetHugepageSize() != "":
 		unsupported = "virtualMemory.hugepageSize"
