@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"context"
 	"testing"
+	"time"
 
 	commonv1 "github.com/kube-nfv/kube-vim-api/pkg/apis/common/v1"
 	computev1 "github.com/kube-nfv/kube-vim-api/pkg/apis/compute/v1"
@@ -247,6 +248,27 @@ func TestCreateCompute(t *testing.T) {
 		_, err := m.CreateCompute(context.Background(), createRequest(static))
 		var invalid *apperrors.ErrInvalidArgument
 		assert.ErrorAs(t, err, &invalid)
+	})
+
+	t.Run("a VMI that never appears rolls back the VM and its Secret", func(t *testing.T) {
+		m, mocks, _ := newComputeManager(t)
+		expectRefs(mocks)
+		cl := k8stest.NewIndexedClient(t, IdIndexes)
+		m.client, m.apiReader = cl, cl
+		req := createRequest()
+		req.UserData = &computev1.UserData{Content: "#cloud-config\n"}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+
+		_, err := m.CreateCompute(ctx, req)
+		require.Error(t, err)
+
+		vms := &kubevirtv1.VirtualMachineList{}
+		require.NoError(t, cl.List(context.Background(), vms))
+		assert.Empty(t, vms.Items)
+		secrets := &corev1.SecretList{}
+		require.NoError(t, cl.List(context.Background(), secrets))
+		assert.Empty(t, secrets.Items)
 	})
 }
 

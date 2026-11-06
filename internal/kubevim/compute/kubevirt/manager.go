@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -146,9 +147,28 @@ func (m *manager) CreateCompute(ctx context.Context, req *computev1.CreateComput
 	}
 	vmi, err := m.waitForVmi(ctx, vmName, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("await VMI for VM '%s': %w", vmName, err)
+		err = fmt.Errorf("await VMI for VM '%s': %w", vmName, err)
+		if rbErr := m.rollback(ctx, vmSpec, secret); rbErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback compute '%s': %w", computeId, rbErr))
+		}
+		return nil, err
 	}
 	return computeFromVm(vmSpec, vmi, m.getLauncherInfo(ctx, vmi))
+}
+
+// rollback deletes the VM and user-data Secret of a failed create; the caller never got their id.
+func (m *manager) rollback(ctx context.Context, vm *kubevirtv1.VirtualMachine, secret *corev1.Secret) error {
+	ctx = context.WithoutCancel(ctx)
+	var errs []error
+	if err := m.client.Delete(ctx, vm); err != nil && !k8s_errors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete VirtualMachine '%s': %w", vm.Name, err))
+	}
+	if secret != nil {
+		if err := m.client.Delete(ctx, secret); err != nil && !k8s_errors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("delete Secret '%s': %w", secret.Name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // virtualMachine builds the VM of compute c, sized by the flavour with metadata flavourMeta.
