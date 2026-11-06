@@ -254,16 +254,19 @@ func (m *manager) DeleteNetwork(ctx context.Context, networkId string) error {
 	if objs.primary.GetLabels()[network.K8sManagementNetworkLabel] == "true" {
 		return &apperrors.ErrInvalidArgument{Field: "networkId", Reason: "the management network cannot be deleted"}
 	}
-	toDelete := []client.Object{objs.primary}
-	if objs.subnet != nil {
-		toDelete = append(toDelete, objs.subnet)
-	}
+	var toDelete []client.Object
 	for idx := range objs.nads {
 		toDelete = append(toDelete, &objs.nads[idx])
 	}
-	// rollback deletes in reverse: NADs, then the subnet, then the Vpc or Vlan.
-	if err := m.rollback(ctx, toDelete); err != nil {
-		return fmt.Errorf("delete network '%s': %w", networkId, err)
+	if objs.subnet != nil {
+		toDelete = append(toDelete, objs.subnet)
+	}
+	// Lookups go through the Vpc or Vlan, so it goes last and a failed delete can be retried.
+	toDelete = append(toDelete, objs.primary)
+	for _, obj := range toDelete {
+		if err := m.client.Delete(ctx, obj); err != nil && !k8s_errors.IsNotFound(err) {
+			return fmt.Errorf("delete %T '%s' of network '%s': %w", obj, obj.GetName(), networkId, err)
+		}
 	}
 	return nil
 }

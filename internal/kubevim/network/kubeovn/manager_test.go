@@ -266,6 +266,29 @@ func TestDeleteNetwork(t *testing.T) {
 		assert.ErrorAs(t, m.DeleteNetwork(context.Background(), "nope"), &notFound)
 	})
 
+	t.Run("a retry finishes a delete that failed partway", func(t *testing.T) {
+		base := k8stest.NewIndexedClient(t, IdIndexes)
+		failSubnetDelete := true
+		cl := interceptor.NewClient(base, interceptor.Funcs{
+			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				if _, ok := obj.(*kubeovnv1.Subnet); ok && failSubnetDelete {
+					return errors.New("subnet delete failed")
+				}
+				return c.Delete(ctx, obj, opts...)
+			},
+		})
+		m := newManagerWithClient(t, cl, base)
+		created, err := m.CreateNetwork(context.Background(), vlan(100, v4("10.0.0.0/24")))
+		require.NoError(t, err)
+		require.Error(t, m.DeleteNetwork(context.Background(), created.NetworkId))
+
+		failSubnetDelete = false
+		require.NoError(t, m.DeleteNetwork(context.Background(), created.NetworkId))
+		subnets := &kubeovnv1.SubnetList{}
+		require.NoError(t, base.List(context.Background(), subnets))
+		assert.Empty(t, subnets.Items)
+	})
+
 	t.Run("the management network is kept", func(t *testing.T) {
 		m, cl := newManager(t)
 		require.NoError(t, m.EnsureManagementNetwork(context.Background(), mgmtConfig()))
