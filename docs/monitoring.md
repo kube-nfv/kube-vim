@@ -53,6 +53,12 @@ Operational: gRPC RED (`rpc_server_*` from otelgrpc), `go_*` / `process_*`,
 `rest_client_requests_total{code, method, host}`: kube-vim's own traffic to the
 Kubernetes API server.
 
+`kubevim_build_info.version` (also the `service.version` resource attribute) is
+`version.Version` (`internal/version`), stamped by `make build` and
+`make docker-build` from `KUBEVIM_VERSION`: the tag version in a release, `latest`
+in a local make build, and `dev` in a plain `go build`. Both binaries also log it
+at startup.
+
 The `rest_client_*` counter is not emitted by kube-vim: controller-runtime
 collects it in its own package-global `metrics.Registry` (separate from the
 telemetry registry). The `/metrics` handler therefore gathers over both

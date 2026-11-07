@@ -29,10 +29,6 @@ import (
 // fallback when the (defaulted) config value is somehow absent.
 const defaultMetricsPort = 9095
 
-// Version is the kube-vim build version reported as a resource attribute and via
-// kubevim_build_info. Overridden at build time with -ldflags.
-var Version = "dev"
-
 // Manager owns the telemetry MeterProvider and the /metrics HTTP server. When
 // monitoring is disabled it is inert: MeterProvider returns a no-op provider and
 // Start is a no-op, so callers can wire it unconditionally.

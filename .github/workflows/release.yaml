@@ -49,7 +49,9 @@ jobs:
           done
 
       - name: Build binaries
-        run: make build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make build KUBEVIM_VERSION="$VERSION" KUBEVIM_GATEWAY_VERSION="$VERSION"
 
       - name: Stage release binaries
         run: |

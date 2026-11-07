@@ -10,6 +10,8 @@ KUBEVIM_GATEWAY = gateway
 KUBEVIM_GATEWAY_VERSION ?= latest
 KUBEVIM_GATEWAY_IMG ?= $(IMG_BASE)/$(KUBEVIM_GATEWAY):$(KUBEVIM_GATEWAY_VERSION)
 
+VERSION_PKG = github.com/kube-nfv/kube-vim/internal/version
+
 DEV ?= 0
 
 K8S_VERSION ?= v1.31.0
@@ -70,10 +72,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 build: generate fmt vet $(LOCALBIN)/$(KUBEVIM) $(LOCALBIN)/$(KUBEVIM_GATEWAY)
 
 $(LOCALBIN)/$(KUBEVIM): $(LOCALBIN) FORCE
-	go build -o $@ cmd/kube-vim/main.go
+	go build -ldflags "-X $(VERSION_PKG).Version=$(KUBEVIM_VERSION)" -o $@ cmd/kube-vim/main.go
 
 $(LOCALBIN)/$(KUBEVIM_GATEWAY): $(LOCALBIN) FORCE
-	go build -o $@ cmd/kube-vim-gateway/main.go
+	go build -ldflags "-X $(VERSION_PKG).Version=$(KUBEVIM_GATEWAY_VERSION)" -o $@ cmd/kube-vim-gateway/main.go
 
 .PHONY: test
 test: fmt vet
@@ -88,11 +90,11 @@ docker-build: docker-kubevim-build docker-gateway-build ## Build kubevim related
 
 .PHONY: docker-kubevim-build
 docker-kubevim-build: ## Build kubevim docker image.
-	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) -t $(KUBEVIM_IMG) -f dist/Dockerfile.$(KUBEVIM) .
+	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) --build-arg VERSION=$(KUBEVIM_VERSION) -t $(KUBEVIM_IMG) -f dist/Dockerfile.$(KUBEVIM) .
 
 .PHONY: docker-gateway-build
 docker-gateway-build: ## Build kubevim gateway docker image.
-	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) -t $(KUBEVIM_GATEWAY_IMG) -f dist/Dockerfile.$(KUBEVIM_GATEWAY) .
+	$(CONTAINER_TOOL) build --platform=linux/$(ARCH) --build-arg VERSION=$(KUBEVIM_GATEWAY_VERSION) -t $(KUBEVIM_GATEWAY_IMG) -f dist/Dockerfile.$(KUBEVIM_GATEWAY) .
 
 .PHONY: build-dist-manifests
 build-dist-manifests:
