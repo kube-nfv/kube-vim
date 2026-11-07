@@ -51,13 +51,19 @@ func NewNorthboundServer(
 	flavourManager flavour.Manager,
 	computeManager compute.Manager,
 	authn auth.Authenticator) (*NorthboundServer, error) {
+	rec, err := newRecovery(log, meterProvider)
+	if err != nil {
+		return nil, fmt.Errorf("create panic counter: %w", err)
+	}
 	unary := []grpc.UnaryServerInterceptor{
+		// Recovery first, so a panic in any interceptor is caught too
+		rec.unary,
 		// Error conversion interceptor (first to convert errors)
 		func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 			return errorConversionInterceptor(ctx, req, info, handler)
 		},
 	}
-	var stream []grpc.StreamServerInterceptor
+	stream := []grpc.StreamServerInterceptor{rec.stream}
 	if authn != nil {
 		// Auth before logging so requests are logged with their client
 		unary = append(unary, auth.UnaryServerInterceptor(authn, log))

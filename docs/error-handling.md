@@ -124,17 +124,24 @@ Converters build statuses with `reasonStatus(code, reason, msg)`, which attaches
 ### Where conversion happens
 
 Conversion runs once, in the gRPC server (`internal/kubevim/server/server.go`).
-`errorConversionInterceptor` is chained **first**, so every later interceptor and
-the client see a proper status:
+`errorConversionInterceptor` is chained right after panic recovery, so every later
+interceptor and the client see a proper status:
 
 ```go
 grpc.ChainUnaryInterceptor(
+    recovery.unary,             // panic -> INTERNAL, logged with its stack and counted
     errorConversionInterceptor, // convert app errors -> gRPC status
     loggingInterceptor,         // logs the already-converted error
 )
 ```
 
-The logging interceptor sits second on purpose: it logs the converted status, not
+Recovery (`internal/kubevim/server/recovery.go`) is outermost in the unary and
+stream chains, so a panic in a handler or any interceptor fails only that request,
+with `INTERNAL` and no panic detail in the message. It does not cover goroutines a
+handler starts, or fatal runtime errors such as concurrent map writes, and a create
+that panics midway skips its rollback.
+
+The logging interceptor sits after conversion on purpose: it logs the converted status, not
 the raw internal error. Request validation (`validation.UnaryServerInterceptor`)
 runs inside it, after authentication: a request that breaks the API's protovalidate
 rules fails with `ErrInvalidArgument` (`VALIDATION_FAILED`) before reaching a

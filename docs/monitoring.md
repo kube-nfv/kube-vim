@@ -48,8 +48,10 @@ joined per-object. Datapoint attributes become per-series labels, which can.
 ## Emitted metrics
 
 Operational: gRPC RED (`rpc_server_*` from otelgrpc), `go_*` / `process_*`,
-`kubevim_build_info{version, go_version}`, and `rest_client_requests_total{code,
-method, host}`: kube-vim's own traffic to the Kubernetes API server.
+`kubevim_build_info{version, go_version}`, `kubevim_grpc_panics_total{rpc_method}`
+(requests that panicked and were recovered as `INTERNAL`), and
+`rest_client_requests_total{code, method, host}`: kube-vim's own traffic to the
+Kubernetes API server.
 
 The `rest_client_*` counter is not emitted by kube-vim: controller-runtime
 collects it in its own package-global `metrics.Registry` (separate from the
