@@ -48,6 +48,14 @@ them into one tag would force a chart bump on every app release and vice versa.
 
 Neither workflow triggers the other.
 
+### Pre-release tags
+
+A tag with a SemVer pre-release suffix (`v0.1.0-alpha.1`, `v0.1.0-rc.1`: any tag
+with a hyphen) publishes `:<version>` images, binaries and a GitHub Release marked
+as a pre-release. It never moves `:latest` or the "Latest" release, so a build
+under test cannot become the default for users. A chart's `appVersion` points
+only at full releases.
+
 ### `appVersion` is the chart↔app link, set manually
 
 `Chart.yaml`'s `appVersion` names the app release the chart deploys by default.
@@ -79,6 +87,9 @@ committed file).
 1. Merge the code to `main`.
 2. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`.
 3. The `release` workflow publishes the images, binaries, and GitHub Release.
+
+For a pre-release, tag `v1.2.3-alpha.1` (or `-rc.1`) the same way. Deploy it by
+setting the image tag in Helm values; once it is tested, tag the full release.
 
 ### Cut a chart release
 
