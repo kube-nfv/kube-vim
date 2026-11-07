@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 
 	apperrors "github.com/kube-nfv/kube-vim/internal/errors"
+	"github.com/kube-nfv/kube-vim/internal/kubevim/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
@@ -18,7 +19,7 @@ type recovery struct {
 }
 
 func newRecovery(log *zap.Logger, meterProvider metric.MeterProvider) (*recovery, error) {
-	panics, err := meterProvider.Meter("github.com/kube-nfv/kube-vim").Int64Counter(
+	panics, err := meterProvider.Meter(telemetry.MeterName).Int64Counter(
 		"kubevim.grpc.panics",
 		metric.WithDescription("gRPC requests that panicked"),
 	)

@@ -11,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-// meterName is the instrumentation scope shared by all kube-vim meters.
-const meterName = "github.com/kube-nfv/kube-vim"
+// MeterName is the instrumentation scope shared by all kube-vim meters.
+const MeterName = "github.com/kube-nfv/kube-vim"
 
 // newMeterProvider builds an OTEL MeterProvider whose metrics are exported in
 // Prometheus text format through registry. The registry also carries the Go

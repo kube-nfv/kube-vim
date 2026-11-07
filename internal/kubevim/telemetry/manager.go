@@ -66,7 +66,7 @@ func NewManager(cfg *config.MonitoringConfig, logger *zap.Logger, computeMgr com
 	if err != nil {
 		return nil, fmt.Errorf("create meter provider: %w", err)
 	}
-	meter := provider.Meter(meterName)
+	meter := provider.Meter(MeterName)
 	if err := registerBuildInfo(meter); err != nil {
 		return nil, err
 	}
