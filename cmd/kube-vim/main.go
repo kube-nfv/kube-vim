@@ -14,6 +14,7 @@ import (
 	"github.com/kube-nfv/kube-vim/internal/config/kubevim"
 	"github.com/kube-nfv/kube-vim/internal/kubevim"
 	"github.com/kube-nfv/kube-vim/internal/misc"
+	"github.com/kube-nfv/kube-vim/internal/version"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -67,6 +68,7 @@ func main() {
 		log.Fatalf("Initialize zap logger: %v", err)
 	}
 	defer logger.Sync() // Ensure all logs are flushed before the application exits
+	logger.Info("Starting kube-vim", zap.String("Version", version.Version))
 
 	cfgStr, err := json.Marshal(cfg)
 	if err == nil {

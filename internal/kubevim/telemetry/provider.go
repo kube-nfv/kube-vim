@@ -3,6 +3,7 @@ package telemetry
 import (
 	"fmt"
 
+	"github.com/kube-nfv/kube-vim/internal/version"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.opentelemetry.io/otel/attribute"
@@ -42,7 +43,7 @@ func newMeterProvider(registry *prometheus.Registry) (*sdkmetric.MeterProvider, 
 	res := resource.NewWithAttributes(
 		"",
 		attribute.String("service.name", "kube-vim"),
-		attribute.String("service.version", Version),
+		attribute.String("service.version", version.Version),
 	)
 
 	return sdkmetric.NewMeterProvider(

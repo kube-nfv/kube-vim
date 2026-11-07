@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/kube-nfv/kube-vim/internal/version"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -23,7 +24,7 @@ func registerBuildInfo(meter metric.Meter) error {
 	_, err = meter.RegisterCallback(
 		func(_ context.Context, obs metric.Observer) error {
 			obs.ObserveInt64(buildInfo, 1, metric.WithAttributes(
-				attribute.String("version", Version),
+				attribute.String("version", version.Version),
 				attribute.String("go_version", runtime.Version()),
 			))
 			return nil

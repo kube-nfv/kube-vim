@@ -14,6 +14,7 @@ import (
 	config "github.com/kube-nfv/kube-vim/internal/config/gateway"
 	"github.com/kube-nfv/kube-vim/internal/gateway"
 	"github.com/kube-nfv/kube-vim/internal/misc"
+	"github.com/kube-nfv/kube-vim/internal/version"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -55,6 +56,7 @@ func main() {
 		log.Fatalf("failed to initialize zap logger: %v", err)
 	}
 	defer logger.Sync() // Ensure all logs are flushed before the application exits
+	logger.Info("Starting kube-vim gateway", zap.String("Version", version.Version))
 
 	cfgStr, err := json.Marshal(config)
 	if err == nil {
