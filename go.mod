@@ -13,7 +13,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/kube-nfv/kube-vim-api v1.0.0-alpha.2
-	github.com/kube-nfv/kube-vim-api/kube-ovn-api v1.14.10
+	github.com/kube-nfv/kube-vim-api/kube-ovn-api v1.17.0
 	github.com/kube-nfv/query-filter v0.0.2-alpha3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/viper v1.21.0
